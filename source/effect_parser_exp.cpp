@@ -308,14 +308,41 @@ bool reshadefx::parser::accept_type_class(type &type)
 	case tokenid::string_:
 		type.base = type::t_string;
 		break;
-	case tokenid::texture:
+	case tokenid::texture1d:
 		type.base = type::t_texture;
+		type.definition = static_cast<uint32_t>(texture_type::texture_1d);
 		break;
-	case tokenid::sampler:
+	case tokenid::texture2d:
+		type.base = type::t_texture;
+		type.definition = static_cast<uint32_t>(texture_type::texture_2d);
+		break;
+	case tokenid::texture3d:
+		type.base = type::t_texture;
+		type.definition = static_cast<uint32_t>(texture_type::texture_3d);
+		break;
+	case tokenid::sampler1d:
 		type.base = type::t_sampler;
+		type.definition = static_cast<uint32_t>(texture_type::texture_1d);
 		break;
-	case tokenid::storage:
+	case tokenid::sampler2d:
+		type.base = type::t_sampler;
+		type.definition = static_cast<uint32_t>(texture_type::texture_2d);
+		break;
+	case tokenid::sampler3d:
+		type.base = type::t_sampler;
+		type.definition = static_cast<uint32_t>(texture_type::texture_3d);
+		break;
+	case tokenid::storage1d:
 		type.base = type::t_storage;
+		type.definition = static_cast<uint32_t>(texture_type::texture_1d);
+		break;
+	case tokenid::storage2d:
+		type.base = type::t_storage;
+		type.definition = static_cast<uint32_t>(texture_type::texture_2d);
+		break;
+	case tokenid::storage3d:
+		type.base = type::t_storage;
+		type.definition = static_cast<uint32_t>(texture_type::texture_3d);
 		break;
 	default:
 		return false;

@@ -75,8 +75,12 @@ struct intrinsic
 #define out_float2 { reshadefx::type::t_float, 2, 1, reshadefx::type::q_out }
 #define out_float3 { reshadefx::type::t_float, 3, 1, reshadefx::type::q_out }
 #define out_float4 { reshadefx::type::t_float, 4, 1, reshadefx::type::q_out }
-#define sampler { reshadefx::type::t_sampler }
-#define storage { reshadefx::type::t_storage }
+#define sampler1D { reshadefx::type::t_sampler, 0, 0, 0, 0, static_cast<uint32_t>(reshadefx::texture_type::texture_1d) }
+#define sampler2D { reshadefx::type::t_sampler, 0, 0, 0, 0, static_cast<uint32_t>(reshadefx::texture_type::texture_2d) }
+#define sampler3D { reshadefx::type::t_sampler, 0, 0, 0, 0, static_cast<uint32_t>(reshadefx::texture_type::texture_3d) }
+#define storage1D { reshadefx::type::t_storage, 0, 0, 0, 0, static_cast<uint32_t>(reshadefx::texture_type::texture_1d) }
+#define storage2D { reshadefx::type::t_storage, 0, 0, 0, 0, static_cast<uint32_t>(reshadefx::texture_type::texture_2d) }
+#define storage3D { reshadefx::type::t_storage, 0, 0, 0, 0, static_cast<uint32_t>(reshadefx::texture_type::texture_3d) }
 
 // Import intrinsic function definitions
 static const intrinsic s_intrinsics[] =

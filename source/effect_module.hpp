@@ -11,6 +11,16 @@
 namespace reshadefx
 {
 	/// <summary>
+	/// Texture dimension.
+	/// </summary>
+	enum class texture_type
+	{
+		texture_1d = 1,
+		texture_2d = 2,
+		texture_3d = 3,
+	};
+
+	/// <summary>
 	/// A list of supported image formats.
 	/// </summary>
 	enum class texture_format
@@ -173,8 +183,10 @@ namespace reshadefx
 		std::string semantic;
 		std::string unique_name;
 		std::vector<annotation> annotations;
+		texture_type type = texture_type::texture_2d;
 		uint32_t width = 1;
 		uint32_t height = 1;
+		uint16_t depth = 1;
 		uint16_t levels = 1;
 		texture_format format = texture_format::rgba8;
 		bool render_target = false;

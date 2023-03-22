@@ -1676,10 +1676,52 @@ IMPLEMENT_INTRINSIC_SPIRV(isnan, 0, {
 		.result;
 	})
 
+// ret tex1D(s, coords)
+// ret tex1D(s, coords, offset)
+DEFINE_INTRINSIC(tex1D, 0, float4, sampler1D, float)
+DEFINE_INTRINSIC(tex1D, 1, float4, sampler1D, float, int)
+IMPLEMENT_INTRINSIC_GLSL(tex1D, 0, {
+	code += "texture(" + id_to_name(args[0].base) + ", " + id_to_name(args[1].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_GLSL(tex1D, 1, {
+	code += "textureOffset(" + id_to_name(args[0].base) + ", " + id_to_name(args[1].base) + ", " + id_to_name(args[2].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex1D, 0, {
+	if (_shader_model >= 40) // SM4 and higher use a more object-oriented programming model for textures
+		code += id_to_name(args[0].base) + ".t.Sample(" + id_to_name(args[0].base) + ".s, " + id_to_name(args[1].base) + ')';
+	else
+		code += "tex1D(" + id_to_name(args[0].base) + ".s, " + id_to_name(args[1].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex1D, 1, {
+	if (_shader_model >= 40)
+		code += id_to_name(args[0].base) + ".t.Sample(" + id_to_name(args[0].base) + ".s, " + id_to_name(args[1].base) + ", " + id_to_name(args[2].base) + ')';
+	else
+		code += "tex1D(" + id_to_name(args[0].base) + ".s, " + id_to_name(args[1].base) + " + " + id_to_name(args[2].base) + " * " + id_to_name(args[0].base) + ".pixelsize)";
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex1D, 0, {
+	return add_instruction(spv::OpImageSampleImplicitLod, convert_type(res_type))
+		.add(args[0].base)
+		.add(args[1].base)
+		.add(spv::ImageOperandsMaskNone)
+		.result;
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex1D, 1, {
+	// Non-constant offset operand needs extended capability
+	if (!args[2].is_constant)
+		add_capability(spv::CapabilityImageGatherExtended);
+
+	return add_instruction(spv::OpImageSampleImplicitLod, convert_type(res_type))
+		.add(args[0].base)
+		.add(args[1].base)
+		.add(args[2].is_constant ? spv::ImageOperandsConstOffsetMask : spv::ImageOperandsOffsetMask)
+		.add(args[2].base)
+		.result;
+	})
+
 // ret tex2D(s, coords)
 // ret tex2D(s, coords, offset)
-DEFINE_INTRINSIC(tex2D, 0, float4, sampler, float2)
-DEFINE_INTRINSIC(tex2D, 1, float4, sampler, float2, int2)
+DEFINE_INTRINSIC(tex2D, 0, float4, sampler2D, float2)
+DEFINE_INTRINSIC(tex2D, 1, float4, sampler2D, float2, int2)
 IMPLEMENT_INTRINSIC_GLSL(tex2D, 0, {
 	code += "texture(" + id_to_name(args[0].base) + ", " + id_to_name(args[1].base) + ')';
 	})
@@ -1718,10 +1760,113 @@ IMPLEMENT_INTRINSIC_SPIRV(tex2D, 1, {
 		.result;
 	})
 
+// ret tex3D(s, coords)
+// ret tex3D(s, coords, offset)
+DEFINE_INTRINSIC(tex3D, 0, float4, sampler3D, float3)
+DEFINE_INTRINSIC(tex3D, 1, float4, sampler3D, float3, int3)
+IMPLEMENT_INTRINSIC_GLSL(tex3D, 0, {
+	code += "texture(" + id_to_name(args[0].base) + ", " + id_to_name(args[1].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_GLSL(tex3D, 1, {
+	code += "textureOffset(" + id_to_name(args[0].base) + ", " + id_to_name(args[1].base) + ", " + id_to_name(args[2].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex3D, 0, {
+	if (_shader_model >= 40) // SM4 and higher use a more object-oriented programming model for textures
+		code += id_to_name(args[0].base) + ".t.Sample(" + id_to_name(args[0].base) + ".s, " + id_to_name(args[1].base) + ')';
+	else
+		code += "tex3D(" + id_to_name(args[0].base) + ".s, " + id_to_name(args[1].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex3D, 1, {
+	if (_shader_model >= 40)
+		code += id_to_name(args[0].base) + ".t.Sample(" + id_to_name(args[0].base) + ".s, " + id_to_name(args[1].base) + ", " + id_to_name(args[2].base) + ')';
+	else
+		code += "tex3D(" + id_to_name(args[0].base) + ".s, " + id_to_name(args[1].base) + " + " + id_to_name(args[2].base) + " * " + id_to_name(args[0].base) + ".pixelsize)";
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex3D, 0, {
+	return add_instruction(spv::OpImageSampleImplicitLod, convert_type(res_type))
+		.add(args[0].base)
+		.add(args[1].base)
+		.add(spv::ImageOperandsMaskNone)
+		.result;
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex3D, 1, {
+	// Non-constant offset operand needs extended capability
+	if (!args[2].is_constant)
+		add_capability(spv::CapabilityImageGatherExtended);
+
+	return add_instruction(spv::OpImageSampleImplicitLod, convert_type(res_type))
+		.add(args[0].base)
+		.add(args[1].base)
+		.add(args[2].is_constant ? spv::ImageOperandsConstOffsetMask : spv::ImageOperandsOffsetMask)
+		.add(args[2].base)
+		.result;
+	})
+
+// ret tex1Dlod(s, coords)
+// ret tex1Dlod(s, coords, offset)
+DEFINE_INTRINSIC(tex1Dlod, 0, float4, sampler1D, float4)
+DEFINE_INTRINSIC(tex1Dlod, 1, float4, sampler1D, float4, int)
+IMPLEMENT_INTRINSIC_GLSL(tex1Dlod, 0, {
+	code += "textureLod(" + id_to_name(args[0].base) + ", " + id_to_name(args[1].base) + ".x, " + id_to_name(args[1].base) + ".w)";
+	})
+IMPLEMENT_INTRINSIC_GLSL(tex1Dlod, 1, {
+	code += "textureLodOffset(" + id_to_name(args[0].base) + ", " + id_to_name(args[1].base) + ".x, " + id_to_name(args[1].base) + ".w, " + id_to_name(args[2].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex1Dlod, 0, {
+	if (_shader_model >= 40)
+		code += id_to_name(args[0].base) + ".t.SampleLevel(" + id_to_name(args[0].base) + ".s, " + id_to_name(args[1].base) + ".x, " + id_to_name(args[1].base) + ".w)";
+	else
+		code += "tex1Dlod(" + id_to_name(args[0].base) + ".s, " + id_to_name(args[1].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex1Dlod, 1, {
+	if (_shader_model >= 40)
+		code += id_to_name(args[0].base) + ".t.SampleLevel(" + id_to_name(args[0].base) + ".s, " + id_to_name(args[1].base) + ".x, " + id_to_name(args[1].base) + ".w, " + id_to_name(args[2].base) + ')';
+	else
+		code += "tex1Dlod(" + id_to_name(args[0].base) + ".s, " + id_to_name(args[1].base) + " + float4(" + id_to_name(args[2].base) + " * " + id_to_name(args[0].base) + ".pixelsize, 0, 0, 0))";
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex1Dlod, 0, {
+	const spv::Id x = add_instruction(spv::OpVectorShuffle, convert_type({ type::t_float, 1, 1 }))
+		.add(args[1].base)
+		.add(0) // .x
+		.result;
+	const spv::Id lod = add_instruction(spv::OpCompositeExtract, convert_type({ type::t_float, 1, 1 }))
+		.add(args[1].base)
+		.add(3) // .w
+		.result;
+
+	return add_instruction(spv::OpImageSampleExplicitLod, convert_type(res_type))
+		.add(args[0].base)
+		.add(x)
+		.add(spv::ImageOperandsLodMask)
+		.add(lod)
+		.result;
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex1Dlod, 1, {
+	if (!args[2].is_constant)
+		add_capability(spv::CapabilityImageGatherExtended);
+
+	const spv::Id x = add_instruction(spv::OpVectorShuffle, convert_type({ type::t_float, 1, 1 }))
+		.add(args[1].base)
+		.add(0) // .x
+		.result;
+	const spv::Id lod = add_instruction(spv::OpCompositeExtract, convert_type({ type::t_float, 1, 1 }))
+		.add(args[1].base)
+		.add(3) // .w
+		.result;
+
+	return add_instruction(spv::OpImageSampleExplicitLod, convert_type(res_type))
+		.add(args[0].base)
+		.add(x)
+		.add(spv::ImageOperandsLodMask | (args[2].is_constant ? spv::ImageOperandsConstOffsetMask : spv::ImageOperandsOffsetMask))
+		.add(lod)
+		.add(args[2].base)
+		.result;
+	})
+
 // ret tex2Dlod(s, coords)
 // ret tex2Dlod(s, coords, offset)
-DEFINE_INTRINSIC(tex2Dlod, 0, float4, sampler, float4)
-DEFINE_INTRINSIC(tex2Dlod, 1, float4, sampler, float4, int2)
+DEFINE_INTRINSIC(tex2Dlod, 0, float4, sampler2D, float4)
+DEFINE_INTRINSIC(tex2Dlod, 1, float4, sampler2D, float4, int2)
 IMPLEMENT_INTRINSIC_GLSL(tex2Dlod, 0, {
 	code += "textureLod(" + id_to_name(args[0].base) + ", " + id_to_name(args[1].base) + ".xy, " + id_to_name(args[1].base) + ".w)";
 	})
@@ -1783,11 +1928,144 @@ IMPLEMENT_INTRINSIC_SPIRV(tex2Dlod, 1, {
 		.result;
 	})
 
+// ret tex3Dlod(s, coords)
+// ret tex3Dlod(s, coords, offset)
+DEFINE_INTRINSIC(tex3Dlod, 0, float4, sampler3D, float4)
+DEFINE_INTRINSIC(tex3Dlod, 1, float4, sampler3D, float4, int2)
+IMPLEMENT_INTRINSIC_GLSL(tex3Dlod, 0, {
+	code += "textureLod(" + id_to_name(args[0].base) + ", " + id_to_name(args[1].base) + ".xyz, " + id_to_name(args[1].base) + ".w)";
+	})
+IMPLEMENT_INTRINSIC_GLSL(tex3Dlod, 1, {
+	code += "textureLodOffset(" + id_to_name(args[0].base) + ", " + id_to_name(args[1].base) + ".xyz, " + id_to_name(args[1].base) + ".w, " + id_to_name(args[2].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex3Dlod, 0, {
+	if (_shader_model >= 40)
+		code += id_to_name(args[0].base) + ".t.SampleLevel(" + id_to_name(args[0].base) + ".s, " + id_to_name(args[1].base) + ".xyz, " + id_to_name(args[1].base) + ".w)";
+	else
+		code += "tex3Dlod(" + id_to_name(args[0].base) + ".s, " + id_to_name(args[1].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex3Dlod, 1, {
+	if (_shader_model >= 40)
+		code += id_to_name(args[0].base) + ".t.SampleLevel(" + id_to_name(args[0].base) + ".s, " + id_to_name(args[1].base) + ".xyz, " + id_to_name(args[1].base) + ".w, " + id_to_name(args[2].base) + ')';
+	else
+		code += "tex3Dlod(" + id_to_name(args[0].base) + ".s, " + id_to_name(args[1].base) + " + float4(" + id_to_name(args[2].base) + " * " + id_to_name(args[0].base) + ".pixelsize, 0))";
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex3Dlod, 0, {
+	const spv::Id xyz = add_instruction(spv::OpVectorShuffle, convert_type({ type::t_float, 3, 1 }))
+		.add(args[1].base)
+		.add(args[1].base)
+		.add(args[1].base)
+		.add(0) // .x
+		.add(1) // .y
+		.add(2) // .z
+		.result;
+	const spv::Id lod = add_instruction(spv::OpCompositeExtract, convert_type({ type::t_float, 1, 1 }))
+		.add(args[1].base)
+		.add(3) // .w
+		.result;
+
+	return add_instruction(spv::OpImageSampleExplicitLod, convert_type(res_type))
+		.add(args[0].base)
+		.add(xyz)
+		.add(spv::ImageOperandsLodMask)
+		.add(lod)
+		.result;
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex3Dlod, 1, {
+	if (!args[2].is_constant)
+		add_capability(spv::CapabilityImageGatherExtended);
+
+	const spv::Id xyz = add_instruction(spv::OpVectorShuffle, convert_type({ type::t_float, 3, 1 }))
+		.add(args[1].base)
+		.add(args[1].base)
+		.add(args[1].base)
+		.add(0) // .x
+		.add(1) // .y
+		.add(2) // .z
+		.result;
+	const spv::Id lod = add_instruction(spv::OpCompositeExtract, convert_type({ type::t_float, 1, 1 }))
+		.add(args[1].base)
+		.add(3) // .w
+		.result;
+
+	return add_instruction(spv::OpImageSampleExplicitLod, convert_type(res_type))
+		.add(args[0].base)
+		.add(xyz)
+		.add(spv::ImageOperandsLodMask | (args[2].is_constant ? spv::ImageOperandsConstOffsetMask : spv::ImageOperandsOffsetMask))
+		.add(lod)
+		.add(args[2].base)
+		.result;
+	})
+
+// ret tex1Dfetch(s, coords)
+// ret tex1Dfetch(s, coords, lod)
+DEFINE_INTRINSIC(tex1Dfetch, 0, float4, sampler1D, int)
+DEFINE_INTRINSIC(tex1Dfetch, 1, float4, sampler1D, int, int)
+DEFINE_INTRINSIC(tex1Dfetch, 2, float4, storage1D, int)
+IMPLEMENT_INTRINSIC_GLSL(tex1Dfetch, 0, {
+	code += "texelFetch(" + id_to_name(args[0].base) + ", " + id_to_name(args[1].base) + ", 0)";
+	})
+IMPLEMENT_INTRINSIC_GLSL(tex1Dfetch, 1, {
+	code += "texelFetch(" + id_to_name(args[0].base) + ", " + id_to_name(args[1].base) + ", " + id_to_name(args[2].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_GLSL(tex1Dfetch, 2, {
+	code += "imageLoad(" + id_to_name(args[0].base) + ", " + id_to_name(args[1].base) + ")";
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex1Dfetch, 0, {
+	if (_shader_model >= 40)
+		code += id_to_name(args[0].base) + ".t.Load(int2(" + id_to_name(args[1].base) + ", 0))";
+	else
+		// SM3 does not have a fetch intrinsic, so emulate it by transforming coordinates into texture space ones
+		// Also add a half-pixel offset to align texels with pixels
+		//   (coords + 0.5) / size
+		code += "tex1Dlod(" + id_to_name(args[0].base) + ".s, float4((" +
+			id_to_name(args[1].base) + " + 0.5) * " + id_to_name(args[0].base) + ".pixelsize, 0, 0, 0))";
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex1Dfetch, 1, {
+	if (_shader_model >= 40)
+		code += id_to_name(args[0].base) + ".t.Load(int2(" + id_to_name(args[1].base) + ", " + id_to_name(args[2].base) + "))";
+	else
+		code += "tex2Dlod(" + id_to_name(args[0].base) + ".s, float4((" +
+			id_to_name(args[1].base) + " + 0.5) * " + id_to_name(args[0].base) + ".pixelsize * exp2(" + id_to_name(args[2].base) + "), 0, 0, " +
+			id_to_name(args[2].base) + "))";
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex1Dfetch, 2, {
+	if (_shader_model >= 50) {
+		code += id_to_name(args[0].base) + '[' + id_to_name(args[1].base) + ']';
+	}
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex1Dfetch, 0, {
+	const spv::Id image = add_instruction(spv::OpImage, convert_type({ type::t_texture, 0, 0, 0, 0, static_cast<uint32_t>(texture_type::texture_1d) }))
+		.add(args[0].base).result;
+
+	return add_instruction(spv::OpImageFetch, convert_type(res_type))
+		.add(image)
+		.add(args[1].base)
+		.result;
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex1Dfetch, 1, {
+	const spv::Id image = add_instruction(spv::OpImage, convert_type({ type::t_texture, 0, 0, 0, 0, static_cast<uint32_t>(texture_type::texture_1d) }))
+		.add(args[0].base).result;
+
+	return add_instruction(spv::OpImageFetch, convert_type(res_type))
+		.add(image)
+		.add(args[1].base)
+		.add(spv::ImageOperandsLodMask)
+		.add(args[2].base)
+		.result;
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex1Dfetch, 2, {
+	return add_instruction(spv::OpImageRead, convert_type(res_type))
+		.add(args[0].base)
+		.add(args[1].base)
+		.result;
+	})
+
 // ret tex2Dfetch(s, coords)
 // ret tex2Dfetch(s, coords, lod)
-DEFINE_INTRINSIC(tex2Dfetch, 0, float4, sampler, int2)
-DEFINE_INTRINSIC(tex2Dfetch, 1, float4, sampler, int2, int)
-DEFINE_INTRINSIC(tex2Dfetch, 2, float4, storage, int2)
+DEFINE_INTRINSIC(tex2Dfetch, 0, float4, sampler2D, int2)
+DEFINE_INTRINSIC(tex2Dfetch, 1, float4, sampler2D, int2, int)
+DEFINE_INTRINSIC(tex2Dfetch, 2, float4, storage2D, int2)
 IMPLEMENT_INTRINSIC_GLSL(tex2Dfetch, 0, {
 	code += "texelFetch(" + id_to_name(args[0].base) + ", " + id_to_name(args[1].base) + ", 0)";
 	})
@@ -1805,7 +2083,7 @@ IMPLEMENT_INTRINSIC_HLSL(tex2Dfetch, 0, {
 		// Also add a half-pixel offset to align texels with pixels
 		//   (coords + 0.5) / size
 		code += "tex2Dlod(" + id_to_name(args[0].base) + ".s, float4((" +
-			id_to_name(args[1].base) + ".xy + 0.5) * " + id_to_name(args[0].base) + ".pixelsize, 0, 0))";
+			id_to_name(args[1].base) + " + 0.5) * " + id_to_name(args[0].base) + ".pixelsize, 0, 0))";
 	})
 IMPLEMENT_INTRINSIC_HLSL(tex2Dfetch, 1, {
 	if (_shader_model >= 40)
@@ -1821,7 +2099,7 @@ IMPLEMENT_INTRINSIC_HLSL(tex2Dfetch, 2, {
 	}
 	})
 IMPLEMENT_INTRINSIC_SPIRV(tex2Dfetch, 0, {
-	const spv::Id image = add_instruction(spv::OpImage, convert_type({ type::t_texture }))
+	const spv::Id image = add_instruction(spv::OpImage, convert_type({ type::t_texture, 0, 0, 0, 0, static_cast<uint32_t>(texture_type::texture_2d) }))
 		.add(args[0].base).result;
 
 	return add_instruction(spv::OpImageFetch, convert_type(res_type))
@@ -1830,7 +2108,7 @@ IMPLEMENT_INTRINSIC_SPIRV(tex2Dfetch, 0, {
 		.result;
 	})
 IMPLEMENT_INTRINSIC_SPIRV(tex2Dfetch, 1, {
-	const spv::Id image = add_instruction(spv::OpImage, convert_type({ type::t_texture }))
+	const spv::Id image = add_instruction(spv::OpImage, convert_type({ type::t_texture, 0, 0, 0, 0, static_cast<uint32_t>(texture_type::texture_2d) }))
 		.add(args[0].base).result;
 
 	return add_instruction(spv::OpImageFetch, convert_type(res_type))
@@ -1847,12 +2125,76 @@ IMPLEMENT_INTRINSIC_SPIRV(tex2Dfetch, 2, {
 		.result;
 	})
 
+// ret tex3Dfetch(s, coords)
+// ret tex3Dfetch(s, coords, lod)
+DEFINE_INTRINSIC(tex3Dfetch, 0, float4, sampler3D, int3)
+DEFINE_INTRINSIC(tex3Dfetch, 1, float4, sampler3D, int3, int)
+DEFINE_INTRINSIC(tex3Dfetch, 2, float4, storage3D, int3)
+IMPLEMENT_INTRINSIC_GLSL(tex3Dfetch, 0, {
+	code += "texelFetch(" + id_to_name(args[0].base) + ", " + id_to_name(args[1].base) + ", 0)";
+	})
+IMPLEMENT_INTRINSIC_GLSL(tex3Dfetch, 1, {
+	code += "texelFetch(" + id_to_name(args[0].base) + ", " + id_to_name(args[1].base) + ", " + id_to_name(args[2].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_GLSL(tex3Dfetch, 2, {
+	code += "imageLoad(" + id_to_name(args[0].base) + ", " + id_to_name(args[1].base) + ")";
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex3Dfetch, 0, {
+	if (_shader_model >= 40)
+		code += id_to_name(args[0].base) + ".t.Load(int4(" + id_to_name(args[1].base) + ", 0))";
+	else
+		// SM3 does not have a fetch intrinsic, so emulate it by transforming coordinates into texture space ones
+		// Also add a half-pixel offset to align texels with pixels
+		//   (coords + 0.5) / size
+		code += "tex3Dlod(" + id_to_name(args[0].base) + ".s, float4((" +
+			id_to_name(args[1].base) + " + 0.5) * " + id_to_name(args[0].base) + ".pixelsize, 0))";
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex3Dfetch, 1, {
+	if (_shader_model >= 40)
+		code += id_to_name(args[0].base) + ".t.Load(int4(" + id_to_name(args[1].base) + ", " + id_to_name(args[2].base) + "))";
+	else
+		code += "tex3Dlod(" + id_to_name(args[0].base) + ".s, float4((" +
+			id_to_name(args[1].base) + " + 0.5) * " + id_to_name(args[0].base) + ".pixelsize * exp2(" + id_to_name(args[2].base) + "), " +
+			id_to_name(args[2].base) + "))";
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex3Dfetch, 2, {
+	if (_shader_model >= 50) {
+		code += id_to_name(args[0].base) + '[' + id_to_name(args[1].base) + ']';
+	}
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex3Dfetch, 0, {
+	const spv::Id image = add_instruction(spv::OpImage, convert_type({ type::t_texture, 0, 0, 0, 0, static_cast<uint32_t>(texture_type::texture_3d) }))
+		.add(args[0].base).result;
+
+	return add_instruction(spv::OpImageFetch, convert_type(res_type))
+		.add(image)
+		.add(args[1].base)
+		.result;
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex3Dfetch, 1, {
+	const spv::Id image = add_instruction(spv::OpImage, convert_type({ type::t_texture, 0, 0, 0, 0, static_cast<uint32_t>(texture_type::texture_3d) }))
+		.add(args[0].base).result;
+
+	return add_instruction(spv::OpImageFetch, convert_type(res_type))
+		.add(image)
+		.add(args[1].base)
+		.add(spv::ImageOperandsLodMask)
+		.add(args[2].base)
+		.result;
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex3Dfetch, 2, {
+	return add_instruction(spv::OpImageRead, convert_type(res_type))
+		.add(args[0].base)
+		.add(args[1].base)
+		.result;
+	})
+
 // ret tex2DgatherR(s, coords)
 // ret tex2DgatherR(s, coords, offset)
 // ret tex2DgatherR(s, coords, offset0, offset1, offset2, offset3)
-DEFINE_INTRINSIC(tex2DgatherR, 0, float4, sampler, float2)
-DEFINE_INTRINSIC(tex2DgatherR, 1, float4, sampler, float2, int2)
-DEFINE_INTRINSIC(tex2DgatherR, 2, float4, sampler, float2, int2, int2, int2, int2)
+DEFINE_INTRINSIC(tex2DgatherR, 0, float4, sampler2D, float2)
+DEFINE_INTRINSIC(tex2DgatherR, 1, float4, sampler2D, float2, int2)
+DEFINE_INTRINSIC(tex2DgatherR, 2, float4, sampler2D, float2, int2, int2, int2, int2)
 IMPLEMENT_INTRINSIC_GLSL(tex2DgatherR, 0, {
 	code += "textureGather(" + id_to_name(args[0].base) + ", " +
 		id_to_name(args[1].base) + ", 0)";
@@ -1967,9 +2309,9 @@ IMPLEMENT_INTRINSIC_SPIRV(tex2DgatherR, 2, {
 // ret tex2DgatherG(s, coords)
 // ret tex2DgatherG(s, coords, offset)
 // ret tex2DgatherG(s, coords, offset0, offset1, offset2, offset3)
-DEFINE_INTRINSIC(tex2DgatherG, 0, float4, sampler, float2)
-DEFINE_INTRINSIC(tex2DgatherG, 1, float4, sampler, float2, int2)
-DEFINE_INTRINSIC(tex2DgatherG, 2, float4, sampler, float2, int2, int2, int2, int2)
+DEFINE_INTRINSIC(tex2DgatherG, 0, float4, sampler2D, float2)
+DEFINE_INTRINSIC(tex2DgatherG, 1, float4, sampler2D, float2, int2)
+DEFINE_INTRINSIC(tex2DgatherG, 2, float4, sampler2D, float2, int2, int2, int2, int2)
 IMPLEMENT_INTRINSIC_GLSL(tex2DgatherG, 0, {
 	code += "textureGather(" + id_to_name(args[0].base) + ", " +
 		id_to_name(args[1].base) + ", 1)";
@@ -2084,9 +2426,9 @@ IMPLEMENT_INTRINSIC_SPIRV(tex2DgatherG, 2, {
 // ret tex2DgatherB(s, coords)
 // ret tex2DgatherB(s, coords, offset)
 // ret tex2DgatherB(s, coords, offset0, offset1, offset2, offset3)
-DEFINE_INTRINSIC(tex2DgatherB, 0, float4, sampler, float2)
-DEFINE_INTRINSIC(tex2DgatherB, 1, float4, sampler, float2, int2)
-DEFINE_INTRINSIC(tex2DgatherB, 2, float4, sampler, float2, int2, int2, int2, int2)
+DEFINE_INTRINSIC(tex2DgatherB, 0, float4, sampler2D, float2)
+DEFINE_INTRINSIC(tex2DgatherB, 1, float4, sampler2D, float2, int2)
+DEFINE_INTRINSIC(tex2DgatherB, 2, float4, sampler2D, float2, int2, int2, int2, int2)
 IMPLEMENT_INTRINSIC_GLSL(tex2DgatherB, 0, {
 	code += "textureGather(" + id_to_name(args[0].base) + ", " +
 		id_to_name(args[1].base) + ", 2)";
@@ -2201,9 +2543,9 @@ IMPLEMENT_INTRINSIC_SPIRV(tex2DgatherB, 2, {
 // ret tex2DgatherA(s, coords)
 // ret tex2DgatherA(s, coords, offset)
 // ret tex2DgatherA(s, coords, offset0, offset1, offset2, offset3)
-DEFINE_INTRINSIC(tex2DgatherA, 0, float4, sampler, float2)
-DEFINE_INTRINSIC(tex2DgatherA, 1, float4, sampler, float2, int2)
-DEFINE_INTRINSIC(tex2DgatherA, 2, float4, sampler, float2, int2, int2, int2, int2)
+DEFINE_INTRINSIC(tex2DgatherA, 0, float4, sampler2D, float2)
+DEFINE_INTRINSIC(tex2DgatherA, 1, float4, sampler2D, float2, int2)
+DEFINE_INTRINSIC(tex2DgatherA, 2, float4, sampler2D, float2, int2, int2, int2, int2)
 IMPLEMENT_INTRINSIC_GLSL(tex2DgatherA, 0, {
 	code += "textureGather(" + id_to_name(args[0].base) + ", " +
 		id_to_name(args[1].base) + ", 3)";
@@ -2316,8 +2658,28 @@ IMPLEMENT_INTRINSIC_SPIRV(tex2DgatherA, 2, {
 		.result;
 	})
 
+// tex1Dstore(s, coords, value)
+DEFINE_INTRINSIC(tex1Dstore, 0, void, storage1D, int, float4)
+IMPLEMENT_INTRINSIC_GLSL(tex1Dstore, 0, {
+	code += "imageStore(" + id_to_name(args[0].base) + ", " +
+		id_to_name(args[1].base) + ", " +
+		id_to_name(args[2].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex1Dstore, 0, {
+	if (_shader_model >= 50) {
+		code += id_to_name(args[0].base) + '[' + id_to_name(args[1].base) + "] = " + id_to_name(args[2].base);
+	}
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex1Dstore, 0, {
+	add_instruction_without_result(spv::OpImageWrite)
+		.add(args[0].base)
+		.add(args[1].base)
+		.add(args[2].base);
+	return 0;
+	})
+
 // tex2Dstore(s, coords, value)
-DEFINE_INTRINSIC(tex2Dstore, 0, void, storage, int2, float4)
+DEFINE_INTRINSIC(tex2Dstore, 0, void, storage2D, int2, float4)
 IMPLEMENT_INTRINSIC_GLSL(tex2Dstore, 0, {
 	code += "imageStore(" + id_to_name(args[0].base) + ", " +
 		id_to_name(args[1].base) + ", " +
@@ -2336,11 +2698,95 @@ IMPLEMENT_INTRINSIC_SPIRV(tex2Dstore, 0, {
 	return 0;
 	})
 
+// tex3Dstore(s, coords, value)
+DEFINE_INTRINSIC(tex3Dstore, 0, void, storage3D, int3, float4)
+IMPLEMENT_INTRINSIC_GLSL(tex3Dstore, 0, {
+	code += "imageStore(" + id_to_name(args[0].base) + ", " +
+		id_to_name(args[1].base) + ", " +
+		id_to_name(args[2].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex3Dstore, 0, {
+	if (_shader_model >= 50) {
+		code += id_to_name(args[0].base) + '[' + id_to_name(args[1].base) + "] = " + id_to_name(args[2].base);
+	}
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex3Dstore, 0, {
+	add_instruction_without_result(spv::OpImageWrite)
+		.add(args[0].base)
+		.add(args[1].base)
+		.add(args[2].base);
+	return 0;
+	})
+
+// ret tex1Dsize(s)
+// ret tex1Dsize(s, lod)
+DEFINE_INTRINSIC(tex1Dsize, 0, int, sampler1D)
+DEFINE_INTRINSIC(tex1Dsize, 1, int, sampler1D, int)
+DEFINE_INTRINSIC(tex1Dsize, 2, int, storage1D)
+IMPLEMENT_INTRINSIC_GLSL(tex1Dsize, 0, {
+	code += "textureSize(" + id_to_name(args[0].base) + ", 0)";
+	})
+IMPLEMENT_INTRINSIC_GLSL(tex1Dsize, 1, {
+	code += "textureSize(" + id_to_name(args[0].base) + ", " + id_to_name(args[1].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_GLSL(tex1Dsize, 2, {
+	code += "imageSize(" + id_to_name(args[0].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex1Dsize, 0, {
+	if (_shader_model >= 40)
+		code += id_to_name(args[0].base) + ".t.GetDimensions(" + id_to_name(res) + ')';
+	else
+		code += "int(1.0 / " + id_to_name(args[0].base) + ".pixelsize)";
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex1Dsize, 1, {
+	if (_shader_model >= 40)
+		code += "uint temp" + std::to_string(res) + "; " + // Don't need the number of levels out value, so route that to a dummy variable
+			id_to_name(args[0].base) + ".t.GetDimensions(" + id_to_name(args[1].base) + ", " + id_to_name(res) + ", temp" + std::to_string(res) + ')';
+	else
+		code += "int(1.0 / " + id_to_name(args[0].base) + ".pixelsize) / exp2(" + id_to_name(args[1].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex1Dsize, 2, {
+	if (_shader_model >= 50)
+		code += id_to_name(args[0].base) + ".GetDimensions(" + id_to_name(res) + ')';
+	else
+		code += "0"; // Only supported on SM5+
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex1Dsize, 0, {
+	add_capability(spv::CapabilityImageQuery);
+
+	const spv::Id image = add_instruction(spv::OpImage, convert_type({ type::t_texture, 0, 0, 0, 0, static_cast<uint32_t>(texture_type::texture_1d) }))
+		.add(args[0].base).result;
+	const spv::Id level = emit_constant(0u);
+
+	return add_instruction(spv::OpImageQuerySizeLod, convert_type(res_type))
+		.add(image)
+		.add(level)
+		.result;
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex1Dsize, 1, {
+	add_capability(spv::CapabilityImageQuery);
+
+	const spv::Id image = add_instruction(spv::OpImage, convert_type({ type::t_texture, 0, 0, 0, 0, static_cast<uint32_t>(texture_type::texture_1d) }))
+		.add(args[0].base).result;
+
+	return add_instruction(spv::OpImageQuerySizeLod, convert_type(res_type))
+		.add(image)
+		.add(args[1].base)
+		.result;
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex1Dsize, 2, {
+	add_capability(spv::CapabilityImageQuery);
+
+	return add_instruction(spv::OpImageQuerySize, convert_type(res_type))
+		.add(args[0].base)
+		.result;
+	})
+
 // ret tex2Dsize(s)
 // ret tex2Dsize(s, lod)
-DEFINE_INTRINSIC(tex2Dsize, 0, int2, sampler)
-DEFINE_INTRINSIC(tex2Dsize, 1, int2, sampler, int)
-DEFINE_INTRINSIC(tex2Dsize, 2, int2, storage)
+DEFINE_INTRINSIC(tex2Dsize, 0, int2, sampler2D)
+DEFINE_INTRINSIC(tex2Dsize, 1, int2, sampler2D, int)
+DEFINE_INTRINSIC(tex2Dsize, 2, int2, storage2D)
 IMPLEMENT_INTRINSIC_GLSL(tex2Dsize, 0, {
 	code += "textureSize(" + id_to_name(args[0].base) + ", 0)";
 	})
@@ -2372,7 +2818,7 @@ IMPLEMENT_INTRINSIC_HLSL(tex2Dsize, 2, {
 IMPLEMENT_INTRINSIC_SPIRV(tex2Dsize, 0, {
 	add_capability(spv::CapabilityImageQuery);
 
-	const spv::Id image = add_instruction(spv::OpImage, convert_type({ type::t_texture }))
+	const spv::Id image = add_instruction(spv::OpImage, convert_type({ type::t_texture, 0, 0, 0, 0, static_cast<uint32_t>(texture_type::texture_2d) }))
 		.add(args[0].base).result;
 	const spv::Id level = emit_constant(0u);
 
@@ -2384,7 +2830,7 @@ IMPLEMENT_INTRINSIC_SPIRV(tex2Dsize, 0, {
 IMPLEMENT_INTRINSIC_SPIRV(tex2Dsize, 1, {
 	add_capability(spv::CapabilityImageQuery);
 
-	const spv::Id image = add_instruction(spv::OpImage, convert_type({ type::t_texture }))
+	const spv::Id image = add_instruction(spv::OpImage, convert_type({ type::t_texture, 0, 0, 0, 0, static_cast<uint32_t>(texture_type::texture_2d) }))
 		.add(args[0].base).result;
 
 	return add_instruction(spv::OpImageQuerySizeLod, convert_type(res_type))
@@ -2393,6 +2839,70 @@ IMPLEMENT_INTRINSIC_SPIRV(tex2Dsize, 1, {
 		.result;
 	})
 IMPLEMENT_INTRINSIC_SPIRV(tex2Dsize, 2, {
+	add_capability(spv::CapabilityImageQuery);
+
+	return add_instruction(spv::OpImageQuerySize, convert_type(res_type))
+		.add(args[0].base)
+		.result;
+	})
+
+// ret tex3Dsize(s)
+// ret tex3Dsize(s, lod)
+DEFINE_INTRINSIC(tex3Dsize, 0, int3, sampler3D)
+DEFINE_INTRINSIC(tex3Dsize, 1, int3, sampler3D, int)
+DEFINE_INTRINSIC(tex3Dsize, 2, int3, storage3D)
+IMPLEMENT_INTRINSIC_GLSL(tex3Dsize, 0, {
+	code += "textureSize(" + id_to_name(args[0].base) + ", 0)";
+	})
+IMPLEMENT_INTRINSIC_GLSL(tex3Dsize, 1, {
+	code += "textureSize(" + id_to_name(args[0].base) + ", " + id_to_name(args[1].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_GLSL(tex3Dsize, 2, {
+	code += "imageSize(" + id_to_name(args[0].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex3Dsize, 0, {
+	if (_shader_model >= 40)
+		code += id_to_name(args[0].base) + ".t.GetDimensions(" + id_to_name(res) + ".x, " + id_to_name(res) + ".y, " + id_to_name(res) + ".z)";
+	else
+		code += "int3(1.0 / " + id_to_name(args[0].base) + ".pixelsize)";
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex3Dsize, 1, {
+	if (_shader_model >= 40)
+		code += "uint temp" + std::to_string(res) + "; " + // Don't need the number of levels out value, so route that to a dummy variable
+			id_to_name(args[0].base) + ".t.GetDimensions(" + id_to_name(args[1].base) + ", " + id_to_name(res) + ".x, " + id_to_name(res) + ".y, " + id_to_name(res) + ".z, temp" + std::to_string(res) + ')';
+	else
+		code += "int3(1.0 / " + id_to_name(args[0].base) + ".pixelsize) / exp2(" + id_to_name(args[1].base) + ')';
+	})
+IMPLEMENT_INTRINSIC_HLSL(tex3Dsize, 2, {
+	if (_shader_model >= 50)
+		code += id_to_name(args[0].base) + ".GetDimensions(" + id_to_name(res) + ".x, " + id_to_name(res) + ".y, " + id_to_name(res) + ".z)";
+	else
+		code += "int3(0, 0, 0)"; // Only supported on SM5+
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex3Dsize, 0, {
+	add_capability(spv::CapabilityImageQuery);
+
+	const spv::Id image = add_instruction(spv::OpImage, convert_type({ type::t_texture, 0, 0, 0, 0, static_cast<uint32_t>(texture_type::texture_3d) }))
+		.add(args[0].base).result;
+	const spv::Id level = emit_constant(0u);
+
+	return add_instruction(spv::OpImageQuerySizeLod, convert_type(res_type))
+		.add(image)
+		.add(level)
+		.result;
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex3Dsize, 1, {
+	add_capability(spv::CapabilityImageQuery);
+
+	const spv::Id image = add_instruction(spv::OpImage, convert_type({ type::t_texture, 0, 0, 0, 0, static_cast<uint32_t>(texture_type::texture_3d) }))
+		.add(args[0].base).result;
+
+	return add_instruction(spv::OpImageQuerySizeLod, convert_type(res_type))
+		.add(image)
+		.add(args[1].base)
+		.result;
+	})
+IMPLEMENT_INTRINSIC_SPIRV(tex3Dsize, 2, {
 	add_capability(spv::CapabilityImageQuery);
 
 	return add_instruction(spv::OpImageQuerySize, convert_type(res_type))

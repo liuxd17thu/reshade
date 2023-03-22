@@ -223,10 +223,16 @@ private:
 			s += id_to_name(type.definition);
 			break;
 		case type::t_sampler:
-			s += "sampler2D";
+			assert(type.definition == static_cast<uint32_t>(texture_type::texture_1d) || type.definition == static_cast<uint32_t>(texture_type::texture_2d) || type.definition == static_cast<uint32_t>(texture_type::texture_3d));
+			s += "sampler";
+			s += '1' + static_cast<char>(type.definition - static_cast<uint32_t>(texture_type::texture_1d));
+			s += 'D';
 			break;
 		case type::t_storage:
-			s += "writeonly image2D";
+			assert(type.definition == static_cast<uint32_t>(texture_type::texture_1d) || type.definition == static_cast<uint32_t>(texture_type::texture_2d) || type.definition == static_cast<uint32_t>(texture_type::texture_3d));
+			s += "writeonly image";
+			s += '1' + static_cast<char>(type.definition - static_cast<uint32_t>(texture_type::texture_1d));
+			s += 'D';
 			break;
 		default:
 			assert(false);
@@ -479,7 +485,7 @@ private:
 
 		return info.id;
 	}
-	id   define_sampler(const location &loc, sampler_info &info) override
+	id   define_sampler(const location &loc, const texture_info &tex_info, sampler_info &info) override
 	{
 		info.id = make_id();
 		info.binding = _module.num_sampler_bindings++;
@@ -491,13 +497,15 @@ private:
 
 		write_location(code, loc);
 
-		code += "layout(binding = " + std::to_string(info.binding) + ") uniform sampler2D " + id_to_name(info.id) + ";\n";
+		code += "layout(binding = " + std::to_string(info.binding) + ") uniform sampler";
+		code += '1' + static_cast<char>(static_cast<uint32_t>(tex_info.type) - static_cast<uint32_t>(texture_type::texture_1d));
+		code += "D " + id_to_name(info.id) + ";\n";
 
 		_module.samplers.push_back(info);
 
 		return info.id;
 	}
-	id   define_storage(const location &loc, storage_info &info) override
+	id   define_storage(const location &loc, const texture_info &tex_info, storage_info &info) override
 	{
 		info.id = make_id();
 		info.binding = _module.num_storage_bindings++;
@@ -563,7 +571,9 @@ private:
 		code += ") uniform ";
 		if (info.format == texture_format::unknown)
 			code += "writeonly ";
-		code += "image2D " + id_to_name(info.id) + ";\n";
+		code += "image";
+		code += '1' + static_cast<char>(static_cast<uint32_t>(tex_info.type) - static_cast<uint32_t>(texture_type::texture_1d));
+		code += "D " + id_to_name(info.id) + "; \n";
 
 		_module.storages.push_back(info);
 

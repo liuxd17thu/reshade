@@ -55,7 +55,9 @@ private:
 
 		if (_shader_model >= 40)
 		{
+			preamble += "struct __sampler1D { Texture1D t; SamplerState s; };\n";
 			preamble += "struct __sampler2D { Texture2D t; SamplerState s; };\n";
+			preamble += "struct __sampler3D { Texture3D t; SamplerState s; };\n";
 
 			if (!_cbuffer_block.empty())
 			{
@@ -67,7 +69,9 @@ private:
 		}
 		else
 		{
+			preamble += "struct __sampler1D { sampler1D s; float1 pixelsize; };\n";
 			preamble += "struct __sampler2D { sampler2D s; float2 pixelsize; };\n";
+			preamble += "struct __sampler3D { sampler3D s; float3 pixelsize; };\n";
 			preamble += "uniform float2 __TEXEL_SIZE__ : register(c255);\n";
 
 			if (_uses_bitwise_cast)
@@ -181,10 +185,17 @@ private:
 			s += id_to_name(type.definition);
 			break;
 		case type::t_sampler:
-			s += "__sampler2D";
+			assert(type.definition == static_cast<uint32_t>(texture_type::texture_1d) || type.definition == static_cast<uint32_t>(texture_type::texture_2d) || type.definition == static_cast<uint32_t>(texture_type::texture_3d));
+			s += "__sampler";
+			s += '1' + static_cast<char>(type.definition - static_cast<uint32_t>(texture_type::texture_1d));
+			s += 'D';
 			break;
 		case type::t_storage:
-			s += "RWTexture2D<float4>";
+			assert(type.definition == static_cast<uint32_t>(texture_type::texture_1d) || type.definition == static_cast<uint32_t>(texture_type::texture_2d) || type.definition == static_cast<uint32_t>(texture_type::texture_3d));
+			s += "RWTexture";
+			s += '1' + static_cast<char>(type.definition - static_cast<uint32_t>(texture_type::texture_1d));
+			s += 'D';
+			s += "<float4>";
 			break;
 		default:
 			assert(false);
@@ -431,29 +442,27 @@ private:
 			if (_shader_model >= 60)
 				code += "[[vk::binding(" + std::to_string(info.binding + 0) + ", 2)]] "; // Descriptor set 2
 
-			code += "Texture2D __"     + info.unique_name + " : register(t" + std::to_string(info.binding + 0) + ");\n";
+			code += "Texture";
+			code += '1' + static_cast<char>(static_cast<uint32_t>(info.type) - static_cast<uint32_t>(texture_type::texture_1d));
+			code += "D __"     + info.unique_name + " : register(t" + std::to_string(info.binding + 0) + "); \n";
 
 			if (_shader_model >= 60)
 				code += "[[vk::binding(" + std::to_string(info.binding + 1) + ", 2)]] "; // Descriptor set 2
 
-			code += "Texture2D __srgb" + info.unique_name + " : register(t" + std::to_string(info.binding + 1) + ");\n";
+			code += "Texture";
+			code += '1' + static_cast<char>(static_cast<uint32_t>(info.type) - static_cast<uint32_t>(texture_type::texture_1d));
+			code += "D __srgb" + info.unique_name + " : register(t" + std::to_string(info.binding + 1) + "); \n";
 		}
 
 		_module.textures.push_back(info);
 
 		return info.id;
 	}
-	id   define_sampler(const location &loc, sampler_info &info) override
+	id   define_sampler(const location &loc, const texture_info &tex_info, sampler_info &info) override
 	{
 		info.id = make_id();
 
 		define_name<naming::unique>(info.id, info.unique_name);
-
-		const auto texture = std::find_if(_module.textures.begin(), _module.textures.end(),
-			[&info](const auto &it) {
-				return it.unique_name == info.texture_name;
-			});
-		assert(texture != _module.textures.end());
 
 		std::string &code = _blocks.at(_current_block);
 
@@ -480,27 +489,42 @@ private:
 			}
 
 			assert(info.srgb == 0 || info.srgb == 1);
-			info.texture_binding = texture->binding + info.srgb; // Offset binding by one to choose the SRGB variant
+			info.texture_binding = tex_info.binding + info.srgb; // Offset binding by one to choose the SRGB variant
 
 			write_location(code, loc);
 
-			code += "static const __sampler2D " + id_to_name(info.id) + " = { " + (info.srgb ? "__srgb" : "__") + info.texture_name + ", __s" + std::to_string(info.binding) + " };\n";
+			code += "static const __sampler";
+			code += '1' + static_cast<char>(static_cast<uint32_t>(tex_info.type) - static_cast<uint32_t>(texture_type::texture_1d));
+			code += "D " + id_to_name(info.id) + " = { " + (info.srgb ? "__srgb" : "__") + info.texture_name + ", __s" + std::to_string(info.binding) + " };\n";
 		}
 		else
 		{
 			info.binding = _module.num_sampler_bindings++;
 			info.texture_binding = ~0u; // Unset texture binding
 
-			code += "sampler2D __" + info.unique_name + "_s : register(s" + std::to_string(info.binding) + ");\n";
+			code += "sampler";
+			code += '1' + static_cast<char>(static_cast<uint32_t>(tex_info.type) - static_cast<uint32_t>(texture_type::texture_1d));
+			code += "D __" + info.unique_name + "_s : register(s" + std::to_string(info.binding) + "); \n";
 
 			write_location(code, loc);
 
-			code += "static const __sampler2D " + id_to_name(info.id) + " = { __" + info.unique_name + "_s, float2(";
+			code += "static const __sampler";
+			code += '1' + static_cast<char>(static_cast<uint32_t>(tex_info.type) - static_cast<uint32_t>(texture_type::texture_1d));
+			code += "D " + id_to_name(info.id) + " = { __" + info.unique_name + "_s, float2(";
 
-			if (texture->semantic.empty())
-				code += "1.0 / " + std::to_string(texture->width) + ", 1.0 / " + std::to_string(texture->height);
+			if (tex_info.semantic.empty())
+			{
+				if (tex_info.type >= texture_type::texture_1d)
+					code += "1.0 / " + std::to_string(tex_info.width);
+				if (tex_info.type >= texture_type::texture_2d)
+					code += ", 1.0 / " + std::to_string(tex_info.height);
+				if (tex_info.type >= texture_type::texture_3d)
+					code += ", 1.0 / " + std::to_string(tex_info.depth);
+			}
 			else
-				code += texture->semantic + "_PIXEL_SIZE"; // Expect application to set inverse texture size via a define if it is not known here
+			{
+				code += tex_info.semantic + "_PIXEL_SIZE"; // Expect application to set inverse texture size via a define if it is not known here
+			}
 
 			code += ") }; \n";
 		}
@@ -509,7 +533,7 @@ private:
 
 		return info.id;
 	}
-	id   define_storage(const location &loc, storage_info &info) override
+	id   define_storage(const location &loc, const texture_info &tex_info, storage_info &info) override
 	{
 		info.id = make_id();
 		info.binding = ~0u;
@@ -527,7 +551,9 @@ private:
 			if (_shader_model >= 60)
 				code += "[[vk::binding(" + std::to_string(info.binding) + ", 3)]] "; // Descriptor set 3
 
-			code += "RWTexture2D<";
+			code += "RWTexture";
+			code += '1' + static_cast<char>(static_cast<uint32_t>(tex_info.type) - static_cast<uint32_t>(texture_type::texture_1d));
+			code += "D<";
 
 			switch (info.format)
 			{

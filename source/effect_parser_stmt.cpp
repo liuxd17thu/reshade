@@ -1386,9 +1386,12 @@ bool reshadefx::parser::parse_variable(type type, std::string name, bool global)
 						warning(expression.location, 3571, "negative value specified for property '" + property_name + '\'');
 
 					if (property_name == "Width")
-						texture_info.width  = value > 0 ? value : 1;
+						texture_info.width = value > 0 ? value : 1;
 					else if (property_name == "Height")
 						texture_info.height = value > 0 ? value : 1;
+					else if (property_name == "Depth")
+						texture_info.depth = value > 0 && value <= std::numeric_limits<uint16_t>::max() ?
+							static_cast<uint16_t>(value) : 1;
 					else if (property_name == "MipLevels")
 						texture_info.levels = value > 0 && value <= std::numeric_limits<uint16_t>::max() ?
 							static_cast<uint16_t>(value) : 1; // Also ensures negative values do not cause problems
@@ -1446,6 +1449,8 @@ bool reshadefx::parser::parse_variable(type type, std::string name, bool global)
 	{
 		assert(global);
 
+		texture_info.type = static_cast<texture_type>(type.definition);
+
 		texture_info.name = name;
 		// Add namespace scope to avoid name clashes
 		texture_info.unique_name = 'V' + current_scope().name + name;
@@ -1472,7 +1477,7 @@ bool reshadefx::parser::parse_variable(type type, std::string name, bool global)
 		std::replace(sampler_info.unique_name.begin(), sampler_info.unique_name.end(), ':', '_');
 
 		symbol = { symbol_type::variable, 0, type };
-		symbol.id = _codegen->define_sampler(location, sampler_info);
+		symbol.id = _codegen->define_sampler(location, texture_info, sampler_info);
 	}
 	else if (type.is_storage())
 	{
@@ -1491,7 +1496,7 @@ bool reshadefx::parser::parse_variable(type type, std::string name, bool global)
 			storage_info.level = texture_info.levels - 1;
 
 		symbol = { symbol_type::variable, 0, type };
-		symbol.id = _codegen->define_storage(location, storage_info);
+		symbol.id = _codegen->define_storage(location, texture_info, storage_info);
 	}
 	// Uniform variables are put into a global uniform buffer structure
 	else if (type.has(type::q_uniform))

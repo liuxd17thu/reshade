@@ -482,7 +482,7 @@ private:
 				break;
 			case type::t_sampler:
 				assert(info.rows == 0 && info.cols == 0);
-				elem_type = convert_type({ type::t_texture, 0, 0, type::q_uniform }, false, storage, format);
+				elem_type = convert_type({ type::t_texture, 0, 0, type::q_uniform, 0, info.definition }, false, storage, format);
 				add_instruction(spv::OpTypeSampledImage, 0, _types_and_constants, type)
 					.add(elem_type);
 				break;
@@ -493,10 +493,11 @@ private:
 				[[fallthrough]];
 			case type::t_texture:
 				assert(info.rows == 0 && info.cols == 0);
+				assert(info.definition == static_cast<uint32_t>(texture_type::texture_1d) || info.definition == static_cast<uint32_t>(texture_type::texture_2d) || info.definition == static_cast<uint32_t>(texture_type::texture_3d));
 				elem_type = convert_type({ type::t_float, 1, 1 });
 				add_instruction(spv::OpTypeImage, 0, _types_and_constants, type)
 					.add(elem_type) // Sampled Type
-					.add(spv::Dim2D)
+					.add(spv::Dim1D + (info.definition - static_cast<uint32_t>(texture_type::texture_1d)))
 					.add(0) // Not a depth image
 					.add(0) // Not an array
 					.add(0) // Not multi-sampled
@@ -733,9 +734,9 @@ private:
 
 		return info.id;
 	}
-	id   define_sampler(const location &loc, sampler_info &info) override
+	id   define_sampler(const location &loc, const texture_info &tex_info, sampler_info &info) override
 	{
-		info.id = define_variable(loc, { type::t_sampler, 0, 0, type::q_extern | type::q_uniform }, info.unique_name.c_str(), spv::StorageClassUniformConstant);
+		info.id = define_variable(loc, { type::t_sampler, 0, 0, type::q_extern | type::q_uniform, 0, static_cast<uint32_t>(tex_info.type) }, info.unique_name.c_str(), spv::StorageClassUniformConstant);
 		info.binding = _module.num_sampler_bindings++;
 		info.texture_binding = ~0u;
 
@@ -746,9 +747,9 @@ private:
 
 		return info.id;
 	}
-	id   define_storage(const location &loc, storage_info &info) override
+	id   define_storage(const location &loc, const texture_info &tex_info, storage_info &info) override
 	{
-		info.id = define_variable(loc, { type::t_storage, 0, 0, type::q_extern | type::q_uniform }, info.unique_name.c_str(), spv::StorageClassUniformConstant, format_to_image_format(info.format));
+		info.id = define_variable(loc, { type::t_storage, 0, 0, type::q_extern | type::q_uniform, 0, static_cast<uint32_t>(tex_info.type) }, info.unique_name.c_str(), spv::StorageClassUniformConstant, format_to_image_format(info.format));
 		info.binding = _module.num_storage_bindings++;
 
 		add_decoration(info.id, spv::DecorationBinding, { info.binding });
