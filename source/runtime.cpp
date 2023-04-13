@@ -4147,6 +4147,12 @@ void reshade::runtime::render_technique(technique &tech, api::command_list *cmd_
 
 void reshade::runtime::save_texture(const texture &tex)
 {
+	if (tex.type != reshadefx::texture_type::texture_2d)
+	{
+		LOG(ERROR) << "Texture saving is only supported for 2D textures.";
+		return;
+	}
+
 	std::string filename = tex.unique_name;
 	filename += (_screenshot_format == 0 ? ".bmp" : _screenshot_format == 1 ? ".png" : ".jpg");
 
@@ -4203,6 +4209,12 @@ void reshade::runtime::save_texture(const texture &tex)
 }
 void reshade::runtime::update_texture(texture &tex, uint32_t width, uint32_t height, const uint8_t *pixels)
 {
+	if (tex.type != reshadefx::texture_type::texture_2d)
+	{
+		LOG(ERROR) << "Texture upload is only supported for 2D textures.";
+		return;
+	}
+
 	std::vector<uint8_t> resized(static_cast<size_t>(tex.width) * static_cast<size_t>(tex.height) * 4);
 	// Need to potentially resize image data to the texture dimensions
 	if (tex.width != width || tex.height != height)

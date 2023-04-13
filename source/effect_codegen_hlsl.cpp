@@ -510,7 +510,9 @@ private:
 
 			code += "static const __sampler";
 			code += '1' + static_cast<char>(static_cast<uint32_t>(tex_info.type) - static_cast<uint32_t>(texture_type::texture_1d));
-			code += "D " + id_to_name(info.id) + " = { __" + info.unique_name + "_s, float2(";
+			code += "D " + id_to_name(info.id) + " = { __" + info.unique_name + "_s, float";
+			code += '1' + static_cast<char>(static_cast<uint32_t>(tex_info.type) - static_cast<uint32_t>(texture_type::texture_1d));
+			code += '(';
 
 			if (tex_info.semantic.empty())
 			{

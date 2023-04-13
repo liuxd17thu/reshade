@@ -1468,6 +1468,8 @@ bool reshadefx::parser::parse_variable(type type, std::string name, bool global)
 
 		if (sampler_info.texture_name.empty())
 			return error(location, 3012, '\'' + name + "': missing 'Texture' property"), false;
+		if (type.definition != static_cast<uint32_t>(texture_info.type))
+			return error(location, 3521, '\'' + name + "': type mismatch of 'Texture' property"), false;
 		if (sampler_info.srgb && texture_info.format != texture_format::rgba8)
 			return error(location, 4582, '\'' + name + "': texture does not support sRGB sampling (only textures with RGBA8 format do)"), false;
 
