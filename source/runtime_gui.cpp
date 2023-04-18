@@ -1003,7 +1003,7 @@ void reshade::runtime::draw_gui()
 
 		const ImGuiID root_space_id = ImGui::GetID("Dockspace");
 		const ImGuiViewport *const viewport = ImGui::GetMainViewport(); // original
-		//auto _build_viewport_with_ime = [=]()
+		//auto _build_viewport_with_ime = [=]()`
 		//{
 		//	ImGuiViewport *tmp = ImGui::GetMainViewport();
 		//	tmp->PlatformHandleRaw = reshade::runtime::get_hwnd();
@@ -1494,7 +1494,7 @@ void reshade::runtime::draw_gui_home()
 
 	if (_tutorial_index > 1)
 	{
-		if (imgui::search_input_box(_effect_filter, sizeof(_effect_filter), -((_variable_editor_tabs ? 1 : 2) * (_imgui_context->Style.ItemSpacing.x + 2.0f + 11.0f * _font_size))))
+		if (imgui::search_input_box(_effect_filter, sizeof(_effect_filter), -((_variable_editor_tabs ? 1 : 2) * (_imgui_context->Style.ItemSpacing.x + 2.0f + 8.0f * _font_size))))
 		{
 			_effects_expanded_state = 3;
 
@@ -1512,7 +1512,7 @@ void reshade::runtime::draw_gui_home()
 
 		ImGui::BeginDisabled(_is_in_between_presets_transition);
 
-		if (ImGui::Button("置顶激活效果", ImVec2(auto_save_button_spacing + 11.0f * _font_size, 0)))
+		if (ImGui::Button("置顶激活效果", ImVec2(auto_save_button_spacing + 8.0f * _font_size, 0)))
 		{
 			std::vector<size_t> technique_indices = _technique_sorting;
 
@@ -1540,7 +1540,7 @@ void reshade::runtime::draw_gui_home()
 		{
 			ImGui::SameLine();
 
-			if (ImGui::Button((_effects_expanded_state & 2) ? "全部折叠" : "全部展开", ImVec2(auto_save_button_spacing + 11.0f * _font_size, 0)))
+			if (ImGui::Button((_effects_expanded_state & 2) ? "全部折叠" : "全部展开", ImVec2(auto_save_button_spacing + 8.0f * _font_size, 0)))
 				_effects_expanded_state = (~_effects_expanded_state & 2) | 1;
 		}
 
@@ -2530,11 +2530,14 @@ void reshade::runtime::draw_gui_log()
 }
 void reshade::runtime::draw_gui_about()
 {
-	ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT);
+	ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT " zh_CN-v0.5");
 
-	ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 7.3f * _font_size);
-	if (ImGui::SmallButton(" 打开网站 "))
+	ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 7.8f * _font_size);
+	if (ImGui::SmallButton(" 打开官网 "))
 		utils::execute_command("https://reshade.me");
+	ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 3.5f * _font_size);
+	if (ImGui::SmallButton(" 汉化源码 "))
+		utils::execute_command("https://github.com/liuxd17thu/reshade.git");
 
 	ImGui::Separator();
 
@@ -2542,7 +2545,7 @@ void reshade::runtime::draw_gui_about()
 
 	ImGui::TextUnformatted("Developed and maintained by crosire.");
 	ImGui::TextUnformatted("汉化：路障MKXX");
-	ImGui::TextUnformatted("联系方式：微博@路障MKXX | wujingluren@NGA");
+	ImGui::TextUnformatted("联系方式：[微博同名] | 路障MKXX @FF14-宇宙和音 | wujingluren @NGA | liuxd17thu @github");
 	ImGui::TextUnformatted("感谢【激战2玩家 印度神油君 id维爵爷.7046】提供的5.6.0汉化！");
 	ImGui::TextUnformatted("This project makes use of several open source libraries, licenses of which are listed below:");
 
@@ -3326,7 +3329,7 @@ void reshade::runtime::draw_technique_editor()
 		for (const std::filesystem::path &search_path : _effect_search_paths)
 			ImGui::TextColored(COLOR_YELLOW, "  %s", (g_reshade_base_path / search_path).lexically_normal().u8string().c_str());
 		ImGui::Spacing();
-		ImGui::TextColored(COLOR_YELLOW, "请确认搜索路径设置正确，然后点击 '重载'！");
+		ImGui::TextColored(COLOR_YELLOW, "请确认搜索路径设置正确，然后点击 “重新加载”！");
 		return;
 	}
 
