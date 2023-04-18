@@ -208,7 +208,7 @@ reshade::runtime::runtime(api::device *device, api::command_queue *graphics_queu
 {
 	assert(device != nullptr && graphics_queue != nullptr);
 
-	_needs_update = check_for_update(_latest_version);
+	//_needs_update = check_for_update(_latest_version);
 
 	// Default shortcut PrtScrn
 	_screenshot_key_data[0] = 0x2C;

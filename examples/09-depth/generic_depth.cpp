@@ -987,7 +987,7 @@ static void draw_settings_overlay(effect_runtime *runtime)
 	bool force_reset = false;
 
 	if (bool use_aspect_ratio_heuristics = s_use_aspect_ratio_heuristics != 0;
-		ImGui::Checkbox("Use aspect ratio heuristics", &use_aspect_ratio_heuristics))
+		ImGui::Checkbox("使用启发式纵横比", &use_aspect_ratio_heuristics))
 	{
 		s_use_aspect_ratio_heuristics = use_aspect_ratio_heuristics ? 1 : 0;
 		reshade::config_set_value(nullptr, "DEPTH", "UseAspectRatioHeuristics", s_use_aspect_ratio_heuristics);
@@ -997,7 +997,7 @@ static void draw_settings_overlay(effect_runtime *runtime)
 	if (s_use_aspect_ratio_heuristics)
 	{
 		if (bool use_aspect_ratio_heuristics_ex = s_use_aspect_ratio_heuristics == 2;
-			ImGui::Checkbox("Use extended aspect ratio heuristics (for DLSS or resolution scaling)", &use_aspect_ratio_heuristics_ex))
+			ImGui::Checkbox("使用扩展的启发式纵横比（用于DLSS或分辨率缩放）", &use_aspect_ratio_heuristics_ex))
 		{
 			s_use_aspect_ratio_heuristics = use_aspect_ratio_heuristics_ex ? 2 : 1;
 			reshade::config_set_value(nullptr, "DEPTH", "UseAspectRatioHeuristics", s_use_aspect_ratio_heuristics);
@@ -1006,7 +1006,7 @@ static void draw_settings_overlay(effect_runtime *runtime)
 	}
 
 	if (bool copy_before_clear_operations = s_preserve_depth_buffers != 0;
-		ImGui::Checkbox("Copy depth buffer before clear operations", &copy_before_clear_operations))
+		ImGui::Checkbox("在清除操作前复制深度缓冲区", &copy_before_clear_operations))
 	{
 		s_preserve_depth_buffers = copy_before_clear_operations ? 1 : 0;
 		reshade::config_set_value(nullptr, "DEPTH", "DepthCopyBeforeClears", s_preserve_depth_buffers);
@@ -1019,7 +1019,7 @@ static void draw_settings_overlay(effect_runtime *runtime)
 	if (s_preserve_depth_buffers || is_d3d12_or_vulkan)
 	{
 		if (bool copy_before_fullscreen_draws = s_preserve_depth_buffers == 2;
-			ImGui::Checkbox(is_d3d12_or_vulkan ? "Copy depth buffer during frame to prevent artifacts" : "Copy depth buffer before fullscreen draw calls", &copy_before_fullscreen_draws))
+			ImGui::Checkbox(is_d3d12_or_vulkan ? "在帧期间复制深度缓冲区以防止伪影" : "全屏绘制调用前复制深度缓冲区", &copy_before_fullscreen_draws))
 		{
 			s_preserve_depth_buffers = copy_before_fullscreen_draws ? 2 : 1;
 			reshade::config_set_value(nullptr, "DEPTH", "DepthCopyBeforeClears", s_preserve_depth_buffers);
@@ -1037,7 +1037,7 @@ static void draw_settings_overlay(effect_runtime *runtime)
 
 	if (device_data.depth_stencil_resources.empty())
 	{
-		ImGui::TextUnformatted("No depth buffers found.");
+		ImGui::TextUnformatted("未找到深度缓冲区。");
 		return;
 	}
 
@@ -1144,7 +1144,7 @@ static void draw_settings_overlay(effect_runtime *runtime)
 			if (sorted_item_list.size() == 1 && !is_d3d12_or_vulkan)
 			{
 				if (bool value = (depth_stencil_backup->force_clear_index == std::numeric_limits<uint32_t>::max());
-					ImGui::Checkbox("    Choose last clear operation with high number of draw calls", &value))
+					ImGui::Checkbox("    选择上一次具有大量绘制调用的清除操作", &value))
 				{
 					depth_stencil_backup->force_clear_index = value ? std::numeric_limits<uint32_t>::max() : 0;
 					reshade::config_set_value(nullptr, "DEPTH", "DepthCopyAtClearIndex", depth_stencil_backup->force_clear_index);
@@ -1161,10 +1161,10 @@ static void draw_settings_overlay(effect_runtime *runtime)
 
 		ImGui::PushTextWrapPos();
 		if (has_msaa_depth_stencil)
-			ImGui::TextUnformatted("Not all depth buffers are available.\nYou may have to disable MSAA in the game settings for depth buffer detection to work!");
+			ImGui::TextUnformatted("并非所有深度缓冲区都可用。\n您可能需要在游戏设置中禁用 MSAA，深度缓冲区检测才能正常工作！");
 		if (has_no_clear_operations)
-			ImGui::Text("No clear operations were found for the selected depth buffer.\n%s",
-				s_preserve_depth_buffers != 2 ? "Try enabling \"Copy depth buffer before fullscreen draw calls\" or disable \"Copy depth buffer before clear operations\"!" : "Disable \"Copy depth buffer before clear operations\" or select a different depth buffer!");
+			ImGui::Text("未找到所选深度缓冲区的清除操作。\n%s",
+				s_preserve_depth_buffers != 2 ? "尝试启用 \"全屏绘制调用前复制深度缓冲区\" 或启用 \"清除操作前复制深度缓冲区\"!" : "禁用 \"清除操作前复制深度缓冲区\" 或选择其他深度缓冲区！");
 		ImGui::PopTextWrapPos();
 	}
 
@@ -1261,8 +1261,8 @@ void unregister_addon_depth()
 
 #ifndef BUILTIN_ADDON
 
-extern "C" __declspec(dllexport) const char *NAME = "Generic Depth";
-extern "C" __declspec(dllexport) const char *DESCRIPTION = "Automatic depth buffer detection that works in the majority of games.";
+extern "C" __declspec(dllexport) const char *NAME = "通用深度";
+extern "C" __declspec(dllexport) const char *DESCRIPTION = "自动深度缓冲检测，适用于大多数游戏。";
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 {

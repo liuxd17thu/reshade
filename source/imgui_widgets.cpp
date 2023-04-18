@@ -199,9 +199,9 @@ bool reshade::imgui::file_dialog(const char *name, std::filesystem::path &path, 
 	}
 
 	ImGui::SameLine();
-	const bool select = ImGui::Button(ICON_FK_OK " Select", ImVec2(button_size, 0));
+	const bool select = ImGui::Button(ICON_FK_OK " 选择", ImVec2(button_size, 0));
 	ImGui::SameLine();
-	const bool cancel = ImGui::Button(ICON_FK_CANCEL " Cancel", ImVec2(button_size, 0));
+	const bool cancel = ImGui::Button(ICON_FK_CANCEL " 取消", ImVec2(button_size, 0));
 
 	// Navigate into directory when clicking select button
 	if (select && path.has_stem() && std::filesystem::is_directory(path, ec))
@@ -225,7 +225,7 @@ bool reshade::imgui::key_input_box(const char *name, unsigned int key[4], const 
 
 	ImGui::BeginDisabled(ImGui::GetCurrentContext()->NavInputSource == ImGuiInputSource_Gamepad);
 
-	ImGui::InputTextWithHint(name, "Click to set keyboard shortcut", buf, sizeof(buf), ImGuiInputTextFlags_ReadOnly | ImGuiInputTextFlags_NoUndoRedo | ImGuiInputTextFlags_NoHorizontalScroll);
+	ImGui::InputTextWithHint(name, "单击设置键盘快捷键", buf, sizeof(buf), ImGuiInputTextFlags_ReadOnly | ImGuiInputTextFlags_NoUndoRedo | ImGuiInputTextFlags_NoHorizontalScroll);
 
 	if (ImGui::IsItemActive())
 	{
@@ -252,7 +252,7 @@ bool reshade::imgui::key_input_box(const char *name, unsigned int key[4], const 
 	}
 	else if (ImGui::IsItemHovered())
 	{
-		ImGui::SetTooltip("Click in the field and press any key to change the shortcut to that key.");
+		ImGui::SetTooltip("在字段中单击，并按任意键以更改快捷键");
 	}
 
 	ImGui::EndDisabled();
@@ -269,7 +269,7 @@ bool reshade::imgui::font_input_box(const char *name, std::filesystem::path &pat
 	ImGui::PushID(name);
 
 	ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - spacing - 80);
-	if (file_input_box("##font", nullptr, path, dialog_path, { L".ttf" }))
+	if (file_input_box("##font", nullptr, path, dialog_path, { L".ttf", L".ttc"}))
 		res = true;
 
 	// Reset to the default font name if path is empty
@@ -296,7 +296,7 @@ bool reshade::imgui::search_input_box(char *filter, int filter_size, float width
 	bool res = false;
 	const bool show_clear_button = filter[0] != '\0';
 
-	if (ImGui::InputTextEx("##filter", "Search " ICON_FK_SEARCH, filter, filter_size,
+	if (ImGui::InputTextEx("##filter", "搜索 " ICON_FK_SEARCH, filter, filter_size,
 			ImVec2(width - (show_clear_button ? ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.x : 0.0001f), 0), ImGuiInputTextFlags_AutoSelectAll))
 		res = true;
 
@@ -453,13 +453,13 @@ bool reshade::imgui::confirm_button(const char *label, float width, const char *
 
 		const float button_width = (ImGui::GetContentRegionAvail().x / 2) - ImGui::GetStyle().ItemInnerSpacing.x;
 
-		if (ImGui::Button(ICON_FK_OK " Yes", ImVec2(button_width, 0)))
+		if (ImGui::Button(ICON_FK_OK " 是", ImVec2(button_width, 0)))
 		{
 			ImGui::CloseCurrentPopup();
 			modified = true;
 		}
 		ImGui::SameLine();
-		if (ImGui::Button(ICON_FK_CANCEL " No", ImVec2(button_width, 0)))
+		if (ImGui::Button(ICON_FK_CANCEL " 否", ImVec2(button_width, 0)))
 		{
 			ImGui::CloseCurrentPopup();
 		}

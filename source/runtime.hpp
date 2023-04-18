@@ -497,8 +497,8 @@ namespace reshade
 		int _editor_font_size = 0;
 		int _style_index = 2;
 		int _editor_style_index = 0;
-		std::filesystem::path _font;
-		std::filesystem::path _editor_font;
+		std::filesystem::path _font = "C:\\Windows\\Fonts\\msyh.ttc";
+		std::filesystem::path _editor_font = "C:\\Windows\\Fonts\\msyh.ttc";
 		std::filesystem::path _file_selection_path;
 		float _fps_col[4] = { 1.0f, 1.0f, 0.784314f, 1.0f };
 		float _fps_scale = 1.0f;

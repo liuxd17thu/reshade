@@ -125,7 +125,7 @@ void reshade::runtime::build_font_atlas()
 		const std::filesystem::path &font_path = (i == 0) ? _font : _editor_font;
 
 		std::error_code ec;
-		if (!std::filesystem::is_regular_file(font_path, ec) || !atlas->AddFontFromFileTTF(font_path.u8string().c_str(), cfg.SizePixels))
+		if (!std::filesystem::is_regular_file(font_path, ec) || !atlas->AddFontFromFileTTF(font_path.u8string().c_str(), cfg.SizePixels, &cfg, atlas->GetGlyphRangesChineseFull()))
 			atlas->AddFontDefault(&cfg); // Use default font if custom font failed to load or does not exist
 
 		if (i == 0)
@@ -179,8 +179,8 @@ void reshade::runtime::build_font_atlas()
 
 	// Create font atlas texture and upload it
 	if (!_device->create_resource(
-			api::resource_desc(width, height, 1, 1, api::format::r8g8b8a8_unorm, 1, api::memory_heap::gpu_only, api::resource_usage::shader_resource),
-			&initial_data, api::resource_usage::shader_resource, &_font_atlas_tex))
+		api::resource_desc(width, height, 1, 1, api::format::r8g8b8a8_unorm, 1, api::memory_heap::gpu_only, api::resource_usage::shader_resource),
+		&initial_data, api::resource_usage::shader_resource, &_font_atlas_tex))
 	{
 		LOG(ERROR) << "Failed to create front atlas resource!";
 		return;
@@ -241,7 +241,7 @@ void reshade::runtime::load_config_gui(const ini_file &config)
 
 	// For compatibility with older versions, set the alpha value if it is missing
 	if (_fps_col[3] == 0.0f)
-		_fps_col[3]  = 1.0f;
+		_fps_col[3] = 1.0f;
 
 	load_custom_style();
 
@@ -623,7 +623,7 @@ void reshade::runtime::load_custom_style()
 		ImVec4 value;
 		for (ImGuiCol i = 0; i < imgui::code_editor::color_palette_max; i++)
 			value = ImGui::ColorConvertU32ToFloat4(_editor_palette[i]), // Get default value first
-			config.get("STYLE",  imgui::code_editor::get_palette_color_name(i), (float(&)[4])value),
+			config.get("STYLE", imgui::code_editor::get_palette_color_name(i), (float(&)[4])value),
 			_editor_palette[i] = ImGui::ColorConvertFloat4ToU32(value);
 		break;
 	}
@@ -643,7 +643,7 @@ void reshade::runtime::save_custom_style() const
 		ImVec4 value;
 		for (ImGuiCol i = 0; i < imgui::code_editor::color_palette_max; i++)
 			value = ImGui::ColorConvertU32ToFloat4(_editor_palette[i]),
-			config.set("STYLE",  imgui::code_editor::get_palette_color_name(i), (const float(&)[4])value);
+			config.set("STYLE", imgui::code_editor::get_palette_color_name(i), (const float(&)[4])value);
 	}
 }
 
@@ -815,20 +815,20 @@ void reshade::runtime::draw_gui()
 		if (!_preset_save_successfull)
 		{
 #if RESHADE_FX
-			ImGui::TextColored(COLOR_RED, "Unable to save configuration and/or current preset. Make sure file permissions are set up to allow writing to these paths and their parent directories:\n%s\n%s", _config_path.u8string().c_str(), _current_preset_path.u8string().c_str());
+			ImGui::TextColored(COLOR_RED, "无法保存配置和/或当前预设。确保文件权限设置为允许写入这些路径及其父目录:\n%s\n%s", _config_path.u8string().c_str(), _current_preset_path.u8string().c_str());
 #else
-			ImGui::TextColored(COLOR_RED, "Unable to save configuration. Make sure file permissions are set up to allow writing to %s.", _config_path.u8string().c_str());
+			ImGui::TextColored(COLOR_RED, "无法保存配置。确保文件权限设置为允许写入 %s.", _config_path.u8string().c_str());
 #endif
 		}
 		else if (show_screenshot_message)
 		{
 			if (!_last_screenshot_save_successfull)
 				if (_screenshot_directory_creation_successfull)
-					ImGui::TextColored(COLOR_RED, "Unable to save screenshot because of an internal error (the format may not be supported or the drive may be full).");
+					ImGui::TextColored(COLOR_RED, "由于内部错误，无法保存截图 (格式可能不受支持，或磁盘已满).");
 				else
-					ImGui::TextColored(COLOR_RED, "Unable to save screenshot because path could not be created: %s", (g_reshade_base_path / _screenshot_path).u8string().c_str());
+					ImGui::TextColored(COLOR_RED, "由于无法创建路径 %s，无法保存截图", (g_reshade_base_path / _screenshot_path).u8string().c_str());
 			else
-				ImGui::Text("Screenshot successfully saved to %s", _last_screenshot_file.u8string().c_str());
+				ImGui::Text("截图已成功保存至 %s", _last_screenshot_file.u8string().c_str());
 		}
 		else
 		{
@@ -842,7 +842,8 @@ void reshade::runtime::draw_gui()
 			}
 			else
 			{
-				ImGui::TextUnformatted("Visit https://reshade.me for news, updates, effects and discussion.");
+				//ImGui::TextColored(COLOR_YELLOW, "此界面 可在设置中勾选\"禁用消息提示框\"禁用");
+				ImGui::TextUnformatted("访问https://reshade.me获取新闻、更新、效果和讨论。 ");
 			}
 
 			ImGui::Spacing();
@@ -853,8 +854,8 @@ void reshade::runtime::draw_gui()
 				ImGui::ProgressBar((_effects.size() - _reload_remaining_effects) / float(_effects.size()), ImVec2(-1, 0), "");
 				ImGui::SameLine(15);
 				ImGui::Text(
-					"Compiling (%zu effects remaining) ... "
-					"This might take a while. The application could become unresponsive for some time.",
+					"编译 (剩余 %zu 个效果) ... "
+					"请稍等。程序可能暂时没有响应。",
 					_reload_remaining_effects.load());
 			}
 			else
@@ -865,42 +866,42 @@ void reshade::runtime::draw_gui()
 
 				if (_input == nullptr)
 				{
-					ImGui::TextColored(COLOR_YELLOW, "No keyboard or mouse input available.%s", _input_gamepad != nullptr ? " Use gamepad instead: Press 'left + right shoulder + start button' to open the configuration overlay." : "");
+					ImGui::TextColored(COLOR_YELLOW, "没有键盘或鼠标输入。%s", _input_gamepad != nullptr ? " 或者使用手柄：按下 左+右肩键 + START键 开启配置面板。 " : "");
 				}
 #if RESHADE_FX
 				else if (_tutorial_index == 0)
 				{
-					ImGui::TextUnformatted("ReShade is now installed successfully! Press '");
+					ImGui::TextUnformatted("ReShade现已成功安装！按 '");
 					ImGui::SameLine(0.0f, 0.0f);
 					ImGui::TextColored(ImVec4(1, 1, 1, 1), "%s", input::key_name(_overlay_key_data).c_str());
 					ImGui::SameLine(0.0f, 0.0f);
-					ImGui::TextUnformatted("' to start the tutorial.");
+					ImGui::TextUnformatted("' 键，开始教程。");
 				}
 #endif
 				else
 				{
-					ImGui::TextUnformatted("Press '");
+					ImGui::TextUnformatted("按 '");
 					ImGui::SameLine(0.0f, 0.0f);
 					ImGui::TextColored(ImVec4(1, 1, 1, 1), "%s", input::key_name(_overlay_key_data).c_str());
 					ImGui::SameLine(0.0f, 0.0f);
-					ImGui::TextUnformatted("' to open the configuration overlay.");
+					ImGui::TextUnformatted("' 键，打开配置面板。");
 				}
 			}
 
 			std::string error_message;
 #if RESHADE_ADDON
 			if (!addon_all_loaded)
-				error_message += "loading some add-ons";
+				error_message += "加载一些插件时";
 #endif
 #if RESHADE_FX
 			if (!_last_reload_successfull)
-				error_message += (error_message.empty() ? std::string() : " and ") + "compiling some effects";
+				error_message += (error_message.empty() ? std::string() : " and ") + "编译一些效果时";
 #endif
 			if (!error_message.empty())
 			{
 				ImGui::Spacing();
 				ImGui::TextColored(COLOR_RED,
-					"There were errors %s. Check the log for more details.", error_message.c_str());
+					"%s 出现了错误，请查看日志以获得详细信息。", error_message.c_str());
 			}
 		}
 
@@ -918,7 +919,7 @@ void reshade::runtime::draw_gui()
 		// Get last calculated window size (because of 'ImGuiWindowFlags_AlwaysAutoResize')
 		if (ImGuiWindow *const fps_window = ImGui::FindWindowByName("OSD"))
 		{
-			fps_window_size  = fps_window->Size;
+			fps_window_size = fps_window->Size;
 			fps_window_size.y = std::max(fps_window_size.y, _imgui_context->Style.FramePadding.y * 4.0f + _imgui_context->Style.ItemSpacing.y +
 				(_imgui_context->Style.ItemSpacing.y + _imgui_context->FontBaseSize * _fps_scale) * ((show_clock ? 1 : 0) + (show_fps ? 1 : 0) + (show_frametime ? 1 : 0)));
 		}
@@ -987,21 +988,29 @@ void reshade::runtime::draw_gui()
 			save_config();
 		}
 
-		static constexpr std::pair<const char *, void(runtime::*)()> overlay_callbacks[] = {
+		static constexpr std::pair<const char *, void(runtime:: *)()> overlay_callbacks[] = {
 #if RESHADE_FX
-			{ "Home", &runtime::draw_gui_home },
+			{ "主页", &runtime::draw_gui_home },
 #endif
 #if RESHADE_ADDON
-			{ "Add-ons", &runtime::draw_gui_addons },
+			{ "插件", &runtime::draw_gui_addons },
 #endif
-			{ "Settings", &runtime::draw_gui_settings },
-			{ "Statistics", &runtime::draw_gui_statistics },
-			{ "Log", &runtime::draw_gui_log },
-			{ "About", &runtime::draw_gui_about }
+			{ "设置", &runtime::draw_gui_settings },
+			{ "统计", &runtime::draw_gui_statistics },
+			{ "日志", &runtime::draw_gui_log },
+			{ "关于", &runtime::draw_gui_about }
 		};
 
 		const ImGuiID root_space_id = ImGui::GetID("Dockspace");
-		const ImGuiViewport *const viewport = ImGui::GetMainViewport();
+		const ImGuiViewport *const viewport = ImGui::GetMainViewport(); // original
+		//auto _build_viewport_with_ime = [=]()
+		//{
+		//	ImGuiViewport *tmp = ImGui::GetMainViewport();
+		//	tmp->PlatformHandleRaw = reshade::runtime::get_hwnd();
+		//	const ImGuiViewport *const viewport(tmp);
+		//	return viewport;
+		//};
+		//const ImGuiViewport *const viewport = _build_viewport_with_ime();
 
 		// Set up default dock layout if this was not done yet
 		const bool init_window_layout = !ImGui::DockBuilderGetNode(root_space_id);
@@ -1017,7 +1026,7 @@ void reshade::runtime::draw_gui()
 			ImGui::DockBuilderSplitNode(root_space_id, ImGuiDir_Left, 0.35f, &main_space_id, &right_space_id);
 
 			// Attach most windows to the main dock space
-			for (const std::pair<const char *, void(runtime::*)()> &widget : overlay_callbacks)
+			for (const std::pair<const char *, void(runtime:: *)()> &widget : overlay_callbacks)
 				ImGui::DockBuilderDockWindow(widget.first, main_space_id);
 
 			// Attach editor window to the remaining dock space
@@ -1061,7 +1070,7 @@ void reshade::runtime::draw_gui()
 #if RESHADE_FX
 		if (!_editors.empty())
 		{
-			if (ImGui::Begin("Edit###editor", nullptr, ImGuiWindowFlags_NoFocusOnAppearing) &&
+			if (ImGui::Begin("编辑###editor", nullptr, ImGuiWindowFlags_NoFocusOnAppearing) &&
 				ImGui::BeginTabBar("editor_tabs"))
 			{
 				for (auto it = _editors.begin(); it != _editors.end();)
@@ -1202,12 +1211,13 @@ void reshade::runtime::draw_gui()
 void reshade::runtime::draw_gui_home()
 {
 	const char *tutorial_text =
-		"Welcome! Since this is the first time you start ReShade, we'll go through a quick tutorial covering the most important features.\n\n"
-		"If you have difficulties reading this text, press the 'Ctrl' key and adjust the font size with your mouse wheel. "
-		"The window size is variable as well, just grab the right edge and move it around.\n\n"
-		"You can also use the keyboard for navigation in case mouse input does not work. Use the arrow keys to navigate, space bar to confirm an action or enter a control and the 'Esc' key to leave a control. "
-		"Press 'Ctrl + Tab' to switch between tabs and windows (use this to focus this page in case the other navigation keys do not work at first).\n\n"
-		"Click on the 'Continue' button to continue the tutorial.";
+		"欢迎！这是你第一次使用Reshade，以下我们将进行一个快速教学，涵盖主要功能。\n\n"
+		"如果阅读此文本有困难，请按“Ctrl”键并搭配鼠标滚轮，调整字体大小。"
+		"拖动窗口右边缘可以调整此窗口大小。\n\n"
+		"如果鼠标无法操作，也可以使用键盘进行导航。"
+		"使用方向键导航，空格键确认操作或进入控件，使用“Esc”从控件中退出。 "
+		"按“Ctrl+Tab”可在选项卡和窗口之间切换（先使用这个来聚焦选中本页面，以防其他导航键在最开始无法工作）。\n\n"
+		"点击“继续”按钮以继续教程。";
 
 	// It is not possible to follow some of the tutorial steps while performance mode is active, so skip them
 	if (_performance_mode && _tutorial_index <= 3)
@@ -1220,9 +1230,9 @@ void reshade::runtime::draw_gui_home()
 		if (_tutorial_index == 1)
 		{
 			tutorial_text =
-				"This is the preset selection. All changes will be saved to the selected preset file.\n\n"
-				"Click on the '+' button to add a new one.\n"
-				"Use the right mouse button and click on the preset button to open a context menu with additional options.";
+				"这是预设选择。所有更改都会保存到所选的预设文件中。\n\n"
+				"点击“+”按钮可以命名并创建一个新预设。\n"
+				"中间用于展示当前使用的预设，左键单击可以调出下拉列表切换预设，右键单击可以打开附加选项菜单。";
 
 			ImGui::PushStyleColor(ImGuiCol_FrameBg, COLOR_RED);
 			ImGui::PushStyleColor(ImGuiCol_Button, COLOR_RED);
@@ -1245,7 +1255,7 @@ void reshade::runtime::draw_gui_home()
 			if (switch_to_next_preset(_current_preset_path.parent_path(), true))
 				reload_preset = true;
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("Previous preset");
+			ImGui::SetTooltip("前一个预设");
 
 		ImGui::SameLine(0, button_spacing);
 
@@ -1253,7 +1263,7 @@ void reshade::runtime::draw_gui_home()
 			if (switch_to_next_preset(_current_preset_path.parent_path(), false))
 				reload_preset = true;
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("Next preset");
+			ImGui::SetTooltip("后一个预设");
 
 		ImGui::SameLine();
 
@@ -1302,7 +1312,7 @@ void reshade::runtime::draw_gui_home()
 		ImGui::SameLine();
 
 		const bool was_auto_save_preset = _auto_save_preset;
-		if (imgui::toggle_button(was_auto_save_preset ? "Auto Save on###auto_save" : "Auto Save###auto_save", _auto_save_preset, (was_auto_save_preset ? 0.0f : auto_save_button_spacing) + (11.0f * _font_size) - (button_spacing + button_size) * (was_auto_save_preset ? 2 : 3)))
+		if (imgui::toggle_button(was_auto_save_preset ? "自动保存已开###auto_save" : "自动保存已关###auto_save", _auto_save_preset, (was_auto_save_preset ? 0.0f : auto_save_button_spacing) + (11.0f * _font_size) - (button_spacing + button_size) * (was_auto_save_preset ? 2 : 3)))
 		{
 			_preset_is_modified = false;
 
@@ -1310,7 +1320,7 @@ void reshade::runtime::draw_gui_home()
 		}
 
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("Save current preset automatically on every modification");
+			ImGui::SetTooltip("每次修改当前预设时均自动保存。");
 
 		if (was_auto_save_preset)
 		{
@@ -1322,11 +1332,11 @@ void reshade::runtime::draw_gui_home()
 
 			ImGui::BeginDisabled(!_preset_is_modified);
 
-			if (imgui::confirm_button(ICON_FK_UNDO, button_size, "Do you really want to reset all techniques and values?"))
+			if (imgui::confirm_button(ICON_FK_UNDO, button_size, "真的要重置所有效果器和值吗？"))
 				reload_preset = true;
 
 			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("Reset all techniques and values to those of the current preset");
+				ImGui::SetTooltip("重置当前预设的所有效果器和值");
 
 			ImGui::EndDisabled();
 
@@ -1346,7 +1356,7 @@ void reshade::runtime::draw_gui_home()
 		}
 
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("Clean up and save the current preset (removes all values for disabled techniques)");
+			ImGui::SetTooltip("清理并保存当前预设（将移除禁用的效果器的所有设置）");
 
 		ImGui::EndDisabled();
 
@@ -1360,7 +1370,7 @@ void reshade::runtime::draw_gui_home()
 		}
 
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("Add a new preset");
+			ImGui::SetTooltip("添加一个新预设");
 
 		if (was_loading)
 		{
@@ -1386,16 +1396,16 @@ void reshade::runtime::draw_gui_home()
 
 		if (ImGui::BeginPopup("##create"))
 		{
-			ImGui::Checkbox("Inherit current preset", &_inherit_current_preset);
+			ImGui::Checkbox("继承当前的预设", &_inherit_current_preset);
 
 			if (!_inherit_current_preset)
-				imgui::file_input_box("Template", nullptr, _template_preset_path, _file_selection_path, { L".ini", L".txt" });
+				imgui::file_input_box("模板", nullptr, _template_preset_path, _file_selection_path, { L".ini", L".txt" });
 
 			if (ImGui::IsWindowAppearing())
 				ImGui::SetKeyboardFocusHere();
 
 			char preset_name[260] = "";
-			if (ImGui::InputText("Preset name", preset_name, sizeof(preset_name), ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCharFilter, filter_name) && preset_name[0] != '\0')
+			if (ImGui::InputText("预设名", preset_name, sizeof(preset_name), ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCharFilter, filter_name) && preset_name[0] != '\0')
 			{
 				std::filesystem::path new_preset_path = _current_preset_path.parent_path() / std::filesystem::u8path(preset_name);
 				if (new_preset_path.extension() != L".ini" && new_preset_path.extension() != L".txt")
@@ -1442,7 +1452,7 @@ void reshade::runtime::draw_gui_home()
 
 		if (ImGui::BeginPopup("##preseterror"))
 		{
-			ImGui::TextColored(COLOR_RED, "The selected file is not a valid preset!");
+			ImGui::TextColored(COLOR_RED, "所选文件不是有效的预设！");
 			ImGui::EndPopup();
 		}
 
@@ -1473,14 +1483,14 @@ void reshade::runtime::draw_gui_home()
 
 	if (_reload_remaining_effects != std::numeric_limits<size_t>::max())
 	{
-		const char *const loading_message = ICON_FK_REFRESH " Loading ... ";
+		const char *const loading_message = ICON_FK_REFRESH " 加载中 ... ";
 		ImGui::SetCursorPos((ImGui::GetWindowSize() - ImGui::CalcTextSize(loading_message)) * 0.5f);
 		ImGui::TextUnformatted(loading_message);
 		return; // Cannot show techniques and variables while effects are loading, since they are being modified in other threads during that time
 	}
 
 	if (!_effects_enabled)
-		ImGui::Text("Effects are disabled. Press '%s' to enable them again.", input::key_name(_effects_key_data).c_str());
+		ImGui::Text("效果已禁用，按“%s”重新启用。", input::key_name(_effects_key_data).c_str());
 
 	if (_tutorial_index > 1)
 	{
@@ -1502,7 +1512,7 @@ void reshade::runtime::draw_gui_home()
 
 		ImGui::BeginDisabled(_is_in_between_presets_transition);
 
-		if (ImGui::Button("Active to top", ImVec2(auto_save_button_spacing + 11.0f * _font_size, 0)))
+		if (ImGui::Button("置顶激活效果", ImVec2(auto_save_button_spacing + 11.0f * _font_size, 0)))
 		{
 			std::vector<size_t> technique_indices = _technique_sorting;
 
@@ -1530,17 +1540,17 @@ void reshade::runtime::draw_gui_home()
 		{
 			ImGui::SameLine();
 
-			if (ImGui::Button((_effects_expanded_state & 2) ? "Collapse all" : "Expand all", ImVec2(auto_save_button_spacing + 11.0f * _font_size, 0)))
+			if (ImGui::Button((_effects_expanded_state & 2) ? "全部折叠" : "全部展开", ImVec2(auto_save_button_spacing + 11.0f * _font_size, 0)))
 				_effects_expanded_state = (~_effects_expanded_state & 2) | 1;
 		}
 
 		if (_tutorial_index == 2)
 		{
 			tutorial_text =
-				"This is the list of effects. It contains all techniques exposed by effect files (.fx) found in the effect search paths specified in the settings.\n\n"
-				"Enter text in the \"Search\" box at the top to filter it and search for specific techniques.\n\n"
-				"Click on a technique to enable or disable it or drag it to a new location in the list to change the order in which the effects are applied (from top to bottom).\n"
-				"Use the right mouse button and click on an item to open a context menu with additional options.";
+				"这是效果列表。它包含了“效果搜索路径”下找到的所有效果文件（*.fx）中的效果器。\n\n"
+				"在顶部搜索框中输入文本，以筛选和查找效果器。\n\n"
+				"左键单击效果器可以启用或禁用它。上下拖动效果器可以改变效果器的执行顺序，自上而下依次应用。\n"
+				"右键单击条目以打开其附加选项菜单。";
 
 			ImGui::PushStyleColor(ImGuiCol_Border, COLOR_RED);
 		}
@@ -1560,7 +1570,7 @@ void reshade::runtime::draw_gui_home()
 				if (skipped_effects > 0)
 				{
 					char buf[60];
-					ImFormatString(buf, sizeof(buf), "Force load all effects (%zu remaining)###force_reload_button", skipped_effects);
+					ImFormatString(buf, sizeof(buf), "加载所有效果 (剩余 %zu 个)###force_reload_button", skipped_effects);
 					if (ImGui::ButtonEx(buf, ImVec2(ImGui::GetContentRegionAvail().x, 0)))
 					{
 						_load_option_disable_skipping = true;
@@ -1602,11 +1612,12 @@ void reshade::runtime::draw_gui_home()
 		if (_tutorial_index == 3)
 		{
 			tutorial_text =
-				"This is the list of variables. It contains all tweakable options the active effects expose. Values here apply in real-time.\n\n"
-				"Press 'Ctrl' and click on a widget to manually edit the value (can also hold 'Ctrl' while adjusting the value in a widget to have it ignore any minimum or maximum values).\n"
-				"Use the right mouse button and click on an item to open a context menu with additional options.\n\n"
-				"Once you have finished tweaking your preset, be sure to enable the 'Performance Mode' check box. "
-				"This will reload all effects into a more optimal representation that can give a performance boost, but disables variable tweaking and this list.";
+				"这是变量列表，包含了已激活预设的所有可调选项。此处的值都会即时生效。\n\n"
+				"按住“Ctrl”并单击控件以手工修改数值。（调整数值时按住“Ctrl”可以无视其最小值/最大值限制）\n"
+				"右键单击条目以打开附加选项菜单。\n\n"
+				"预设调整完成之后，建议勾选启用“性能模式”。\n"
+				"这将重新编译加载效果为优化的形式，能够提供更好的性能，但勾选之后将禁用此变量列表，无法调整预设选项。\n"
+				"若需重新调整预设的各类选项，请关闭“性能模式”。";
 
 			ImGui::PushStyleColor(ImGuiCol_Border, COLOR_RED);
 		}
@@ -1629,7 +1640,7 @@ void reshade::runtime::draw_gui_home()
 	{
 		ImGui::Spacing();
 
-		if (ImGui::Button(ICON_FK_REFRESH " Reload", ImVec2(-11.5f * _font_size, 0)))
+		if (ImGui::Button(ICON_FK_REFRESH " 重新加载", ImVec2(-15.0f * _font_size, 0)))
 		{
 			load_config(); // Reload configuration too
 
@@ -1641,14 +1652,14 @@ void reshade::runtime::draw_gui_home()
 
 		ImGui::SameLine();
 
-		if (ImGui::Checkbox("Performance Mode", &_performance_mode))
+		if (ImGui::Checkbox("性能模式（将禁用预设参数调整）", &_performance_mode))
 		{
 			save_config();
 			reload_effects(); // Reload effects after switching
 		}
 
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("Reload all effects into a more optimal representation that can give a performance boost (disables variable tweaking)");
+			ImGui::SetTooltip("重新编译加载效果为优化形式，提供更好的性能，但禁用预设参数调整。");
 	}
 	else
 	{
@@ -1660,7 +1671,7 @@ void reshade::runtime::draw_gui_home()
 
 		if (_tutorial_index == 0)
 		{
-			if (ImGui::Button("Continue###tutorial_button", ImVec2(max_button_width * 0.66666666f, 0)))
+			if (ImGui::Button("继续###tutorial_button", ImVec2(max_button_width * 0.66666666f, 0)))
 			{
 				_tutorial_index++;
 
@@ -1669,7 +1680,7 @@ void reshade::runtime::draw_gui_home()
 
 			ImGui::SameLine();
 
-			if (ImGui::Button("Skip Tutorial", ImVec2(max_button_width * 0.33333333f - _imgui_context->Style.ItemSpacing.x, 0)))
+			if (ImGui::Button("跳过教程", ImVec2(max_button_width * 0.33333333f - _imgui_context->Style.ItemSpacing.x, 0)))
 			{
 				_tutorial_index = 4;
 				_no_font_scaling = true;
@@ -1679,7 +1690,7 @@ void reshade::runtime::draw_gui_home()
 		}
 		else
 		{
-			if (ImGui::Button(_tutorial_index == 3 ? "Finish###tutorial_button" : "Continue###tutorial_button", ImVec2(max_button_width, 0)))
+			if (ImGui::Button(_tutorial_index == 3 ? "结束###tutorial_button" : "继续###tutorial_button", ImVec2(max_button_width, 0)))
 			{
 				_tutorial_index++;
 
@@ -1700,50 +1711,50 @@ void reshade::runtime::draw_gui_settings()
 	bool modified = false;
 	bool modified_custom_style = false;
 
-	if (ImGui::CollapsingHeader("General", ImGuiTreeNodeFlags_DefaultOpen))
+	if (ImGui::CollapsingHeader("一般", ImGuiTreeNodeFlags_DefaultOpen))
 	{
 		if (_input != nullptr)
 		{
-			modified |= imgui::key_input_box("Overlay key", _overlay_key_data, *_input);
+			modified |= imgui::key_input_box("快捷键：开启/关闭设置面板", _overlay_key_data, *_input);
 
 #if RESHADE_FX
-			modified |= imgui::key_input_box("Effect toggle key", _effects_key_data, *_input);
-			modified |= imgui::key_input_box("Effect reload key", _reload_key_data, *_input);
+			modified |= imgui::key_input_box("快捷键：开启/关闭效果", _effects_key_data, *_input);
+			modified |= imgui::key_input_box("快捷键：重新加载效果", _reload_key_data, *_input);
 
-			modified |= imgui::key_input_box("Performance mode toggle key", _performance_mode_key_data, *_input);
+			modified |= imgui::key_input_box("快捷键：开启/关闭性能模式", _performance_mode_key_data, *_input);
 
-			modified |= imgui::key_input_box("Previous preset key", _prev_preset_key_data, *_input);
-			modified |= imgui::key_input_box("Next preset key", _next_preset_key_data, *_input);
+			modified |= imgui::key_input_box("快捷键：前一个预设", _prev_preset_key_data, *_input);
+			modified |= imgui::key_input_box("快捷键：后一个预设", _next_preset_key_data, *_input);
 
-			modified |= ImGui::SliderInt("Preset transition duration", reinterpret_cast<int *>(&_preset_transition_duration), 0, 10 * 1000);
+			modified |= ImGui::SliderInt("预设过渡时间", reinterpret_cast<int *>(&_preset_transition_duration), 0, 10 * 1000);
 			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("Make a smooth transition when switching presets, but only for floating point values.\nRecommended for multiple presets that contain the same effects, otherwise set this to zero.\nValues are in milliseconds.");
+				ImGui::SetTooltip("切换预设时平滑过渡画面，但只对浮点参数值有效。\n当使用相同效果的多个不同预设时推荐启用，否则设置为0关闭。\n数值单位为毫秒。");
 #endif
 
-			modified |= ImGui::Combo("Input processing", reinterpret_cast<int *>(&_input_processing_mode),
-				"Pass on all input\0"
-				"Block input when cursor is on overlay\0"
-				"Block all input when overlay is visible\0");
+			modified |= ImGui::Combo("键鼠输入处理", reinterpret_cast<int *>(&_input_processing_mode),
+				"传递所有输入至游戏\0"
+				"光标在面板上时，输入不穿透至游戏\0"
+				"面板可见时，输入不穿透至游戏\0");
 #if RESHADE_FX
 			ImGui::Spacing();
 #endif
 		}
 
 #if RESHADE_FX
-		modified |= imgui::file_input_box("Start-up preset", nullptr, _startup_preset_path, _file_selection_path, { L".ini", L".txt" });
+		modified |= imgui::file_input_box("初始预设", nullptr, _startup_preset_path, _file_selection_path, { L".ini", L".txt" });
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("When not empty, reset the current preset to this file during reloads.");
+			ImGui::SetTooltip("若不为空，则重新加载时自动重置预设为该文件");
 
 		ImGui::Spacing();
 
-		modified |= imgui::path_list("Effect search paths", _effect_search_paths, _file_selection_path, g_reshade_base_path);
+		modified |= imgui::path_list("效果搜索路径", _effect_search_paths, _file_selection_path, g_reshade_base_path);
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("List of directory paths to be searched for effect files (.fx).\nPaths that end in \"\\**\" are searched recursively.");
-		modified |= imgui::path_list("Texture search paths", _texture_search_paths, _file_selection_path, g_reshade_base_path);
+			ImGui::SetTooltip("在这些目录下搜索效果文件(.fx)。\n以 \"\\**\"结尾的路径将被递归搜索（即它的子文件夹等也将被搜索）");
+		modified |= imgui::path_list("纹理搜索路径", _texture_search_paths, _file_selection_path, g_reshade_base_path);
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("List of directory paths to be searched for texture image files.\nPaths that end in \"\\**\" are searched recursively.");
+			ImGui::SetTooltip("在这些目录下搜索纹理贴图文件。\n以\"\\**\"结尾的路径将被递归搜索（即它的子文件夹等也将被搜索）");
 
-		if (ImGui::Checkbox("Load only enabled effects", &_effect_load_skipping))
+		if (ImGui::Checkbox("只加载已启用效果", &_effect_load_skipping))
 		{
 			modified = true;
 
@@ -1752,25 +1763,25 @@ void reshade::runtime::draw_gui_settings()
 			reload_effects();
 		}
 
-		if (ImGui::Button("Clear effect cache", ImVec2(ImGui::CalcItemWidth(), 0)))
+		if (ImGui::Button("清除效果缓存", ImVec2(ImGui::CalcItemWidth(), 0)))
 			clear_effect_cache();
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("Clear effect cache located in \"%s\".", _effect_cache_path.u8string().c_str());
+			ImGui::SetTooltip("清除位于\"%s\"的效果缓存。", _effect_cache_path.u8string().c_str());
 #endif
 	}
 
-	if (ImGui::CollapsingHeader("Screenshots", ImGuiTreeNodeFlags_DefaultOpen))
+	if (ImGui::CollapsingHeader("截图", ImGuiTreeNodeFlags_DefaultOpen))
 	{
 		if (_input != nullptr)
 		{
-			modified |= imgui::key_input_box("Screenshot key", _screenshot_key_data, *_input);
+			modified |= imgui::key_input_box("截图快捷键", _screenshot_key_data, *_input);
 		}
 
-		modified |= imgui::directory_input_box("Screenshot path", _screenshot_path, _file_selection_path);
+		modified |= imgui::directory_input_box("截图保存路径", _screenshot_path, _file_selection_path);
 
 		char name[260];
 		name[_screenshot_name.copy(name, sizeof(name) - 1)] = '\0';
-		if (ImGui::InputText("Screenshot name", name, sizeof(name), ImGuiInputTextFlags_CallbackCharFilter, filter_name))
+		if (ImGui::InputText("截图命名", name, sizeof(name), ImGuiInputTextFlags_CallbackCharFilter, filter_name))
 		{
 			modified = true;
 			_screenshot_name = name;
@@ -1779,21 +1790,21 @@ void reshade::runtime::draw_gui_settings()
 		if (ImGui::IsItemHovered())
 		{
 			ImGui::SetTooltip(
-				"Macros you can add that are resolved during saving:\n"
-				"  %%AppName%%         Name of the application (%s)\n"
+				"可用的宏（代名词），保存截图时它们将被自动解析展开\n"
+				"  %%AppName%%         应用程序名 (%s)\n"
 #if RESHADE_FX
-				"  %%PresetName%%      File name without extension of the current preset file (%s)\n"
+				"  %%PresetName%%      当前预设的文件名，不含扩展名后缀 (%s)\n"
 #endif
-				"  %%Date%%            Current date in format '%s'\n"
-				"  %%DateYear%%        Year component of current date\n"
-				"  %%DateMonth%%       Month component of current date\n"
-				"  %%DateDay%%         Day component of current date\n"
-				"  %%Time%%            Current time in format '%s'\n"
-				"  %%TimeHour%%        Hour component of current time\n"
-				"  %%TimeMinute%%      Minute component of current time\n"
-				"  %%TimeSecond%%      Second component of current time\n"
-				"  %%TimeMS%%          Milliseconds fraction of current time\n"
-				"  %%Count%%           Number of screenshots taken this session\n",
+				"  %%Date%%            完整当前日期，形如 '%s'\n"
+				"  %%DateYear%%        当前日期的年份\n"
+				"  %%DateMonth%%       当前日期的月份\n"
+				"  %%DateDay%%         当前日期的日份\n"
+				"  %%Time%%            完整当前时间，形如 '%s'\n"
+				"  %%TimeHour%%        当前时间的小时部分\n"
+				"  %%TimeMinute%%      当前时间的分钟部分\n"
+				"  %%TimeSecond%%      当前时间的秒钟部分\n"
+				"  %%TimeMS%%          当前时间的毫秒部分\n"
+				"  %%Count%%           本次会话的第几次截图\n",
 				g_target_executable_path.stem().string().c_str(),
 #if RESHADE_FX
 				_current_preset_path.stem().string().c_str(),
@@ -1802,30 +1813,30 @@ void reshade::runtime::draw_gui_settings()
 				"HH-mm-ss");
 		}
 
-		modified |= ImGui::Combo("Screenshot format", reinterpret_cast<int *>(&_screenshot_format), "Bitmap (*.bmp)\0Portable Network Graphics (*.png)\0JPEG (*.jpeg)\0");
+		modified |= ImGui::Combo("截图图片格式", reinterpret_cast<int *>(&_screenshot_format), "Bitmap (*.bmp)\0Portable Network Graphics (*.png)\0JPEG (*.jpeg)\0");
 
 		if (_screenshot_format == 2)
-			modified |= ImGui::SliderInt("JPEG quality", reinterpret_cast<int *>(&_screenshot_jpeg_quality), 1, 100);
+			modified |= ImGui::SliderInt("JPEG质量", reinterpret_cast<int *>(&_screenshot_jpeg_quality), 1, 100);
 		else
-			modified |= ImGui::Checkbox("Clear alpha channel", &_screenshot_clear_alpha);
+			modified |= ImGui::Checkbox("清除Alpha通道", &_screenshot_clear_alpha);
 
 #if RESHADE_FX
-		modified |= ImGui::Checkbox("Save current preset file", &_screenshot_include_preset);
-		modified |= ImGui::Checkbox("Save before and after images", &_screenshot_save_before);
+		modified |= ImGui::Checkbox("保存当前预设文件", &_screenshot_include_preset);
+		modified |= ImGui::Checkbox("保存效果处理之前和之后的截图", &_screenshot_save_before);
 #endif
-		modified |= ImGui::Checkbox("Save separate image with the overlay visible", &_screenshot_save_gui);
+		modified |= ImGui::Checkbox("另外保存一张可见设置面板的截图", &_screenshot_save_gui);
 
-		modified |= imgui::file_input_box("Screenshot sound", "sound.wav", _screenshot_sound_path, _file_selection_path, { L".wav" });
+		modified |= imgui::file_input_box("截图音效", "sound.wav", _screenshot_sound_path, _file_selection_path, { L".wav" });
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("Audio file that is played when taking a screenshot.");
+			ImGui::SetTooltip("截图时播放的音效文件");
 
-		modified |= imgui::file_input_box("Post-save command", "command.exe", _screenshot_post_save_command, _file_selection_path, { L".exe" });
+		modified |= imgui::file_input_box("保存后执行命令", "command.exe", _screenshot_post_save_command, _file_selection_path, { L".exe" });
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("Executable that is called after saving a screenshot.\nThis can be used to perform additional processing on the image (e.g. compressing it with an image optimizer).");
+			ImGui::SetTooltip("进行截图后自动执行的命令。\n可以用于对截图自动进行后续处理（例如调用其他工具自动压缩等）");
 
 		char arguments[260];
 		arguments[_screenshot_post_save_command_arguments.copy(arguments, sizeof(arguments) - 1)] = '\0';
-		if (ImGui::InputText("Post-save command arguments", arguments, sizeof(arguments)))
+		if (ImGui::InputText("保存后执行命令的参数", arguments, sizeof(arguments)))
 		{
 			modified = true;
 			_screenshot_post_save_command_arguments = arguments;
@@ -1836,26 +1847,26 @@ void reshade::runtime::draw_gui_settings()
 			const std::string extension = _screenshot_format == 0 ? ".bmp" : _screenshot_format == 1 ? ".png" : ".jpg";
 
 			ImGui::SetTooltip(
-				"Macros you can add that are resolved during command execution:\n"
-				"  %%AppName%%         Name of the application (%s)\n"
+				"可用的宏（代名词），命令执行时它们将被自动解析展开\n"
+				"  %%AppName%%         应用程序名 (%s)\n"
 #if RESHADE_FX
-				"  %%PresetName%%      File name without extension of the current preset file (%s)\n"
+				"  %%PresetName%%      当前预设的文件名，不含扩展名后缀 (%s)\n"
 #endif
-				"  %%Date%%            Current date in format '%s'\n"
-				"  %%DateYear%%        Year component of current date\n"
-				"  %%DateMonth%%       Month component of current date\n"
-				"  %%DateDay%%         Day component of current date\n"
-				"  %%Time%%            Current time in format '%s'\n"
-				"  %%TimeHour%%        Hour component of current time\n"
-				"  %%TimeMinute%%      Minute component of current time\n"
-				"  %%TimeSecond%%      Second component of current time\n"
-				"  %%TimeMS%%          Milliseconds fraction of current time\n"
-				"  %%TargetPath%%      Full path to the screenshot file (%s)\n"
-				"  %%TargetDir%%       Full path to the screenshot directory (%s)\n"
-				"  %%TargetFileName%%  File name of the screenshot file (%s)\n"
-				"  %%TargetExt%%       File extension of the screenshot file (%s)\n"
-				"  %%TargetName%%      File name without extension of the screenshot file (%s)\n"
-				"  %%Count%%           Number of screenshots taken this session\n",
+				"  %%Date%%            完整当前日期，格式为 '%s'\n"
+				"  %%DateYear%%        当前日期的年份\n"
+				"  %%DateMonth%%       当前日期的月份\n"
+				"  %%DateDay%%         当前日期的日份\n"
+				"  %%Time%%            完整当前时间，格式为 '%s'\n"
+				"  %%TimeHour%%        当前时间的小时部分\n"
+				"  %%TimeMinute%%      当前时间的分钟部分\n"
+				"  %%TimeSecond%%      当前时间的秒钟部分\n"
+				"  %%TimeMS%%          当前时间的毫秒部分\n"
+				"  %%TargetPath%%      截图的完整路径 (%s)\n"
+				"  %%TargetDir%%       截图所在目录的完整路径 (%s)\n"
+				"  %%TargetFileName%%  截图文件名 (%s)\n"
+				"  %%TargetExt%%       截图的扩展名后缀 (%s)\n"
+				"  %%TargetName%%      截图文件名，不含扩展名后缀 (%s)\n"
+				"  %%Count%%           本次会话的第几次截图\n",
 				g_target_executable_path.stem().string().c_str(),
 #if RESHADE_FX
 				_current_preset_path.stem().string().c_str(),
@@ -1869,30 +1880,30 @@ void reshade::runtime::draw_gui_settings()
 				_screenshot_name.c_str());
 		}
 
-		modified |= imgui::directory_input_box("Post-save command working directory", _screenshot_post_save_command_working_directory, _file_selection_path);
-		modified |= ImGui::Checkbox("Hide post-save command window", &_screenshot_post_save_command_no_window);
+		modified |= imgui::directory_input_box("保存后命令的工作目录", _screenshot_post_save_command_working_directory, _file_selection_path);
+		modified |= ImGui::Checkbox("隐藏保存后命令的工作窗口", &_screenshot_post_save_command_no_window);
 	}
 
-	if (ImGui::CollapsingHeader("Overlay & Styling", ImGuiTreeNodeFlags_DefaultOpen))
+	if (ImGui::CollapsingHeader("覆盖面板和样式", ImGuiTreeNodeFlags_DefaultOpen))
 	{
 #if RESHADE_FX
-		if (ImGui::Button("Restart tutorial", ImVec2(ImGui::CalcItemWidth(), 0)))
+		if (ImGui::Button("重新阅读教程", ImVec2(ImGui::CalcItemWidth(), 0)))
 			_tutorial_index = 0;
 #endif
 
-		modified |= ImGui::Checkbox("Show screenshot message", &_show_screenshot_message);
+		modified |= ImGui::Checkbox("显示截图消息", &_show_screenshot_message);
 
 #if RESHADE_FX
 		if (_effect_load_skipping)
-			modified |= ImGui::Checkbox("Show \"Force load all effects\" button", &_show_force_load_effects_button);
+			modified |= ImGui::Checkbox("显示“加载所有效果”按钮", &_show_force_load_effects_button);
 #endif
 
 #if RESHADE_FX
-		modified |= ImGui::Checkbox("Group effect files with tabs instead of a tree", &_variable_editor_tabs);
+		modified |= ImGui::Checkbox("以选项卡方式分组展示效果，而不是树形展示", &_variable_editor_tabs);
 #endif
 
-		#pragma region Style
-		if (ImGui::Combo("Global style", &_style_index, "Dark\0Light\0Default\0Custom Simple\0Custom Advanced\0Solarized Dark\0Solarized Light\0"))
+#pragma region Style
+		if (ImGui::Combo("全局样式", &_style_index, "Dark\0Light\0默认\0简单自定义\0高级自定义\0Solarized Dark\0Solarized Light\0"))
 		{
 			modified = true;
 			load_custom_style();
@@ -1905,10 +1916,10 @@ void reshade::runtime::draw_gui_settings()
 			if (ImGui::BeginChild("##colors", ImVec2(0, 105), true, ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NavFlattened))
 			{
 				ImGui::PushItemWidth(-160);
-				modified_custom_style |= ImGui::ColorEdit3("Background", &colors[ImGuiCol_WindowBg].x);
-				modified_custom_style |= ImGui::ColorEdit3("ItemBackground", &colors[ImGuiCol_FrameBg].x);
-				modified_custom_style |= ImGui::ColorEdit3("Text", &colors[ImGuiCol_Text].x);
-				modified_custom_style |= ImGui::ColorEdit3("ActiveItem", &colors[ImGuiCol_ButtonActive].x);
+				modified_custom_style |= ImGui::ColorEdit3("背景", &colors[ImGuiCol_WindowBg].x);
+				modified_custom_style |= ImGui::ColorEdit3("物件背景", &colors[ImGuiCol_FrameBg].x);
+				modified_custom_style |= ImGui::ColorEdit3("文本", &colors[ImGuiCol_Text].x);
+				modified_custom_style |= ImGui::ColorEdit3("激活物件", &colors[ImGuiCol_ButtonActive].x);
 				ImGui::PopItemWidth();
 			}
 			ImGui::EndChild();
@@ -1978,10 +1989,10 @@ void reshade::runtime::draw_gui_settings()
 			}
 			ImGui::EndChild();
 		}
-		#pragma endregion
+#pragma endregion
 
-		#pragma region Editor Style
-		if (ImGui::Combo("Text editor style", &_editor_style_index, "Dark\0Light\0Custom\0Solarized Dark\0Solarized Light\0"))
+#pragma region Editor Style
+		if (ImGui::Combo("文本编辑器样式", &_editor_style_index, "Dark\0Light\0自定义\0Solarized Dark\0Solarized Light\0"))
 		{
 			modified = true;
 			load_custom_style();
@@ -2005,28 +2016,28 @@ void reshade::runtime::draw_gui_settings()
 			}
 			ImGui::EndChild();
 		}
-		#pragma endregion
+#pragma endregion
 
-		if (imgui::font_input_box("Global font", _font, _file_selection_path, _font_size))
+		if (imgui::font_input_box("全局字体", _font, _file_selection_path, _font_size))
 		{
 			modified = true;
 			_rebuild_font_atlas = true;
 		}
 
-		if (imgui::font_input_box("Text editor font", _editor_font, _file_selection_path, _editor_font_size))
+		if (imgui::font_input_box("文本编辑器字体", _editor_font, _file_selection_path, _editor_font_size))
 		{
 			modified = true;
 			_rebuild_font_atlas = true;
 		}
 
-		if (float &alpha = _imgui_context->Style.Alpha; ImGui::SliderFloat("Global alpha", &alpha, 0.1f, 1.0f, "%.2f"))
+		if (float &alpha = _imgui_context->Style.Alpha; ImGui::SliderFloat("全局透明度", &alpha, 0.1f, 1.0f, "%.2f"))
 		{
 			// Prevent user from setting alpha to zero
 			alpha = std::max(alpha, 0.1f);
 			modified = true;
 		}
 
-		if (float &rounding = _imgui_context->Style.FrameRounding; ImGui::SliderFloat("Frame rounding", &rounding, 0.0f, 12.0f, "%.0f"))
+		if (float &rounding = _imgui_context->Style.FrameRounding; ImGui::SliderFloat("框架圆角", &rounding, 0.0f, 12.0f, "%.0f"))
 		{
 			// Apply the same rounding to everything
 			_imgui_context->Style.GrabRounding = _imgui_context->Style.TabRounding = _imgui_context->Style.ScrollbarRounding = rounding;
@@ -2037,21 +2048,21 @@ void reshade::runtime::draw_gui_settings()
 		if (!_is_vr)
 		{
 			ImGui::BeginGroup();
-			modified |= imgui::checkbox_tristate("Show clock", &_show_clock);
+			modified |= imgui::checkbox_tristate("显示时间", &_show_clock);
 			ImGui::SameLine(0, 10);
-			modified |= imgui::checkbox_tristate("Show FPS", &_show_fps);
+			modified |= imgui::checkbox_tristate("显示帧率", &_show_fps);
 			ImGui::SameLine(0, 10);
-			modified |= imgui::checkbox_tristate("Show frame time", &_show_frametime);
+			modified |= imgui::checkbox_tristate("显示帧生成时间", &_show_frametime);
 			ImGui::EndGroup();
 			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("Check to always show, fill out to only show while overlay is open.");
+				ImGui::SetTooltip("勾选以始终显示");
 
 			if (_show_clock)
-				modified |= ImGui::Combo("Clock format", reinterpret_cast<int *>(&_clock_format), "HH:mm\0HH:mm:ss\0");
+				modified |= ImGui::Combo("时间格式", reinterpret_cast<int *>(&_clock_format), "HH:mm\0HH:mm:ss\0");
 
-			modified |= ImGui::SliderFloat("OSD text size", &_fps_scale, 0.2f, 2.5f, "%.1f");
-			modified |= ImGui::ColorEdit4("OSD text color", _fps_col, ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreview);
-			modified |= ImGui::Combo("OSD position on screen", reinterpret_cast<int *>(&_fps_pos), "Top Left\0Top Right\0Bottom Left\0Bottom Right\0");
+			modified |= ImGui::SliderFloat("OSD字体大小", &_fps_scale, 0.2f, 2.5f, "%.1f");
+			modified |= ImGui::ColorEdit4("OSD字体颜色", _fps_col, ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreview);
+			modified |= ImGui::Combo("OSD在屏幕上的位置", reinterpret_cast<int *>(&_fps_pos), "左上角\0右上角\0左下角\0右下角\0");
 		}
 	}
 
@@ -2080,7 +2091,7 @@ void reshade::runtime::draw_gui_statistics()
 	}
 #endif
 
-	if (ImGui::CollapsingHeader("General", ImGuiTreeNodeFlags_DefaultOpen))
+	if (ImGui::CollapsingHeader("一般", ImGuiTreeNodeFlags_DefaultOpen))
 	{
 #if RESHADE_FX
 		_gather_gpu_statistics = true;
@@ -2101,19 +2112,19 @@ void reshade::runtime::draw_gui_statistics()
 		ImGui::BeginGroup();
 
 		ImGui::TextUnformatted("API:");
-		ImGui::TextUnformatted("Hardware:");
-		ImGui::TextUnformatted("Application:");
-		ImGui::TextUnformatted("Time:");
-		ImGui::Text("Frame %llu:", _frame_count + 1);
+		ImGui::TextUnformatted("硬件:");
+		ImGui::TextUnformatted("应用程序:");
+		ImGui::TextUnformatted("时间:");
+		ImGui::Text("帧 %llu:", _frame_count + 1);
 #if RESHADE_FX
-		ImGui::TextUnformatted("Post-Processing:");
+		ImGui::TextUnformatted("后处理:");
 #endif
 
 		ImGui::EndGroup();
 		ImGui::SameLine(ImGui::GetWindowWidth() * 0.33333333f);
 		ImGui::BeginGroup();
 
-		const char *api_name = "Unknown";
+		const char *api_name = "未知";
 		switch (_device->get_api())
 		{
 		case api::device_api::d3d9:
@@ -2140,7 +2151,7 @@ void reshade::runtime::draw_gui_statistics()
 		if (_vendor_id != 0)
 			ImGui::Text("VEN_%X", _vendor_id);
 		else
-			ImGui::TextUnformatted("Unknown");
+			ImGui::TextUnformatted("未知");
 		ImGui::TextUnformatted(g_target_executable_path.filename().u8string().c_str());
 		ImGui::Text("%d-%d-%d %d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour * 3600 + tm.tm_min * 60 + tm.tm_sec);
 		ImGui::Text("%.2f fps", _imgui_context->IO.Framerate);
@@ -2156,7 +2167,7 @@ void reshade::runtime::draw_gui_statistics()
 		if (_device_id != 0)
 			ImGui::Text("DEV_%X", _device_id);
 		else
-			ImGui::TextUnformatted("Unknown");
+			ImGui::TextUnformatted("未知");
 		ImGui::Text("0x%X", std::hash<std::string>()(g_target_executable_path.stem().u8string()) & 0xFFFFFFFF);
 		ImGui::Text("%.0f ms", std::chrono::duration_cast<std::chrono::nanoseconds>(_last_present_time - _start_time).count() * 1e-6f);
 		ImGui::Text("%*.3f ms", gpu_digits + 4, _last_frame_duration.count() * 1e-6f);
@@ -2169,7 +2180,7 @@ void reshade::runtime::draw_gui_statistics()
 	}
 
 #if RESHADE_FX
-	if (ImGui::CollapsingHeader("Techniques", ImGuiTreeNodeFlags_DefaultOpen) && !is_loading() && _effects_enabled)
+	if (ImGui::CollapsingHeader("效果器[Technique]", ImGuiTreeNodeFlags_DefaultOpen) && !is_loading() && _effects_enabled)
 	{
 		// Only need to gather GPU statistics if the statistics are actually visible
 		_gather_gpu_statistics = true;
@@ -2182,7 +2193,7 @@ void reshade::runtime::draw_gui_statistics()
 				continue;
 
 			if (tech.passes.size() > 1)
-				ImGui::Text("%s (%zu passes)", tech.name.c_str(), tech.passes.size());
+				ImGui::Text("%s (%zu 传递[pass])", tech.name.c_str(), tech.passes.size());
 			else
 				ImGui::TextUnformatted(tech.name.c_str());
 		}
@@ -2221,10 +2232,10 @@ void reshade::runtime::draw_gui_statistics()
 		ImGui::EndGroup();
 	}
 
-	if (ImGui::CollapsingHeader("Render Targets & Textures", ImGuiTreeNodeFlags_DefaultOpen) && !is_loading())
+	if (ImGui::CollapsingHeader("渲染目标和纹理", ImGuiTreeNodeFlags_DefaultOpen) && !is_loading())
 	{
 		static const char *texture_formats[] = {
-			"unknown",
+			"未知",
 			"R8", "R16", "R16F", "R32F", "RG8", "RG16", "RG16F", "RG32F", "RGBA8", "RGBA16", "RGBA16F", "RGBA32F", "RGB10A2"
 		};
 		static constexpr uint32_t pixel_sizes[] = {
@@ -2292,7 +2303,7 @@ void reshade::runtime::draw_gui_statistics()
 				{
 					std::string pass_name = tech.passes[pass_index].name;
 					if (pass_name.empty())
-						pass_name = "pass " + std::to_string(pass_index);
+						pass_name = "传递[pass]" + std::to_string(pass_index);
 					pass_name = tech.name + ' ' + pass_name;
 
 					bool referenced = false;
@@ -2301,7 +2312,7 @@ void reshade::runtime::draw_gui_statistics()
 						if (sampler.texture_name == tex.unique_name)
 						{
 							referenced = true;
-							reference.second.emplace_back(pass_name + " (sampler)");
+							reference.second.emplace_back(pass_name + " (采样器)");
 							break;
 						}
 					}
@@ -2311,7 +2322,7 @@ void reshade::runtime::draw_gui_statistics()
 						if (storage.texture_name == tex.unique_name)
 						{
 							referenced = true;
-							reference.second.emplace_back(pass_name + " (storage)");
+							reference.second.emplace_back(pass_name + " (存储)");
 							break;
 						}
 					}
@@ -2321,7 +2332,7 @@ void reshade::runtime::draw_gui_statistics()
 						if (render_target == tex.unique_name)
 						{
 							referenced = true;
-							reference.second.emplace_back(pass_name + " (render target)");
+							reference.second.emplace_back(pass_name + " (渲染目标)");
 							break;
 						}
 					}
@@ -2340,7 +2351,7 @@ void reshade::runtime::draw_gui_statistics()
 			const float button_size = ImGui::GetFrameHeight();
 			const float button_spacing = _imgui_context->Style.ItemInnerSpacing.x;
 			ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-			if (const std::string label = "Referenced by " + std::to_string(num_referenced_passes) + " pass(es) in " + std::to_string(tex.shared.size()) + " effect(s) ...";
+			if (const std::string label = "传递[pass]" + std::to_string(num_referenced_passes) + "在" + std::to_string(tex.shared.size()) + "效果中被引用";
 				ImGui::ButtonEx(label.c_str(), ImVec2(single_image_width - (supports_saving ? button_spacing + button_size : 0), 0)))
 				ImGui::OpenPopup("##references");
 			if (supports_saving)
@@ -2349,7 +2360,7 @@ void reshade::runtime::draw_gui_statistics()
 				if (ImGui::Button(ICON_FK_FLOPPY, ImVec2(button_size, 0)))
 					save_texture(tex);
 				if (ImGui::IsItemHovered())
-					ImGui::SetTooltip("Save %s", tex.unique_name.c_str());
+					ImGui::SetTooltip("保存%s", tex.unique_name.c_str());
 			}
 			ImGui::PopStyleVar();
 
@@ -2362,7 +2373,7 @@ void reshade::runtime::draw_gui_statistics()
 				{
 					if (effect_index != reference.first)
 					{
-						effect_index  = reference.first;
+						effect_index = reference.first;
 						is_open = ImGui::TreeNodeEx(_effects[effect_index].source_file.filename().u8string().c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_NoTreePushOnOpen);
 					}
 
@@ -2380,14 +2391,14 @@ void reshade::runtime::draw_gui_statistics()
 				ImGui::EndPopup();
 			}
 
-			if (bool check = _preview_texture == tex.srv[0] && _preview_size[0] == 0; ImGui::RadioButton("Preview scaled", check))
+			if (bool check = _preview_texture == tex.srv[0] && _preview_size[0] == 0; ImGui::RadioButton("预览缩放", check))
 			{
 				_preview_size[0] = 0;
 				_preview_size[1] = 0;
 				_preview_texture = !check ? tex.srv[0] : api::resource_view { 0 };
 			}
 			ImGui::SameLine();
-			if (bool check = _preview_texture == tex.srv[0] && _preview_size[0] != 0; ImGui::RadioButton("Preview original", check))
+			if (bool check = _preview_texture == tex.srv[0] && _preview_size[0] != 0; ImGui::RadioButton("预览原始", check))
 			{
 				_preview_size[0] = tex.width;
 				_preview_size[1] = tex.height;
@@ -2448,7 +2459,7 @@ void reshade::runtime::draw_gui_statistics()
 			memory_size_unit = "KiB";
 		}
 
-		ImGui::Text("Total memory usage: %lld.%03lld %s", memory_view.quot, memory_view.rem, memory_size_unit);
+		ImGui::Text("总内存使用: %lld.%03lld %s", memory_view.quot, memory_view.rem, memory_size_unit);
 	}
 #endif
 }
@@ -2461,11 +2472,11 @@ void reshade::runtime::draw_gui_log()
 
 	ImGui::SameLine();
 
-	imgui::toggle_button("Word Wrap", _log_wordwrap, 8.0f * _font_size);
+	imgui::toggle_button("自动换行", _log_wordwrap, 8.0f * _font_size);
 
 	ImGui::SameLine();
 
-	if (ImGui::Button("Clear Log", ImVec2(8.0f * _font_size, 0.0f)))
+	if (ImGui::Button("清空日志", ImVec2(8.0f * _font_size, 0.0f)))
 		// Close and open the stream again, which will clear the file too
 		log::open_log_file(log_path, ec);
 
@@ -2487,7 +2498,7 @@ void reshade::runtime::draw_gui_log()
 			_last_log_size = file_size;
 
 			if (_log_lines.size() == LINE_LIMIT)
-				_log_lines.push_back("Log was truncated to reduce memory footprint!");
+				_log_lines.push_back("日志被截断，以减少内存占用");
 		}
 
 		ImGuiListClipper clipper;
@@ -2522,7 +2533,7 @@ void reshade::runtime::draw_gui_about()
 	ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT);
 
 	ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 7.3f * _font_size);
-	if (ImGui::SmallButton(" Open website "))
+	if (ImGui::SmallButton(" 打开网站 "))
 		utils::execute_command("https://reshade.me");
 
 	ImGui::Separator();
@@ -2530,6 +2541,9 @@ void reshade::runtime::draw_gui_about()
 	ImGui::PushTextWrapPos();
 
 	ImGui::TextUnformatted("Developed and maintained by crosire.");
+	ImGui::TextUnformatted("汉化：路障MKXX");
+	ImGui::TextUnformatted("联系方式：微博@路障MKXX | wujingluren@NGA");
+	ImGui::TextUnformatted("感谢【激战2玩家 印度神油君 id维爵爷.7046】提供的5.6.0汉化！");
 	ImGui::TextUnformatted("This project makes use of several open source libraries, licenses of which are listed below:");
 
 	if (ImGui::CollapsingHeader("ReShade", ImGuiTreeNodeFlags_DefaultOpen))
@@ -2631,7 +2645,7 @@ void reshade::runtime::draw_gui_addons()
 #  else
 	std::filesystem::path addon_search_path = g_reshade_base_path;
 	config.get("ADDON", "AddonPath", addon_search_path);
-	if (imgui::directory_input_box("Add-on search path", addon_search_path, _file_selection_path))
+	if (imgui::directory_input_box("插件搜索路径", addon_search_path, _file_selection_path))
 		config.set("ADDON", "AddonPath", addon_search_path);
 #  endif
 
@@ -2649,7 +2663,7 @@ void reshade::runtime::draw_gui_addons()
 
 	if (!addon_all_loaded)
 	{
-		ImGui::TextColored(COLOR_RED, "There were errors loading some add-ons. Check the log for more details.");
+		ImGui::TextColored(COLOR_RED, "加载一些插件时出现了错误，请查看日志以获得详细信息。");
 		ImGui::Spacing();
 	}
 
@@ -2702,7 +2716,7 @@ void reshade::runtime::draw_gui_addons()
 		if (enabled == (info.handle == nullptr))
 		{
 			ImGui::SameLine();
-			ImGui::Text("(will be %s on next application restart)", enabled ? "enabled" : "disabled");
+			ImGui::Text("(下次应用启动时将被%s)", enabled ? "启用" : "禁用");
 		}
 
 		if (open)
@@ -2711,13 +2725,13 @@ void reshade::runtime::draw_gui_addons()
 			ImGui::BeginGroup();
 
 			if (!builtin)
-				ImGui::Text("File:");
+				ImGui::Text("文件:");
 			if (!info.author.empty())
-				ImGui::Text("Author:");
+				ImGui::Text("作者:");
 			if (!info.version.empty())
-				ImGui::Text("Version:");
+				ImGui::Text("版本:");
 			if (!info.description.empty())
-				ImGui::Text("Description:");
+				ImGui::Text("描述:");
 
 			ImGui::EndGroup();
 			ImGui::SameLine(ImGui::GetWindowWidth() * 0.25f);
@@ -2759,7 +2773,7 @@ void reshade::runtime::draw_gui_addons()
 
 	ImGui::Spacing();
 
-	if (ImGui::Button("Open developer documentation", ImVec2(-1, 0)))
+	if (ImGui::Button("打开开发者文档", ImVec2(-1, 0)))
 		utils::execute_command("https://reshade.me/docs");
 }
 #endif
@@ -2769,12 +2783,12 @@ void reshade::runtime::draw_variable_editor()
 {
 	const ImVec2 popup_pos = ImGui::GetCursorScreenPos() + ImVec2(std::max(0.f, (ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) * 0.5f - 200.0f), ImGui::GetFrameHeightWithSpacing());
 
-	if (imgui::popup_button("Edit global preprocessor definitions", ImGui::GetContentRegionAvail().x, ImGuiWindowFlags_NoMove))
+	if (imgui::popup_button("编辑全局预处理器定义", ImGui::GetContentRegionAvail().x, ImGuiWindowFlags_NoMove))
 	{
 		ImGui::SetWindowPos(popup_pos);
 
 		bool global_modified = false, preset_modified = false;
-		float popup_height = (std::max(_global_preprocessor_definitions.size(), _preset_preprocessor_definitions[{}].size()) + 2) * ImGui::GetFrameHeightWithSpacing();
+		float popup_height = (std::max(_global_preprocessor_definitions.size(), _preset_preprocessor_definitions[{}].size()) + 2) *ImGui::GetFrameHeightWithSpacing();
 		popup_height = std::min(popup_height, ImGui::GetWindowViewport()->Size.y - popup_pos.y - 20.0f);
 		popup_height = std::max(popup_height, 42.0f); // Ensure window always has a minimum height
 		const float button_size = ImGui::GetFrameHeight();
@@ -2792,8 +2806,8 @@ void reshade::runtime::draw_variable_editor()
 				std::vector<std::pair<std::string, std::string>> &definitions;
 				bool &modified;
 			} definition_types[] = {
-				{ "Global", _global_preprocessor_definitions, global_modified },
-				{ "Current Present", _preset_preprocessor_definitions[{}], preset_modified },
+				{ "全局", _global_preprocessor_definitions, global_modified },
+				{ "当前预设", _preset_preprocessor_definitions[{}], preset_modified },
 			};
 
 			for (const auto &type : definition_types)
@@ -2820,7 +2834,7 @@ void reshade::runtime::draw_variable_editor()
 
 						ImGui::SameLine(0, button_spacing);
 
-						if (imgui::confirm_button(ICON_FK_MINUS, button_size, "Do you really want to remove the preprocessor definition '%s'?", name))
+						if (imgui::confirm_button(ICON_FK_MINUS, button_size, "真的要移除全局预处理器 '%s' 吗？", name))
 						{
 							type.modified = true;
 							it = type.definitions.erase(it);
@@ -2914,7 +2928,7 @@ void reshade::runtime::draw_variable_editor()
 		}
 
 		ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(_imgui_context->Style.FramePadding.x, 0));
-		if (imgui::confirm_button(ICON_FK_UNDO " Reset all to default", _variable_editor_tabs ? ImGui::GetContentRegionAvail().x : ImGui::CalcItemWidth(), "Do you really want to reset all values in '%s' to their defaults?", effect_name.c_str()))
+		if (imgui::confirm_button(ICON_FK_UNDO " 重置所有为默认值", _variable_editor_tabs ? ImGui::GetContentRegionAvail().x : ImGui::CalcItemWidth(), "真的要将 '%s' 中所有值重设为默认值吗？", effect_name.c_str()))
 		{
 			// Reset all uniform variables
 			for (uniform &variable_it : effect.uniforms)
@@ -2928,7 +2942,7 @@ void reshade::runtime::draw_variable_editor()
 				for (const std::pair<std::string, std::string> &definition : effect.definitions)
 				{
 					if (const auto it = std::remove_if(preset_it->second.begin(), preset_it->second.end(),
-							[&definition](const std::pair<std::string, std::string> &preset_definition) { return preset_definition.first == definition.first; });
+						[&definition](const std::pair<std::string, std::string> &preset_definition) { return preset_definition.first == definition.first; });
 						it != preset_it->second.end())
 					{
 						preset_it->second.erase(it, preset_it->second.end());
@@ -2993,9 +3007,9 @@ void reshade::runtime::draw_variable_editor()
 
 					if (ImGui::BeginPopupContextItem(category_label.c_str()))
 					{
-						const std::string reset_button_label = ICON_FK_UNDO " Reset all in '" + current_category + "' to default";
+						const std::string reset_button_label = ICON_FK_UNDO " 将 '" + current_category + "' 中所有重设为默认值";
 
-						if (imgui::confirm_button(reset_button_label.c_str(), ImGui::GetContentRegionAvail().x, "Do you really want to reset all values in '%s' to their defaults?", current_category.c_str()))
+						if (imgui::confirm_button(reset_button_label.c_str(), ImGui::GetContentRegionAvail().x, "真的要将 '%s' 中所有值重设为默认值吗？", current_category.c_str()))
 						{
 							for (uniform &variable_it : effect.uniforms)
 								if (variable_it.special == special_uniform::none &&
@@ -3044,88 +3058,88 @@ void reshade::runtime::draw_variable_editor()
 
 			switch (variable.type.base)
 			{
-				case reshadefx::type::t_bool:
-				{
-					bool data;
-					get_uniform_value(variable, &data);
+			case reshadefx::type::t_bool:
+			{
+				bool data;
+				get_uniform_value(variable, &data);
 
-					if (ui_type == "combo")
-						modified = imgui::combo_with_buttons(label.data(), data);
-					else
-						modified = ImGui::Checkbox(label.data(), &data);
+				if (ui_type == "combo")
+					modified = imgui::combo_with_buttons(label.data(), data);
+				else
+					modified = ImGui::Checkbox(label.data(), &data);
 
-					if (modified)
-						set_uniform_value(variable, &data);
-					break;
-				}
-				case reshadefx::type::t_int:
-				case reshadefx::type::t_uint:
-				{
-					int data[16];
-					get_uniform_value(variable, data, 16);
+				if (modified)
+					set_uniform_value(variable, &data);
+				break;
+			}
+			case reshadefx::type::t_int:
+			case reshadefx::type::t_uint:
+			{
+				int data[16];
+				get_uniform_value(variable, data, 16);
 
-					const int ui_min_val = variable.annotation_as_int("ui_min", 0, ui_type == "slider" ? 0 : std::numeric_limits<int>::lowest());
-					const int ui_max_val = variable.annotation_as_int("ui_max", 0, ui_type == "slider" ? 1 : std::numeric_limits<int>::max());
-					const int ui_stp_val = std::max(1, variable.annotation_as_int("ui_step"));
+				const int ui_min_val = variable.annotation_as_int("ui_min", 0, ui_type == "slider" ? 0 : std::numeric_limits<int>::lowest());
+				const int ui_max_val = variable.annotation_as_int("ui_max", 0, ui_type == "slider" ? 1 : std::numeric_limits<int>::max());
+				const int ui_stp_val = std::max(1, variable.annotation_as_int("ui_step"));
 
-					if (ui_type == "slider")
-						modified = imgui::slider_with_buttons(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, data, variable.type.rows, &ui_stp_val, &ui_min_val, &ui_max_val);
-					else if (ui_type == "drag")
-						modified = variable.annotation_as_int("ui_step") == 0 ?
-							ImGui::DragScalarN(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, data, variable.type.rows, 1.0f, &ui_min_val, &ui_max_val) :
-							imgui::drag_with_buttons(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, data, variable.type.rows, &ui_stp_val, &ui_min_val, &ui_max_val);
-					else if (ui_type == "list")
-						modified = imgui::list_with_buttons(label.data(), variable.annotation_as_string("ui_items"), data[0]);
-					else if (ui_type == "combo")
-						modified = imgui::combo_with_buttons(label.data(), variable.annotation_as_string("ui_items"), data[0]);
-					else if (ui_type == "radio")
-						modified = imgui::radio_list(label.data(), variable.annotation_as_string("ui_items"), data[0]);
-					else if (variable.type.is_matrix())
-						for (unsigned int row = 0; row < variable.type.rows; ++row)
-							modified = ImGui::InputScalarN((std::string(label) + " [row " + std::to_string(row) + ']').c_str(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, &data[0] + row * variable.type.cols, variable.type.cols) || modified;
-					else
-						modified = ImGui::InputScalarN(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, data, variable.type.rows);
+				if (ui_type == "slider")
+					modified = imgui::slider_with_buttons(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, data, variable.type.rows, &ui_stp_val, &ui_min_val, &ui_max_val);
+				else if (ui_type == "drag")
+					modified = variable.annotation_as_int("ui_step") == 0 ?
+					ImGui::DragScalarN(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, data, variable.type.rows, 1.0f, &ui_min_val, &ui_max_val) :
+					imgui::drag_with_buttons(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, data, variable.type.rows, &ui_stp_val, &ui_min_val, &ui_max_val);
+				else if (ui_type == "list")
+					modified = imgui::list_with_buttons(label.data(), variable.annotation_as_string("ui_items"), data[0]);
+				else if (ui_type == "combo")
+					modified = imgui::combo_with_buttons(label.data(), variable.annotation_as_string("ui_items"), data[0]);
+				else if (ui_type == "radio")
+					modified = imgui::radio_list(label.data(), variable.annotation_as_string("ui_items"), data[0]);
+				else if (variable.type.is_matrix())
+					for (unsigned int row = 0; row < variable.type.rows; ++row)
+						modified = ImGui::InputScalarN((std::string(label) + " [row " + std::to_string(row) + ']').c_str(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, &data[0] + row * variable.type.cols, variable.type.cols) || modified;
+				else
+					modified = ImGui::InputScalarN(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, data, variable.type.rows);
 
-					if (modified)
-						set_uniform_value(variable, data, 16);
-					break;
-				}
-				case reshadefx::type::t_float:
-				{
-					float data[16];
-					get_uniform_value(variable, data, 16);
+				if (modified)
+					set_uniform_value(variable, data, 16);
+				break;
+			}
+			case reshadefx::type::t_float:
+			{
+				float data[16];
+				get_uniform_value(variable, data, 16);
 
-					const float ui_min_val = variable.annotation_as_float("ui_min", 0, ui_type == "slider" ? 0.0f : std::numeric_limits<float>::lowest());
-					const float ui_max_val = variable.annotation_as_float("ui_max", 0, ui_type == "slider" ? 1.0f : std::numeric_limits<float>::max());
-					const float ui_stp_val = std::max(0.001f, variable.annotation_as_float("ui_step"));
+				const float ui_min_val = variable.annotation_as_float("ui_min", 0, ui_type == "slider" ? 0.0f : std::numeric_limits<float>::lowest());
+				const float ui_max_val = variable.annotation_as_float("ui_max", 0, ui_type == "slider" ? 1.0f : std::numeric_limits<float>::max());
+				const float ui_stp_val = std::max(0.001f, variable.annotation_as_float("ui_step"));
 
-					// Calculate display precision based on step value
-					char precision_format[] = "%.0f";
-					for (float x = 1.0f; x * ui_stp_val < 1.0f && precision_format[2] < '9'; x *= 10.0f)
-						++precision_format[2]; // This changes the text to "%.1f", "%.2f", "%.3f", ...
+				// Calculate display precision based on step value
+				char precision_format[] = "%.0f";
+				for (float x = 1.0f; x * ui_stp_val < 1.0f && precision_format[2] < '9'; x *= 10.0f)
+					++precision_format[2]; // This changes the text to "%.1f", "%.2f", "%.3f", ...
 
-					if (ui_type == "slider")
-						modified = imgui::slider_with_buttons(label.data(), ImGuiDataType_Float, data, variable.type.rows, &ui_stp_val, &ui_min_val, &ui_max_val, precision_format);
-					else if (ui_type == "drag")
-						modified = variable.annotation_as_float("ui_step") == 0 ?
-							ImGui::DragScalarN(label.data(), ImGuiDataType_Float, data, variable.type.rows, ui_stp_val, &ui_min_val, &ui_max_val, precision_format) :
-							imgui::drag_with_buttons(label.data(), ImGuiDataType_Float, data, variable.type.rows, &ui_stp_val, &ui_min_val, &ui_max_val, precision_format);
-					else if (ui_type == "color" && variable.type.rows == 1)
-						modified = imgui::slider_for_alpha_value(label.data(), data);
-					else if (ui_type == "color" && variable.type.rows == 3)
-						modified = ImGui::ColorEdit3(label.data(), data, ImGuiColorEditFlags_NoOptions);
-					else if (ui_type == "color" && variable.type.rows == 4)
-						modified = ImGui::ColorEdit4(label.data(), data, ImGuiColorEditFlags_NoOptions | ImGuiColorEditFlags_AlphaPreview | ImGuiColorEditFlags_AlphaBar);
-					else if (variable.type.is_matrix())
-						for (unsigned int row = 0; row < variable.type.rows; ++row)
-							modified = ImGui::InputScalarN((std::string(label) + " [row " + std::to_string(row) + ']').c_str(), ImGuiDataType_Float, &data[0] + row * variable.type.cols, variable.type.cols) || modified;
-					else
-						modified = ImGui::InputScalarN(label.data(), ImGuiDataType_Float, data, variable.type.rows);
+				if (ui_type == "slider")
+					modified = imgui::slider_with_buttons(label.data(), ImGuiDataType_Float, data, variable.type.rows, &ui_stp_val, &ui_min_val, &ui_max_val, precision_format);
+				else if (ui_type == "drag")
+					modified = variable.annotation_as_float("ui_step") == 0 ?
+					ImGui::DragScalarN(label.data(), ImGuiDataType_Float, data, variable.type.rows, ui_stp_val, &ui_min_val, &ui_max_val, precision_format) :
+					imgui::drag_with_buttons(label.data(), ImGuiDataType_Float, data, variable.type.rows, &ui_stp_val, &ui_min_val, &ui_max_val, precision_format);
+				else if (ui_type == "color" && variable.type.rows == 1)
+					modified = imgui::slider_for_alpha_value(label.data(), data);
+				else if (ui_type == "color" && variable.type.rows == 3)
+					modified = ImGui::ColorEdit3(label.data(), data, ImGuiColorEditFlags_NoOptions);
+				else if (ui_type == "color" && variable.type.rows == 4)
+					modified = ImGui::ColorEdit4(label.data(), data, ImGuiColorEditFlags_NoOptions | ImGuiColorEditFlags_AlphaPreview | ImGuiColorEditFlags_AlphaBar);
+				else if (variable.type.is_matrix())
+					for (unsigned int row = 0; row < variable.type.rows; ++row)
+						modified = ImGui::InputScalarN((std::string(label) + " [row " + std::to_string(row) + ']').c_str(), ImGuiDataType_Float, &data[0] + row * variable.type.cols, variable.type.cols) || modified;
+				else
+					modified = ImGui::InputScalarN(label.data(), ImGuiDataType_Float, data, variable.type.rows);
 
-					if (modified)
-						set_uniform_value(variable, data, 16);
-					break;
-				}
+				if (modified)
+					set_uniform_value(variable, data, 16);
+				break;
+			}
 			}
 
 			if (ImGui::IsItemActive())
@@ -3151,7 +3165,7 @@ void reshade::runtime::draw_variable_editor()
 					imgui::key_input_box("##toggle_key", variable.toggle_key_data, *_input))
 					modified = true;
 
-				if (ImGui::Button(ICON_FK_UNDO " Reset to default", ImVec2(230.0f, 0)))
+				if (ImGui::Button(ICON_FK_UNDO " 重设为默认值", ImVec2(230.0f, 0)))
 				{
 					modified = true;
 					reset_uniform_value(variable);
@@ -3190,7 +3204,7 @@ void reshade::runtime::draw_variable_editor()
 
 		if (!effect.definitions.empty())
 		{
-			std::string category_label = "Preprocessor definitions";
+			std::string category_label = "预处理器定义";
 			if (!_variable_editor_tabs)
 				for (float x = 0, space_x = ImGui::CalcTextSize(" ").x, width = (ImGui::CalcItemWidth() - ImGui::CalcTextSize(category_label.c_str()).x - 45) / 2; x < width; x += space_x)
 					category_label.insert(0, " ");
@@ -3238,7 +3252,7 @@ void reshade::runtime::draw_variable_editor()
 					if (!force_reload_effect && // Cannot compare iterators if definitions were just modified above
 						ImGui::BeginPopupContextItem())
 					{
-						if (ImGui::Button(ICON_FK_UNDO " Reset to default", ImVec2(230.0f, 0)))
+						if (ImGui::Button(ICON_FK_UNDO " 重设为默认值", ImVec2(230.0f, 0)))
 						{
 							if (definition_scope != nullptr)
 							{
@@ -3296,7 +3310,7 @@ void reshade::runtime::draw_variable_editor()
 
 	if (ImGui::BeginPopup("##pperror"))
 	{
-		ImGui::TextColored(COLOR_RED, "The effect failed to compile after this change, so reverted back to the default value.");
+		ImGui::TextColored(COLOR_RED, "此次修改后，该效果编译失败，因此回退为默认值。");
 		ImGui::EndPopup();
 	}
 
@@ -3308,11 +3322,11 @@ void reshade::runtime::draw_technique_editor()
 {
 	if (_effects.empty())
 	{
-		ImGui::TextColored(COLOR_YELLOW, "No effect files (.fx) found in the effect search paths%c", _effect_search_paths.empty() ? '.' : ':');
+		ImGui::TextColored(COLOR_YELLOW, "在效果搜索路径中没有找到效果文件(.fx)%c", _effect_search_paths.empty() ? '.' : ':');
 		for (const std::filesystem::path &search_path : _effect_search_paths)
 			ImGui::TextColored(COLOR_YELLOW, "  %s", (g_reshade_base_path / search_path).lexically_normal().u8string().c_str());
 		ImGui::Spacing();
-		ImGui::TextColored(COLOR_YELLOW, "Please verify they are set up correctly in the settings and hit 'Reload'!");
+		ImGui::TextColored(COLOR_YELLOW, "请确认搜索路径设置正确，然后点击 '重载'！");
 		return;
 	}
 
@@ -3331,7 +3345,7 @@ void reshade::runtime::draw_technique_editor()
 			ImGui::PushStyleColor(ImGuiCol_Text, COLOR_RED);
 			ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
 
-			const std::string label = '[' + effect.source_file.filename().u8string() + ']' + " failed to compile";
+			const std::string label = '[' + effect.source_file.filename().u8string() + ']' + " 编译失败";
 			bool value = false;
 			ImGui::Checkbox(label.c_str(), &value);
 
@@ -3353,12 +3367,12 @@ void reshade::runtime::draw_technique_editor()
 
 			if (ImGui::BeginPopup("##context"))
 			{
-				if (ImGui::Button("Open folder in explorer", ImVec2(230.0f, 0)))
+				if (ImGui::Button("在文件资源管理器中打开文件夹", ImVec2(230.0f, 0)))
 					utils::open_explorer(effect.source_file);
 
 				ImGui::Separator();
 
-				if (imgui::popup_button(ICON_FK_PENCIL " Edit source code", 230.0f))
+				if (imgui::popup_button(ICON_FK_PENCIL " 编辑源代码", 230.0f))
 				{
 					std::unordered_map<std::string, std::string> file_errors_lookup;
 					parse_errors(effect.errors,
@@ -3427,9 +3441,9 @@ void reshade::runtime::draw_technique_editor()
 				}
 
 				if (_renderer_id < 0x20000 && // Hide if using SPIR-V, since that cannot easily be shown here
-					imgui::popup_button("Show compiled results", 230.0f))
+					imgui::popup_button("显示编译结果", 230.0f))
 				{
-					const bool open_generated_code = ImGui::MenuItem("Generated code");
+					const bool open_generated_code = ImGui::MenuItem("生成的代码");
 
 					ImGui::EndPopup();
 
@@ -3541,7 +3555,7 @@ void reshade::runtime::draw_technique_editor()
 			const bool is_not_top = index > 0;
 			const bool is_not_bottom = index < _technique_sorting.size() - 1;
 
-			if (is_not_top && ImGui::Button("Move to top", ImVec2(230.0f, 0)))
+			if (is_not_top && ImGui::Button("移到顶部", ImVec2(230.0f, 0)))
 			{
 				std::vector<size_t> technique_indices = _technique_sorting;
 				technique_indices.insert(technique_indices.begin(), technique_indices[index]);
@@ -3555,7 +3569,7 @@ void reshade::runtime::draw_technique_editor()
 
 				ImGui::CloseCurrentPopup();
 			}
-			if (is_not_bottom && ImGui::Button("Move to bottom", ImVec2(230.0f, 0)))
+			if (is_not_bottom && ImGui::Button("移到底部", ImVec2(230.0f, 0)))
 			{
 				std::vector<size_t> technique_indices = _technique_sorting;
 				technique_indices.push_back(technique_indices[index]);
@@ -3573,12 +3587,12 @@ void reshade::runtime::draw_technique_editor()
 			if (is_not_top || is_not_bottom || (_input != nullptr && !force_enabled))
 				ImGui::Separator();
 
-			if (ImGui::Button("Open folder in explorer", ImVec2(230.0f, 0)))
+			if (ImGui::Button("在文件资源管理器中打开文件夹", ImVec2(230.0f, 0)))
 				utils::open_explorer(effect.source_file);
 
 			ImGui::Separator();
 
-			if (imgui::popup_button(ICON_FK_PENCIL " Edit source code", 230.0f))
+			if (imgui::popup_button(ICON_FK_PENCIL " 编辑源代码", 230.0f))
 			{
 				std::filesystem::path source_file;
 				if (ImGui::MenuItem(effect.source_file.filename().u8string().c_str()))
@@ -3613,9 +3627,9 @@ void reshade::runtime::draw_technique_editor()
 			}
 
 			if (_renderer_id < 0x20000 && // Hide if using SPIR-V, since that cannot easily be shown here
-				imgui::popup_button("Show compiled results", 230.0f))
+				imgui::popup_button("显示编译结果", 230.0f))
 			{
-				const bool open_generated_code = ImGui::MenuItem("Generated code");
+				const bool open_generated_code = ImGui::MenuItem("生成的代码");
 
 				ImGui::Separator();
 
@@ -3710,7 +3724,7 @@ void reshade::runtime::draw_technique_editor()
 		reload_effect(force_reload_effect);
 
 		// Reloading an effect file invalidates all textures, but the statistics window may already have drawn references to those, so need to reset it
-		if (ImGuiWindow *const statistics_window = ImGui::FindWindowByName("Statistics"))
+		if (ImGuiWindow *const statistics_window = ImGui::FindWindowByName("统计"))
 			statistics_window->DrawList->CmdBuffer.clear();
 	}
 }
@@ -3722,9 +3736,9 @@ void reshade::runtime::open_code_editor(size_t effect_index, const std::string &
 	const std::filesystem::path &path = _effects[effect_index].source_file;
 
 	if (const auto it = std::find_if(_editors.begin(), _editors.end(),
-			[effect_index, &path, &entry_point](const editor_instance &instance) {
-				return instance.effect_index == effect_index && instance.file_path == path && instance.generated && instance.entry_point_name == entry_point;
-			});
+		[effect_index, &path, &entry_point](const editor_instance &instance) {
+			return instance.effect_index == effect_index && instance.file_path == path && instance.generated && instance.entry_point_name == entry_point;
+		});
 		it != _editors.end())
 	{
 		it->selected = true;
@@ -3742,9 +3756,9 @@ void reshade::runtime::open_code_editor(size_t effect_index, const std::filesyst
 	assert(effect_index < _effects.size());
 
 	if (const auto it = std::find_if(_editors.begin(), _editors.end(),
-			[effect_index, &path](const editor_instance &instance) {
-				return instance.effect_index == effect_index && instance.file_path == path && !instance.generated;
-			});
+		[effect_index, &path](const editor_instance &instance) {
+			return instance.effect_index == effect_index && instance.file_path == path && !instance.generated;
+		});
 		it != _editors.end())
 	{
 		it->selected = true;
@@ -3795,7 +3809,7 @@ void reshade::runtime::open_code_editor(editor_instance &instance) const
 void reshade::runtime::draw_code_editor(editor_instance &instance)
 {
 	if (instance.entry_point_name.empty() && (
-		ImGui::Button(ICON_FK_FLOPPY " Save", ImVec2(ImGui::GetContentRegionAvail().x, 0)) || (
+		ImGui::Button(ICON_FK_FLOPPY " 保存", ImVec2(ImGui::GetContentRegionAvail().x, 0)) || (
 		_input != nullptr && _input->is_key_pressed('S', true, false, false))))
 	{
 		// Write current editor text to file
@@ -3813,7 +3827,7 @@ void reshade::runtime::draw_code_editor(editor_instance &instance)
 			reload_effect(instance.effect_index);
 
 			// Reloading an effect file invalidates all textures, but the statistics window may already have drawn references to those, so need to reset it
-			if (ImGuiWindow *const statistics_window = ImGui::FindWindowByName("Statistics"))
+			if (ImGuiWindow *const statistics_window = ImGui::FindWindowByName("统计"))
 				statistics_window->DrawList->CmdBuffer.clear();
 		}
 	}
@@ -3939,7 +3953,7 @@ bool reshade::runtime::init_imgui_resources()
 
 	const api::input_element input_layout[3] = {
 		{ 0, "POSITION", 0, api::format::r32g32_float,   0, offsetof(ImDrawVert, pos), sizeof(ImDrawVert), 0 },
-		{ 1, "TEXCOORD", 0, api::format::r32g32_float,   0, offsetof(ImDrawVert, uv ), sizeof(ImDrawVert), 0 },
+		{ 1, "TEXCOORD", 0, api::format::r32g32_float,   0, offsetof(ImDrawVert, uv), sizeof(ImDrawVert), 0 },
 		{ 2, "COLOR",    0, api::format::r8g8b8a8_unorm, 0, offsetof(ImDrawVert, col), sizeof(ImDrawVert), 0 }
 	};
 
@@ -4076,7 +4090,7 @@ void reshade::runtime::render_imgui_draw_data(api::command_list *cmd_list, ImDra
 		2.0f / draw_data->DisplaySize.x, 0.0f, 0.0f, 0.0f,
 		0.0f, (flip_y ? 2.0f : -2.0f) / draw_data->DisplaySize.y, 0.0f, 0.0f,
 		0.0f,                            0.0f, depth_clip_zero_to_one ? 0.5f : -1.0f, 0.0f,
-		                   -(2 * draw_data->DisplayPos.x + draw_data->DisplaySize.x + (adjust_half_pixel ? 1.0f : 0.0f)) / draw_data->DisplaySize.x,
+						   -(2 * draw_data->DisplayPos.x + draw_data->DisplaySize.x + (adjust_half_pixel ? 1.0f : 0.0f)) / draw_data->DisplaySize.x,
 		(flip_y ? -1 : 1) * (2 * draw_data->DisplayPos.y + draw_data->DisplaySize.y + (adjust_half_pixel ? 1.0f : 0.0f)) / draw_data->DisplaySize.y, depth_clip_zero_to_one ? 0.5f : 0.0f, 1.0f,
 	};
 
