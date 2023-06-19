@@ -2959,6 +2959,7 @@ void reshade::runtime::draw_variable_editor()
 		size_t hovered_variable = 0;
 		size_t hovered_variable_index = std::numeric_limits<size_t>::max();
 
+		bool uniform_binding_updated = false;
 		for (size_t variable_index = 0; variable_index < effect.uniforms.size(); ++variable_index)
 		{
 			reshade::uniform &variable = effect.uniforms[variable_index];
@@ -3042,6 +3043,10 @@ void reshade::runtime::draw_variable_editor()
 
 			ImGui::PushID(static_cast<int>(id++));
 
+			std::string ui_bind_definition { variable.annotation_as_string("ui_bind") };
+			bool uniform_binded = !ui_bind_definition.empty();
+			std::string ui_bind_value { "" };
+
 			switch (variable.type.base)
 			{
 				case reshadefx::type::t_bool:
@@ -3054,8 +3059,14 @@ void reshade::runtime::draw_variable_editor()
 					else
 						modified = ImGui::Checkbox(label.data(), &data);
 
-					if (modified)
+					if (modified) {
 						set_uniform_value(variable, &data);
+					if (uniform_binded) {
+						effect.definition_bindings[ui_bind_definition] = data ? "1" : "0";
+						uniform_binding_updated = true;
+					}
+				}
+
 					break;
 				}
 				case reshadefx::type::t_int:
@@ -3086,8 +3097,13 @@ void reshade::runtime::draw_variable_editor()
 					else
 						modified = ImGui::InputScalarN(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, data, variable.type.rows);
 
-					if (modified)
+					if (modified) {
 						set_uniform_value(variable, data, 16);
+					if (uniform_binded) {
+						effect.definition_bindings[ui_bind_definition] = std::to_string(data[0]);
+						uniform_binding_updated = true;
+					}
+				}
 					break;
 				}
 				case reshadefx::type::t_float:
@@ -3122,11 +3138,21 @@ void reshade::runtime::draw_variable_editor()
 					else
 						modified = ImGui::InputScalarN(label.data(), ImGuiDataType_Float, data, variable.type.rows);
 
-					if (modified)
+					if (modified) {
 						set_uniform_value(variable, data, 16);
+					if (uniform_binded) {
+						std::stringstream tmp;
+						tmp.precision(precision_format[2] - '0');
+						tmp << data[0];
+						effect.definition_bindings[ui_bind_definition] = tmp.str();
+						uniform_binding_updated = true;
+					}
+				}
 					break;
 				}
 			}
+			//if (!ui_bind_value.empty())
+			//	effect.definition_bindings[ui_bind_definiton]  = ui_bind_value;
 
 			if (ImGui::IsItemActive())
 				active_variable = variable_index + 1;
@@ -3196,15 +3222,22 @@ void reshade::runtime::draw_variable_editor()
 					category_label.insert(0, " ");
 
 			if (ImGui::TreeNodeEx(category_label.c_str(), ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_DefaultOpen))
-			{
+			{	
 				for (const std::pair<std::string, std::string> &definition : effect.definitions)
 				{
 					std::vector<std::pair<std::string, std::string>> *definition_scope = nullptr;
 					std::vector<std::pair<std::string, std::string>>::iterator definition_it;
 
 					char value[256];
-					if (get_preprocessor_definition(effect_name, definition.first, definition_scope, definition_it))
-						value[definition_it->second.copy(value, sizeof(value) - 1)] = '\0';
+					if (get_preprocessor_definition(effect_name, definition.first, definition_scope, definition_it)) {
+						// Get value from ui_bind annotation when it exists
+						if (effect.definition_bindings.find(definition.first) != effect.definition_bindings.end()) {
+							value[effect.definition_bindings[definition.first].copy(value, sizeof(value) - 1)] = '\0';
+							//force_reload_effect = true;
+						}
+						else
+							value[definition_it->second.copy(value, sizeof(value) - 1)] = '\0';
+					}
 					else
 						value[0] = '\0';
 
@@ -3252,6 +3285,8 @@ void reshade::runtime::draw_variable_editor()
 						ImGui::EndPopup();
 					}
 				}
+				if (uniform_binding_updated)
+					force_reload_effect = true;
 			}
 		}
 
