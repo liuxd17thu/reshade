@@ -1248,11 +1248,11 @@ void reshade::runtime::save_current_preset() const
 
 		const std::string effect_name = effect.source_file.filename().u8string();
 
-		if (const auto preset_it = _preset_preprocessor_definitions.find(effect_name);
-			preset_it != _preset_preprocessor_definitions.end() && !preset_it->second.empty())
-			preset.set(effect_name, "PreprocessorDefinitions", preset_it->second);
-		else
-			preset.remove_key(effect_name, "PreprocessorDefinitions");
+		//if (const auto preset_it = _preset_preprocessor_definitions.find(effect_name);
+		//	preset_it != _preset_preprocessor_definitions.end() && !preset_it->second.empty())
+		//	preset.set(effect_name, "PreprocessorDefinitions", preset_it->second);
+		//else
+		//	preset.remove_key(effect_name, "PreprocessorDefinitions");
 
 		if (const auto preset_it = _preset_preprocessor_definitions.find(effect_name);
 			preset_it != _preset_preprocessor_definitions.end()) {
