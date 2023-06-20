@@ -3302,7 +3302,8 @@ void reshade::runtime::draw_variable_editor()
 
 		if (force_reload_effect)
 		{
-			save_current_preset();
+			if(_auto_save_preset || !uniform_binding_updated)
+				save_current_preset();
 
 			const bool reload_successful_before = _last_reload_successfull;
 

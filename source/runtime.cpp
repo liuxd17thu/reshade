@@ -1002,9 +1002,27 @@ void reshade::runtime::load_current_preset()
 	preset.get({}, "TechniqueSorting", sorted_technique_list);
 
 	std::unordered_map<std::string, std::vector<std::pair<std::string, std::string>>> preset_preprocessor_definitions;
+	std::unordered_map<std::string, std::vector<std::pair<std::string, std::string>>> preset_binding_definitions;
 	preset.get({}, "PreprocessorDefinitions", preset_preprocessor_definitions[{}]);
-	for (const effect &effect : _effects)
+	for (effect &effect : _effects) {
 		preset.get(effect.source_file.filename().u8string(), "PreprocessorDefinitions", preset_preprocessor_definitions[effect.source_file.filename().u8string()]);
+		// scan and build ui_binds
+		for ( auto & variable : effect.uniforms) {
+			std::string ui_bind_definition { variable.annotation_as_string("ui_bind") };
+			if (ui_bind_definition.empty())
+				continue;
+			std::string data;
+			if( const auto & match = std::find_if(preset_preprocessor_definitions[effect.source_file.filename().u8string()].cbegin(),
+					preset_preprocessor_definitions[effect.source_file.filename().u8string()].cend(),
+					[ui_bind_definition](std::pair<std::string, std::string> it) { return it.first == ui_bind_definition; });
+				match != preset_preprocessor_definitions[effect.source_file.filename().u8string()].end()
+				)
+				data = match->second;
+
+			if (!data.empty())
+				effect.definition_bindings[ui_bind_definition] = data;
+		}
+	}
 
 	// Recompile effects if preprocessor definitions have changed or running in performance mode (in which case all preset values are compile-time constants)
 	if (_reload_remaining_effects != 0) // ... unless this is the 'load_current_preset' call in 'update_effects'
@@ -1233,6 +1251,25 @@ void reshade::runtime::save_current_preset() const
 		if (const auto preset_it = _preset_preprocessor_definitions.find(effect_name);
 			preset_it != _preset_preprocessor_definitions.end() && !preset_it->second.empty())
 			preset.set(effect_name, "PreprocessorDefinitions", preset_it->second);
+		else
+			preset.remove_key(effect_name, "PreprocessorDefinitions");
+
+		if (const auto preset_it = _preset_preprocessor_definitions.find(effect_name);
+			preset_it != _preset_preprocessor_definitions.end()) {
+			auto keys_with_binding { preset_it->second };
+			// first, remove binded ones from PreprocessorDefinitions
+			for (auto &definition_bind : effect.definition_bindings) {
+				if (auto match = std::find_if(keys_with_binding.begin(), keys_with_binding.end(), [&](const auto &def_bind) {return def_bind.first == definition_bind.first; });
+					match != keys_with_binding.end())
+					keys_with_binding.erase(match);
+			}
+			// then, append the PreprocessorDefinitions
+			keys_with_binding.insert(keys_with_binding.end(), effect.definition_bindings.begin(), effect.definition_bindings.end());
+			if (!keys_with_binding.empty())
+				preset.set(effect_name, "PreprocessorDefinitions", keys_with_binding);
+			else
+				preset.remove_key(effect_name, "PreprocessorDefinitions");
+		}
 		else
 			preset.remove_key(effect_name, "PreprocessorDefinitions");
 
