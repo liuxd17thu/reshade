@@ -478,6 +478,7 @@ namespace reshade
 		bool _auto_save_preset = true;
 		bool _preset_is_modified = false;
 		bool _inherit_current_preset = false;
+		bool _ui_bind_support = true;
 		bool _uniform_binding_updated = false;
 		std::filesystem::path _template_preset_path;
 		bool _was_preprocessor_popup_edited = false;
