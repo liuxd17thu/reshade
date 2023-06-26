@@ -2984,11 +2984,10 @@ void reshade::runtime::draw_variable_editor()
 				}
 			}
 			effect.definition_bindings = tmp_binds;
-			if (_auto_save_preset) {
-				ini_file::load_cache(_current_preset_path).clear();
-				save_current_preset();
-				ini_file::flush_cache(_current_preset_path);
-			}
+
+			//ini_file::load_cache(_current_preset_path).clear();
+			//save_current_preset();
+			ini_file::flush_cache(_current_preset_path);
 				
 			_uniform_binding_updated = false;
 		}
