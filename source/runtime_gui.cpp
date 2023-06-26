@@ -2544,7 +2544,7 @@ void reshade::runtime::draw_gui_log()
 }
 void reshade::runtime::draw_gui_about()
 {
-	ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT " zh_CN-v0.5");
+	ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT " CN2-v0.62a");
 
 	ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 7.8f * _font_size);
 	if (ImGui::SmallButton(" 打开官网 "))
@@ -3001,11 +3001,10 @@ void reshade::runtime::draw_variable_editor()
 				}
 			}
 			effect.definition_bindings = tmp_binds;
-			if (_auto_save_preset) {
-				ini_file::load_cache(_current_preset_path).clear();
-				save_current_preset();
-				ini_file::flush_cache(_current_preset_path);
-			}
+
+			//ini_file::load_cache(_current_preset_path).clear();
+			//save_current_preset();
+			ini_file::flush_cache(_current_preset_path);
 				
 			_uniform_binding_updated = false;
 		}
