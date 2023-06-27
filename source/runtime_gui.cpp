@@ -2986,8 +2986,8 @@ void reshade::runtime::draw_variable_editor()
 			effect.definition_bindings = tmp_binds;
 
 			//ini_file::load_cache(_current_preset_path).clear();
-			//save_current_preset();
-			ini_file::flush_cache(_current_preset_path);
+			save_current_preset();
+			//ini_file::flush_cache(_current_preset_path);
 				
 			_uniform_binding_updated = false;
 		}
@@ -3332,8 +3332,11 @@ void reshade::runtime::draw_variable_editor()
 
 		if (force_reload_effect)
 		{
-			if(!_ui_bind_support || _auto_save_preset)
-				save_current_preset();
+			//if(!_ui_bind_support || _auto_save_preset)
+			save_current_preset();
+			if (_ui_bind_support && _auto_save_preset) {
+				ini_file::flush_cache(_current_preset_path);
+			}
 
 			const bool reload_successful_before = _last_reload_successfull;
 
