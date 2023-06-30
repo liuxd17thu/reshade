@@ -1473,7 +1473,11 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 	if (source_file != effect.source_file || source_hash != effect.source_hash)
 	{
 		// Source hash has changed, reset effect and load from scratch, rather than updating
+		// backup and re-apply binds
+		auto binding_backup = std::move(effect.definition_bindings);
 		effect = {};
+		if (_auto_save_preset && _ui_bind_support)
+			effect.definition_bindings = std::move(binding_backup);
 		effect.source_file = source_file;
 		effect.source_hash = source_hash;
 	}

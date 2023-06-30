@@ -1360,18 +1360,29 @@ void reshade::runtime::draw_gui_home()
 		{
 			// remove the definitions whose binding uniform is removed
 			if (_auto_save_preset && _ui_bind_support) {
-				for (auto effect : _effects) {
+				for (auto & effect : _effects) {
+					if (effect.rendering == 0)
+						continue;
 					std::unordered_map<std::string, std::string> tmp_binds;
 					for (auto variable_index = 0; variable_index < effect.uniforms.size(); ++variable_index) {
 						if (std::string definition { effect.uniforms[variable_index].annotation_as_string("ui_bind") }; !definition.empty()) {
 							if (effect.definition_bindings.count(definition)) {
 								tmp_binds[definition] = effect.definition_bindings[definition];
-								/*effect.definition_bindings.erase(definition);*/
+								effect.definition_bindings.erase(definition); // move binded ones to tmp
 							}
 						}
+					} // now only orphan binds stay in effect.definition_bindings
+					if (!effect.definition_bindings.empty()) {
+						auto &ppd = _preset_preprocessor_definitions[effect.source_file.filename().u8string()];
+						ppd.erase(
+							std::remove_if(
+							ppd.begin(),
+							ppd.end(),
+							[&](std::pair<std::string, std::string> it) { return effect.definition_bindings.count(it.first) != 0; }
+							),
+							ppd.end()
+						);
 					}
-					//_preset_preprocessor_definitions[effect.source_file.filename().u8string()]
-					//	= std::vector<std::pair<std::string, std::string>> {tmp_binds.begin(), tmp_binds.end()};
 					effect.definition_bindings = std::move(tmp_binds);
 				}
 				_uniform_binding_updated = std::numeric_limits<size_t>::max();
@@ -2563,7 +2574,7 @@ void reshade::runtime::draw_gui_log()
 }
 void reshade::runtime::draw_gui_about()
 {
-	ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT " CN2-v0.62d");
+	ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT " CN2-v0.62e");
 
 	ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 7.8f * _font_size);
 	if (ImGui::SmallButton(" 打开官网 "))
