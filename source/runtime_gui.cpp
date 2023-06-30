@@ -1348,6 +1348,25 @@ void reshade::runtime::draw_gui_home()
 
 		if (ImGui::ButtonEx(ICON_FK_FLOPPY, ImVec2(button_size, 0), ImGuiButtonFlags_NoNavFocus))
 		{
+			// remove the definitions whose binding uniform is removed
+			if (_auto_save_preset && _ui_bind_support) {
+				for (auto effect : _effects) {
+					std::unordered_map<std::string, std::string> tmp_binds;
+					for (auto variable_index = 0; variable_index < effect.uniforms.size(); ++variable_index) {
+						if (std::string definition { effect.uniforms[variable_index].annotation_as_string("ui_bind") }; !definition.empty()) {
+							if (effect.definition_bindings.count(definition)) {
+								tmp_binds[definition] = effect.definition_bindings[definition];
+								/*effect.definition_bindings.erase(definition);*/
+							}
+						}
+					}
+					//_preset_preprocessor_definitions[effect.source_file.filename().u8string()]
+					//	= std::vector<std::pair<std::string, std::string>> {tmp_binds.begin(), tmp_binds.end()};
+					effect.definition_bindings = std::move(tmp_binds);
+				}
+				_uniform_binding_updated = std::numeric_limits<size_t>::max();
+			}
+
 			ini_file::load_cache(_current_preset_path).clear();
 			save_current_preset();
 			ini_file::flush_cache(_current_preset_path);
@@ -2973,24 +2992,11 @@ void reshade::runtime::draw_variable_editor()
 		size_t hovered_variable = 0;
 		size_t hovered_variable_index = std::numeric_limits<size_t>::max();
 
-		bool uniform_binding_updated = false;
-		// remove the definitions whose binding uniform is removed
-		if (_auto_save_preset && _ui_bind_support && _uniform_binding_updated) {
-			std::unordered_map<std::string, std::string> tmp_binds;
-			for (auto variable_index = 0; variable_index < effect.uniforms.size(); ++variable_index) {
-				if (std::string definition { effect.uniforms[variable_index].annotation_as_string("ui_bind") }; !definition.empty()) {
-					if (effect.definition_bindings.count(definition))
-						tmp_binds[definition] = effect.definition_bindings[definition];
-				}
-			}
-			effect.definition_bindings = tmp_binds;
-
-			//ini_file::load_cache(_current_preset_path).clear();
-			save_current_preset();
-			//ini_file::flush_cache(_current_preset_path);
-				
-			_uniform_binding_updated = false;
+		if (_auto_save_preset && _ui_bind_support && _uniform_binding_updated == effect_index) {
+			reload_effect(effect_index);
+			_uniform_binding_updated = std::numeric_limits<size_t>::max();
 		}
+
 		for (size_t variable_index = 0; variable_index < effect.uniforms.size(); ++variable_index)
 		{
 			reshade::uniform &variable = effect.uniforms[variable_index];
@@ -3090,13 +3096,13 @@ void reshade::runtime::draw_variable_editor()
 					else
 						modified = ImGui::Checkbox(label.data(), &data);
 
-					if (modified) {
-						set_uniform_value(variable, &data);
-						if (_auto_save_preset && _ui_bind_support && uniform_binded) {
-							effect.definition_bindings[ui_bind_definition] = data ? "1" : "0";
-							_uniform_binding_updated = true;
-						}
+				if (modified) {
+					set_uniform_value(variable, &data);
+					if (_auto_save_preset && _ui_bind_support && uniform_binded) {
+						effect.definition_bindings[ui_bind_definition] = data ? "1" : "0";
+						_uniform_binding_updated = effect_index;
 					}
+				}
 
 					break;
 				}
@@ -3128,19 +3134,19 @@ void reshade::runtime::draw_variable_editor()
 					else
 						modified = ImGui::InputScalarN(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, data, variable.type.rows);
 
-					if (modified) {
-						set_uniform_value(variable, data, 16);
-						if (_auto_save_preset && _ui_bind_support && uniform_binded) {
-							effect.definition_bindings[ui_bind_definition] = std::to_string(data[0]);
-							_uniform_binding_updated = true;
-						}
+				if (modified) {
+					set_uniform_value(variable, data, 16);
+					if (_auto_save_preset && _ui_bind_support && uniform_binded) {
+						effect.definition_bindings[ui_bind_definition] = std::to_string(data[0]);
+						_uniform_binding_updated = effect_index;
 					}
-					break;
 				}
-				case reshadefx::type::t_float:
-				{
-					float data[16];
-					get_uniform_value(variable, data, 16);
+				break;
+			}
+			case reshadefx::type::t_float:
+			{
+				float data[16];
+				get_uniform_value(variable, data, 16);
 
 					const float ui_min_val = variable.annotation_as_float("ui_min", 0, ui_type == "slider" ? 0.0f : std::numeric_limits<float>::lowest());
 					const float ui_max_val = variable.annotation_as_float("ui_max", 0, ui_type == "slider" ? 1.0f : std::numeric_limits<float>::max());
@@ -3176,7 +3182,7 @@ void reshade::runtime::draw_variable_editor()
 						tmp.precision(precision_format[2] - '0');
 						tmp << data[0];
 						effect.definition_bindings[ui_bind_definition] = tmp.str();
-						_uniform_binding_updated = true;
+						_uniform_binding_updated = effect_index;
 						force_reload_effect = true;
 					}
 				}
@@ -3228,8 +3234,11 @@ void reshade::runtime::draw_variable_editor()
 			// A value has changed, so save the current preset
 			if (modified)
 			{
-				if (_auto_save_preset)
+				if (_auto_save_preset) {
 					save_current_preset();
+					if (_ui_bind_support && _uniform_binding_updated == effect_index)
+						ini_file::flush_cache(_current_preset_path);
+				}
 				else
 					_preset_is_modified = true;
 			}
@@ -3315,7 +3324,7 @@ void reshade::runtime::draw_variable_editor()
 						ImGui::EndPopup();
 					}
 				}
-				if (_auto_save_preset && _ui_bind_support && _uniform_binding_updated)
+				if (_auto_save_preset && _ui_bind_support && _uniform_binding_updated == effect_index)
 					force_reload_effect = true;
 			}
 		}
