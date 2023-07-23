@@ -481,6 +481,8 @@ namespace reshade
 		bool _auto_save_preset = true;
 		bool _preset_is_modified = false;
 		bool _inherit_current_preset = false;
+		bool _ui_bind_support = true;
+		size_t _uniform_binding_updated = std::numeric_limits<size_t>::max();
 		std::filesystem::path _template_preset_path;
 		bool _was_preprocessor_popup_edited = false;
 		size_t _focused_effect = std::numeric_limits<size_t>::max();

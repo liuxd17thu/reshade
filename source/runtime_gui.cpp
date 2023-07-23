@@ -270,6 +270,7 @@ void reshade::runtime::load_config_gui(const ini_file &config)
 	config.get("OVERLAY", "VariableListHeight", _variable_editor_height);
 	config.get("OVERLAY", "VariableListUseTabs", _variable_editor_tabs);
 	config.get("OVERLAY", "AutoSavePreset", _auto_save_preset);
+	config.get("OVERLAY", "UIBindSupport", _ui_bind_support);
 	config.get("OVERLAY", "ShowPresetTransitionMessage", _show_preset_transition_message);
 #endif
 
@@ -366,6 +367,7 @@ void reshade::runtime::save_config_gui(ini_file &config) const
 	config.set("OVERLAY", "VariableListHeight", _variable_editor_height);
 	config.set("OVERLAY", "VariableListUseTabs", _variable_editor_tabs);
 	config.set("OVERLAY", "AutoSavePreset", _auto_save_preset);
+	config.set("OVERLAY", "UIBindSupport", _ui_bind_support);
 	config.set("OVERLAY", "ShowPresetTransitionMessage", _show_preset_transition_message);
 #endif
 
@@ -1395,7 +1397,7 @@ void reshade::runtime::draw_gui_home()
 		ImGui::SameLine();
 
 		const bool was_auto_save_preset = _auto_save_preset;
-		if (imgui::toggle_button(was_auto_save_preset ? "自动保存已开###auto_save" : "自动保存已关###auto_save", _auto_save_preset, (was_auto_save_preset ? 0.0f : auto_save_button_spacing) + (11.0f * _font_size) - (button_spacing + button_size) * (was_auto_save_preset ? 2 : 3)))
+		if (imgui::toggle_button(was_auto_save_preset ? "自动保存已开###auto_save" : "自动保存已关###auto_save", _auto_save_preset, auto_save_button_spacing + (11.0f * _font_size) - (button_spacing + button_size) * 3))
 		{
 			_preset_is_modified = false;
 
@@ -1406,7 +1408,15 @@ void reshade::runtime::draw_gui_home()
 
 		if (was_auto_save_preset)
 		{
-			ImGui::SameLine(0, button_spacing + auto_save_button_spacing);
+			ImGui::SameLine(0, button_spacing);
+			if (imgui::toggle_button(_ui_bind_support ? "G" : "R", _ui_bind_support, button_size)) {
+				save_config();
+			};
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("开启自动保存时，是否同时启用ui_bind支持？\n"
+								  "可以允许像GShade那样，在“多重LUT”等滤镜中直接通过菜单更改所用图片。\n\n"
+								  "这是一个实验性功能。很可能有BUG。");
+			ImGui::SameLine(0, button_spacing);
 		}
 		else
 		{
@@ -1429,6 +1439,36 @@ void reshade::runtime::draw_gui_home()
 
 		if (ImGui::ButtonEx(ICON_FK_FLOPPY, ImVec2(button_size, 0), ImGuiButtonFlags_NoNavFocus))
 		{
+			// remove the definitions whose binding uniform is removed
+			if (_auto_save_preset && _ui_bind_support) {
+				for (auto & effect : _effects) {
+					if (effect.rendering == 0)
+						continue;
+					std::unordered_map<std::string, std::string> tmp_binds;
+					for (auto variable_index = 0; variable_index < effect.uniforms.size(); ++variable_index) {
+						if (std::string definition { effect.uniforms[variable_index].annotation_as_string("ui_bind") }; !definition.empty()) {
+							if (effect.definition_bindings.count(definition)) {
+								tmp_binds[definition] = effect.definition_bindings[definition];
+								effect.definition_bindings.erase(definition); // move binded ones to tmp
+							}
+						}
+					} // now only orphan binds stay in effect.definition_bindings
+					if (!effect.definition_bindings.empty()) {
+						auto &ppd = _preset_preprocessor_definitions[effect.source_file.filename().u8string()];
+						ppd.erase(
+							std::remove_if(
+							ppd.begin(),
+							ppd.end(),
+							[&](std::pair<std::string, std::string> it) { return effect.definition_bindings.count(it.first) != 0; }
+							),
+							ppd.end()
+						);
+					}
+					effect.definition_bindings = std::move(tmp_binds);
+				}
+				_uniform_binding_updated = std::numeric_limits<size_t>::max();
+			}
+
 			ini_file::load_cache(_current_preset_path).clear();
 			save_current_preset();
 			ini_file::flush_cache(_current_preset_path);
@@ -1727,7 +1767,11 @@ void reshade::runtime::draw_gui_home()
 
 			if (!_no_effect_cache && (_imgui_context->IO.KeyCtrl || _imgui_context->IO.KeyShift))
 				clear_effect_cache();
-
+			//if (_auto_save_preset && _ui_bind_support) {
+			//	ini_file::load_cache(_current_preset_path).clear();
+			//	save_current_preset();
+			//	ini_file::flush_cache(_current_preset_path);
+			//}
 			reload_effects();
 		}
 
@@ -2664,7 +2708,7 @@ void reshade::runtime::draw_gui_log()
 }
 void reshade::runtime::draw_gui_about()
 {
-	ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT " zh_CN-v0.5");
+	ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT " CN2-v0.62e");
 
 	ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 7.8f * _font_size);
 	if (ImGui::SmallButton(" 打开官网 "))
@@ -3116,6 +3160,11 @@ void reshade::runtime::draw_variable_editor()
 		size_t hovered_variable = 0;
 		size_t hovered_variable_index = std::numeric_limits<size_t>::max();
 
+		if (_auto_save_preset && _ui_bind_support && _uniform_binding_updated == effect_index) {
+			reload_effect(effect_index);
+			_uniform_binding_updated = std::numeric_limits<size_t>::max();
+		}
+
 		for (size_t variable_index = 0; variable_index < effect.uniforms.size(); ++variable_index)
 		{
 			reshade::uniform &variable = effect.uniforms[variable_index];
@@ -3200,6 +3249,10 @@ void reshade::runtime::draw_variable_editor()
 
 			ImGui::PushID(static_cast<int>(id++));
 
+			std::string ui_bind_definition { variable.annotation_as_string("ui_bind") };
+			bool uniform_binded = !ui_bind_definition.empty();
+			std::string ui_bind_value { "" };
+
 			switch (variable.type.base)
 			{
 				case reshadefx::type::t_bool:
@@ -3214,8 +3267,14 @@ void reshade::runtime::draw_variable_editor()
 				else
 					modified = ImGui::Checkbox(label.data(), &data);
 
-					if (modified)
+					if (modified) {
 						set_uniform_value(variable, &data);
+					if (_auto_save_preset && _ui_bind_support && uniform_binded) {
+						effect.definition_bindings[ui_bind_definition] = data ? "1" : "0";
+						_uniform_binding_updated = effect_index;
+					}
+				}
+
 					break;
 				}
 				case reshadefx::type::t_int:
@@ -3253,8 +3312,13 @@ void reshade::runtime::draw_variable_editor()
 					else
 						modified = ImGui::InputScalarN(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, data, variable.type.rows);
 
-					if (modified)
+					if (modified) {
 						set_uniform_value(variable, data, 16);
+					if (_auto_save_preset && _ui_bind_support && uniform_binded) {
+						effect.definition_bindings[ui_bind_definition] = std::to_string(data[0]);
+						_uniform_binding_updated = effect_index;
+					}
+				}
 					break;
 				}
 				case reshadefx::type::t_float:
@@ -3295,8 +3359,17 @@ void reshade::runtime::draw_variable_editor()
 					else
 						modified = ImGui::InputScalarN(label.data(), ImGuiDataType_Float, data, variable.type.rows);
 
-				if (modified)
+				if (modified) {
 					set_uniform_value(variable, data, 16);
+					if (_auto_save_preset && _ui_bind_support && uniform_binded) {
+						std::stringstream tmp;
+						tmp.precision(precision_format[2] - '0');
+						tmp << data[0];
+						effect.definition_bindings[ui_bind_definition] = tmp.str();
+						_uniform_binding_updated = effect_index;
+						force_reload_effect = true;
+					}
+				}
 				break;
 			}
 			}
@@ -3357,8 +3430,11 @@ void reshade::runtime::draw_variable_editor()
 			// A value has changed, so save the current preset
 			if (modified)
 			{
-				if (_auto_save_preset)
+				if (_auto_save_preset) {
 					save_current_preset();
+					if (_ui_bind_support && _uniform_binding_updated == effect_index)
+						ini_file::flush_cache(_current_preset_path);
+				}
 				else
 					_preset_is_modified = true;
 			}
@@ -3381,15 +3457,22 @@ void reshade::runtime::draw_variable_editor()
 					category_label.insert(0, " ");
 
 			if (ImGui::TreeNodeEx(category_label.c_str(), ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_DefaultOpen))
-			{
+			{	
 				for (const std::pair<std::string, std::string> &definition : effect.definitions)
 				{
 					std::vector<std::pair<std::string, std::string>> *definition_scope = nullptr;
 					std::vector<std::pair<std::string, std::string>>::iterator definition_it;
 
 					char value[256];
-					if (get_preprocessor_definition(effect_name, definition.first, definition_scope, definition_it))
-						value[definition_it->second.copy(value, sizeof(value) - 1)] = '\0';
+					if (get_preprocessor_definition(effect_name, definition.first, definition_scope, definition_it)) {
+						// Get value from ui_bind annotation when it exists
+						if (_auto_save_preset && _ui_bind_support && effect.definition_bindings.find(definition.first) != effect.definition_bindings.end()) {
+							value[effect.definition_bindings[definition.first].copy(value, sizeof(value) - 1)] = '\0';
+							//force_reload_effect = true;
+						}
+						else
+							value[definition_it->second.copy(value, sizeof(value) - 1)] = '\0';
+					}
 					else
 						value[0] = '\0';
 
@@ -3437,6 +3520,8 @@ void reshade::runtime::draw_variable_editor()
 						ImGui::EndPopup();
 					}
 				}
+				if (_auto_save_preset && _ui_bind_support && _uniform_binding_updated == effect_index)
+					force_reload_effect = true;
 			}
 		}
 
@@ -3452,7 +3537,11 @@ void reshade::runtime::draw_variable_editor()
 
 		if (force_reload_effect)
 		{
+			//if(!_ui_bind_support || _auto_save_preset)
 			save_current_preset();
+			if (_ui_bind_support && _auto_save_preset) {
+				ini_file::flush_cache(_current_preset_path);
+			}
 
 			const bool reload_successful_before = _last_reload_successfull;
 
