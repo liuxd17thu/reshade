@@ -222,11 +222,77 @@ private:
 		case type::t_struct:
 			s += id_to_name(type.definition);
 			break;
-		case type::t_sampler:
+		case type::t_sampler1d_int:
+			s += "isampler1D";
+			break;
+		case type::t_sampler2d_int:
+			s += "isampler2D";
+			break;
+		case type::t_sampler3d_int:
+			s += "isampler3D";
+			break;
+		case type::t_sampler1d_uint:
+			s += "usampler1D";
+			break;
+		case type::t_sampler3d_uint:
+			s += "usampler3D";
+			break;
+		case type::t_sampler2d_uint:
+			s += "usampler2D";
+			break;
+		case type::t_sampler1d_float:
+			s += "sampler1D";
+			break;
+		case type::t_sampler2d_float:
 			s += "sampler2D";
 			break;
-		case type::t_storage:
-			s += "writeonly image2D";
+		case type::t_sampler3d_float:
+			s += "sampler3D";
+			break;
+		case type::t_storage1d_int:
+			if constexpr (is_param)
+				s += "writeonly ";
+			s += "iimage1D";
+			break;
+		case type::t_storage2d_int:
+			if constexpr (is_param)
+				s += "writeonly ";
+			s += "iimage2D";
+			break;
+		case type::t_storage3d_int:
+			if constexpr (is_param)
+				s += "writeonly ";
+			s += "iimage3D";
+			break;
+		case type::t_storage1d_uint:
+			if constexpr (is_param)
+				s += "writeonly ";
+			s += "uimage1D";
+			break;
+		case type::t_storage2d_uint:
+			if constexpr (is_param)
+				s += "writeonly ";
+			s += "uimage2D";
+			break;
+		case type::t_storage3d_uint:
+			if constexpr (is_param)
+				s += "writeonly ";
+			s += "uimage3D";
+			break;
+		case type::t_storage1d_float:
+			if constexpr (is_param)
+				s += "writeonly ";
+			s += "image1D";
+			break;
+		case type::t_storage2d_float:
+			if constexpr (is_param) // Images need a format to be readable, but declaring that on function parameters is not well supported, so can only support write-only images there
+				s += "writeonly ";
+			s += "image2D";
+			break;
+		case type::t_storage3d_float:
+			if constexpr (is_param)
+				s += "writeonly ";
+			s += "image3D";
 			break;
 		default:
 			assert(false);
@@ -306,6 +372,59 @@ private:
 			return;
 
 		s += "#line " + std::to_string(loc.line) + '\n';
+	}
+	void write_texture_format(std::string &s, texture_format format)
+	{
+		switch (format)
+		{
+		case texture_format::r8:
+			s += "r8";
+			break;
+		case texture_format::r16:
+			s += "r16";
+			break;
+		case texture_format::r16f:
+			s += "r16f";
+			break;
+		case texture_format::r32i:
+			s += "r32i";
+			break;
+		case texture_format::r32u:
+			s += "r32u";
+			break;
+		case texture_format::r32f:
+			s += "r32f";
+			break;
+		case texture_format::rg8:
+			s += "rg8";
+			break;
+		case texture_format::rg16:
+			s += "rg16";
+			break;
+		case texture_format::rg16f:
+			s += "rg16f";
+			break;
+		case texture_format::rg32f:
+			s += "rg32f";
+			break;
+		case texture_format::rgba8:
+			s += "rgba8";
+			break;
+		case texture_format::rgba16:
+			s += "rgba16";
+			break;
+		case texture_format::rgba16f:
+			s += "rgba16f";
+			break;
+		case texture_format::rgba32f:
+			s += "rgba32f";
+			break;
+		case texture_format::rgb10a2:
+			s += "rgb10_a2";
+			break;
+		default:
+			assert(false);
+		}
 	}
 
 	std::string id_to_name(id id) const
@@ -452,7 +571,7 @@ private:
 
 		code += "struct " + id_to_name(info.definition) + "\n{\n";
 
-		for (const auto &member : info.member_list)
+		for (const struct_member_info &member : info.member_list)
 		{
 			code += '\t';
 			write_type(code, member.type); // GLSL does not allow interpolation attributes on struct members
@@ -479,7 +598,7 @@ private:
 
 		return info.id;
 	}
-	id   define_sampler(const location &loc, sampler_info &info) override
+	id   define_sampler(const location &loc, const texture_info &, sampler_info &info) override
 	{
 		info.id = make_id();
 		info.binding = _module.num_sampler_bindings++;
@@ -491,13 +610,16 @@ private:
 
 		write_location(code, loc);
 
-		code += "layout(binding = " + std::to_string(info.binding) + ") uniform sampler2D " + id_to_name(info.id) + ";\n";
+		code += "layout(binding = " + std::to_string(info.binding);
+		code += ") uniform ";
+		write_type(code, info.type);
+		code += ' ' + id_to_name(info.id) + ";\n";
 
 		_module.samplers.push_back(info);
 
 		return info.id;
 	}
-	id   define_storage(const location &loc, storage_info &info) override
+	id   define_storage(const location &loc, const texture_info &tex_info, storage_info &info) override
 	{
 		info.id = make_id();
 		info.binding = _module.num_storage_bindings++;
@@ -508,62 +630,11 @@ private:
 
 		write_location(code, loc);
 
-		code += "layout(binding = " + std::to_string(info.binding);
-
-		if (info.format != texture_format::unknown)
-		{
-			code += ", ";
-			switch (info.format)
-			{
-			case texture_format::r8:
-				code += "r8";
-				break;
-			case texture_format::r16:
-				code += "r16";
-				break;
-			case texture_format::r16f:
-				code += "r16f";
-				break;
-			case texture_format::r32f:
-				code += "r32f";
-				break;
-			case texture_format::rg8:
-				code += "rg8";
-				break;
-			case texture_format::rg16:
-				code += "rg16";
-				break;
-			case texture_format::rg16f:
-				code += "rg16f";
-				break;
-			case texture_format::rg32f:
-				code += "rg32f";
-				break;
-			case texture_format::rgba8:
-				code += "rgba8";
-				break;
-			case texture_format::rgba16:
-				code += "rgba16";
-				break;
-			case texture_format::rgba16f:
-				code += "rgba16f";
-				break;
-			case texture_format::rgba32f:
-				code += "rgba32f";
-				break;
-			case texture_format::rgb10a2:
-				code += "rgb10_a2";
-				break;
-			default:
-				assert(false);
-				break;
-			}
-		}
-
+		code += "layout(binding = " + std::to_string(info.binding) + ", ";
+		write_texture_format(code, tex_info.format);
 		code += ") uniform ";
-		if (info.format == texture_format::unknown)
-			code += "writeonly ";
-		code += "image2D " + id_to_name(info.id) + ";\n";
+		write_type(code, info.type);
+		code += ' ' + id_to_name(info.id) + ";\n";
 
 		_module.storages.push_back(info);
 
@@ -792,7 +863,7 @@ private:
 		// Translate function parameters to input/output variables
 		if (func.return_type.is_struct())
 		{
-			const struct_info &definition = find_struct(func.return_type.definition);
+			const struct_info &definition = get_struct(func.return_type.definition);
 
 			for (const struct_member_info &member : definition.member_list)
 				create_varying_variable(member.type, type::q_out, "_return_" + member.name, member.semantic);
@@ -814,7 +885,7 @@ private:
 				// Flatten structure parameters
 				if (param_type.is_struct())
 				{
-					const struct_info &definition = find_struct(param_type.definition);
+					const struct_info &definition = get_struct(param_type.definition);
 
 					for (int a = 0, array_length = std::max(1, param_type.array_length); a < array_length; a++)
 						for (const struct_member_info &member : definition.member_list)
@@ -830,7 +901,7 @@ private:
 			{
 				if (param_type.is_struct())
 				{
-					const struct_info &definition = find_struct(param_type.definition);
+					const struct_info &definition = get_struct(param_type.definition);
 
 					for (int a = 0, array_length = std::max(1, param_type.array_length); a < array_length; a++)
 						for (const struct_member_info &member : definition.member_list)
@@ -872,7 +943,7 @@ private:
 						write_type<false, false>(code, param_type);
 						code += '(';
 
-						const struct_info &definition = find_struct(param_type.definition);
+						const struct_info &definition = get_struct(param_type.definition);
 
 						for (const struct_member_info &member : definition.member_list)
 						{
@@ -1004,7 +1075,7 @@ private:
 
 			if (param_type.is_struct())
 			{
-				const struct_info &definition = find_struct(param_type.definition);
+				const struct_info &definition = get_struct(param_type.definition);
 
 				// Split out struct fields into separate output variables again
 				for (int a = 0, array_length = std::max(1, param_type.array_length); a < array_length; a++)
@@ -1071,7 +1142,7 @@ private:
 		// Handle return struct output variables
 		if (func.return_type.is_struct())
 		{
-			const struct_info &definition = find_struct(func.return_type.definition);
+			const struct_info &definition = get_struct(func.return_type.definition);
 
 			for (const struct_member_info &member : definition.member_list)
 			{
@@ -1113,7 +1184,7 @@ private:
 				break;
 			case expression::operation::op_member:
 				expr_code += '.';
-				expr_code += escape_name(find_struct(op.from.definition).member_list[op.index].name);
+				expr_code += escape_name(get_struct(op.from.definition).member_list[op.index].name);
 				break;
 			case expression::operation::op_dynamic_index:
 				// For matrices this will extract a column, but that is fine, since they are initialized column-wise too
@@ -1201,7 +1272,7 @@ private:
 			{
 			case expression::operation::op_member:
 				code += '.';
-				code += escape_name(find_struct(op.from.definition).member_list[op.index].name);
+				code += escape_name(get_struct(op.from.definition).member_list[op.index].name);
 				break;
 			case expression::operation::op_dynamic_index:
 				code += "[int(" + id_to_name(op.index) + ")]";

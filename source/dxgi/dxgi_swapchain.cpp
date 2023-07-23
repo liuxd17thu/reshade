@@ -81,7 +81,7 @@ DXGISwapChain::DXGISwapChain(D3D12CommandQueue *command_queue, IDXGISwapChain3 *
 	_direct3d_command_queue->AddRef();
 }
 
-void DXGISwapChain::runtime_reset()
+void DXGISwapChain::on_reset()
 {
 	const std::unique_lock<std::shared_mutex> lock(_direct3d_version == 12 ? static_cast<D3D12CommandQueue *>(_direct3d_command_queue)->_mutex : _impl_mutex);
 
@@ -98,7 +98,7 @@ void DXGISwapChain::runtime_reset()
 		break;
 	}
 }
-void DXGISwapChain::runtime_resize()
+void DXGISwapChain::on_resize()
 {
 	const std::unique_lock<std::shared_mutex> lock(_direct3d_version == 12 ? static_cast<D3D12CommandQueue *>(_direct3d_command_queue)->_mutex : _impl_mutex);
 
@@ -115,7 +115,7 @@ void DXGISwapChain::runtime_resize()
 		break;
 	}
 }
-void DXGISwapChain::runtime_present(UINT flags, [[maybe_unused]] const DXGI_PRESENT_PARAMETERS *params)
+void DXGISwapChain::on_present(UINT flags, [[maybe_unused]] const DXGI_PRESENT_PARAMETERS *params)
 {
 	// Some D3D11 games test presentation for timing and composition purposes
 	// These calls are not rendering related, but rather a status request for the D3D runtime and as such should be ignored
@@ -187,13 +187,9 @@ void DXGISwapChain::handle_device_loss(HRESULT hr)
 {
 	_was_still_drawing_last_frame = (hr == DXGI_ERROR_WAS_STILL_DRAWING);
 
-	if (!_impl->is_initialized())
-		return;
-
-	// Handle scenarios where device is lost and just clean up all resources
 	if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET)
 	{
-		LOG(ERROR) << "Device was lost with " << hr << "! Destroying all resources and disabling ReShade.";
+		LOG(ERROR) << "Device was lost with " << hr << '!';
 
 		if (hr == DXGI_ERROR_DEVICE_REMOVED)
 		{
@@ -213,8 +209,6 @@ void DXGISwapChain::handle_device_loss(HRESULT hr)
 
 			LOG(ERROR) << "> Device removal reason is " << reason << '.';
 		}
-
-		runtime_reset();
 	}
 }
 
@@ -234,7 +228,7 @@ bool DXGISwapChain::check_and_upgrade_interface(REFIID riid)
 		__uuidof(IDXGISwapChain4),
 	};
 
-	for (unsigned int version = 0; version < ARRAYSIZE(iid_lookup); ++version)
+	for (unsigned short version = 0; version < ARRAYSIZE(iid_lookup); ++version)
 	{
 		if (riid != iid_lookup[version])
 			continue;
@@ -351,7 +345,7 @@ HRESULT STDMETHODCALLTYPE DXGISwapChain::GetDevice(REFIID riid, void **ppDevice)
 
 HRESULT STDMETHODCALLTYPE DXGISwapChain::Present(UINT SyncInterval, UINT Flags)
 {
-	runtime_present(Flags);
+	on_present(Flags);
 
 	if (_force_vsync)
 		SyncInterval = 1;
@@ -411,24 +405,27 @@ HRESULT STDMETHODCALLTYPE DXGISwapChain::ResizeBuffers(UINT BufferCount, UINT Wi
 		<< ", SwapChainFlags = " << std::hex << SwapChainFlags << std::dec
 		<< ')' << " ...";
 
-	runtime_reset();
+	on_reset();
 
-	DXGI_SWAP_CHAIN_DESC desc = {};
-	GetDesc(&desc);
-	desc.BufferCount = BufferCount;
-	desc.BufferDesc.Width = Width;
-	desc.BufferDesc.Height = Height;
-	if (NewFormat != DXGI_FORMAT_UNKNOWN)
-		desc.BufferDesc.Format = NewFormat;
-	desc.Flags = SwapChainFlags;
-
-	if (modify_swapchain_desc(desc))
+	// Handle update of the swap chain description
 	{
-		BufferCount = desc.BufferCount;
-		Width = desc.BufferDesc.Width;
-		Height = desc.BufferDesc.Height;
-		NewFormat = static_cast<DXGI_FORMAT>(desc.BufferDesc.Format);
-		SwapChainFlags = desc.Flags;
+		DXGI_SWAP_CHAIN_DESC desc = {};
+		GetDesc(&desc);
+		desc.BufferCount = BufferCount;
+		desc.BufferDesc.Width = Width;
+		desc.BufferDesc.Height = Height;
+		if (NewFormat != DXGI_FORMAT_UNKNOWN)
+			desc.BufferDesc.Format = NewFormat;
+		desc.Flags = SwapChainFlags;
+
+		if (modify_swapchain_desc(desc))
+		{
+			BufferCount = desc.BufferCount;
+			Width = desc.BufferDesc.Width;
+			Height = desc.BufferDesc.Height;
+			NewFormat = static_cast<DXGI_FORMAT>(desc.BufferDesc.Format);
+			SwapChainFlags = desc.Flags;
+		}
 	}
 
 	assert(!g_in_dxgi_runtime);
@@ -437,12 +434,12 @@ HRESULT STDMETHODCALLTYPE DXGISwapChain::ResizeBuffers(UINT BufferCount, UINT Wi
 	g_in_dxgi_runtime = false;
 	if (SUCCEEDED(hr))
 	{
-		runtime_resize();
+		on_resize();
 	}
 	else if (hr == DXGI_ERROR_INVALID_CALL) // Ignore invalid call errors since the device is still in a usable state afterwards
 	{
 		LOG(WARN) << "IDXGISwapChain::ResizeBuffers" << " failed with error code " << "DXGI_ERROR_INVALID_CALL" << '.';
-		runtime_resize();
+		on_resize();
 	}
 	else
 	{
@@ -498,7 +495,7 @@ HRESULT STDMETHODCALLTYPE DXGISwapChain::GetCoreWindow(REFIID refiid, void **ppU
 }
 HRESULT STDMETHODCALLTYPE DXGISwapChain::Present1(UINT SyncInterval, UINT PresentFlags, const DXGI_PRESENT_PARAMETERS *pPresentParameters)
 {
-	runtime_present(PresentFlags, pPresentParameters);
+	on_present(PresentFlags, pPresentParameters);
 
 	if (_force_vsync)
 		SyncInterval = 1;
@@ -592,6 +589,28 @@ HRESULT STDMETHODCALLTYPE DXGISwapChain::CheckColorSpaceSupport(DXGI_COLOR_SPACE
 }
 HRESULT STDMETHODCALLTYPE DXGISwapChain::SetColorSpace1(DXGI_COLOR_SPACE_TYPE ColorSpace)
 {
+	const char *color_space_string = nullptr;
+	switch (ColorSpace)
+	{
+	case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709:
+		color_space_string = "DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709";
+		break;
+	case DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709:
+		color_space_string = "DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709";
+		break;
+	case DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020:
+		color_space_string = "DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020";
+		break;
+	case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P2020:
+		color_space_string = "DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P2020";
+		break;
+	}
+
+	if (color_space_string != nullptr)
+		LOG(INFO) << "Redirecting " << "IDXGISwapChain3::SetColorSpace1" << '(' << "ColorSpace = " << color_space_string << ')' << " ...";
+	else
+		LOG(INFO) << "Redirecting " << "IDXGISwapChain3::SetColorSpace1" << '(' << "ColorSpace = " << ColorSpace << ')' << " ...";
+
 	// Only supported in Direct3D 11 and 12 (see https://docs.microsoft.com/windows/win32/direct3darticles/high-dynamic-range)
 	switch (_direct3d_version)
 	{
@@ -619,24 +638,27 @@ HRESULT STDMETHODCALLTYPE DXGISwapChain::ResizeBuffers1(UINT BufferCount, UINT W
 		<< ", ppPresentQueue = " << ppPresentQueue
 		<< ')' << " ...";
 
-	runtime_reset();
+	on_reset();
 
-	HWND hwnd = nullptr;
-	GetHwnd(&hwnd);
-	DXGI_SWAP_CHAIN_DESC1 desc = {};
-	GetDesc1(&desc);
-	desc.BufferCount = BufferCount;
-	desc.Width = Width;
-	desc.Height = Height;
-	if (Format != DXGI_FORMAT_UNKNOWN)
-		desc.Format = Format;
-	desc.Flags = SwapChainFlags;
-
-	if (modify_swapchain_desc(desc, hwnd))
+	// Handle update of the swap chain description
 	{
-		Width = desc.Width;
-		Height = desc.Height;
-		Format = desc.Format;
+		HWND hwnd = nullptr;
+		GetHwnd(&hwnd);
+		DXGI_SWAP_CHAIN_DESC1 desc = {};
+		GetDesc1(&desc);
+		desc.BufferCount = BufferCount;
+		desc.Width = Width;
+		desc.Height = Height;
+		if (Format != DXGI_FORMAT_UNKNOWN)
+			desc.Format = Format;
+		desc.Flags = SwapChainFlags;
+
+		if (modify_swapchain_desc(desc, hwnd))
+		{
+			Width = desc.Width;
+			Height = desc.Height;
+			Format = desc.Format;
+		}
 	}
 
 	// Need to extract the original command queue object from the proxies passed in
@@ -656,12 +678,12 @@ HRESULT STDMETHODCALLTYPE DXGISwapChain::ResizeBuffers1(UINT BufferCount, UINT W
 	g_in_dxgi_runtime = false;
 	if (SUCCEEDED(hr))
 	{
-		runtime_resize();
+		on_resize();
 	}
 	else if (hr == DXGI_ERROR_INVALID_CALL)
 	{
 		LOG(WARN) << "IDXGISwapChain3::ResizeBuffers1" << " failed with error code " << "DXGI_ERROR_INVALID_CALL" << '.';
-		runtime_resize();
+		on_resize();
 	}
 	else
 	{

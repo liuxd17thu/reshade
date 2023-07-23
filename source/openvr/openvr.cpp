@@ -3,10 +3,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include "dll_log.hpp"
-#include "com_utils.hpp"
-#include "hook_manager.hpp"
-#include "lockfree_linear_map.hpp"
+#include "openvr_impl_swapchain.hpp"
 #include "d3d10/d3d10_device.hpp"
 #include "d3d11/d3d11_device.hpp"
 #include "d3d11/d3d11_device_context.hpp"
@@ -17,7 +14,10 @@
 #include "vulkan/vulkan_hooks.hpp"
 #include "vulkan/vulkan_impl_device.hpp"
 #include "vulkan/vulkan_impl_command_queue.hpp"
-#include "openvr_impl_swapchain.hpp"
+#include "dll_log.hpp"
+#include "com_utils.hpp"
+#include "hook_manager.hpp"
+#include "lockfree_linear_map.hpp"
 #include <functional>
 #include <ivrclientcore.h>
 
@@ -264,12 +264,11 @@ static vr::EVRCompositorError on_vr_submit_vulkan(vr::IVRCompositor *compositor,
 {
 	extern lockfree_linear_map<void *, reshade::vulkan::device_impl *, 8> g_vulkan_devices;
 
-	reshade::vulkan::device_impl *const device = g_vulkan_devices.at(dispatch_key_from_handle(texture->m_pDevice));
-	reshade::vulkan::command_queue_impl *queue = nullptr;
-
+	reshade::vulkan::device_impl *device = g_vulkan_devices.at(dispatch_key_from_handle(texture->m_pDevice));
 	if (device == nullptr)
 		goto normal_submit;
 
+	reshade::vulkan::command_queue_impl *queue = nullptr;
 	if (const auto queue_it = std::find_if(device->_queues.cbegin(), device->_queues.cend(),
 			[texture](reshade::vulkan::command_queue_impl *queue) { return queue->_orig == texture->m_pQueue; });
 		queue_it != device->_queues.cend())
@@ -331,19 +330,19 @@ static vr::EVRCompositorError on_vr_submit_vulkan(vr::IVRCompositor *compositor,
 }
 
 #ifdef _WIN64
-	#define VR_Interface_Impl(type, method_name, vtable_offset, interface_version, impl, return_type, ...) \
+	#define VR_Interface_Impl(type, method_name, vtable_index, interface_version, impl, return_type, ...) \
 		static return_type type##_##method_name##_##interface_version(vr::type *pThis, ##__VA_ARGS__) \
 		{ \
-			static const auto trampoline = reshade::hooks::call(type##_##method_name##_##interface_version, vtable_from_instance(pThis) + vtable_offset); \
+			static const auto trampoline = reshade::hooks::call(type##_##method_name##_##interface_version, reshade::hooks::vtable_from_instance(pThis) + vtable_index); \
 			impl \
 		}
 	#define VR_Interface_Call(...) trampoline(pThis, ##__VA_ARGS__)
 #else
 	// The OpenVR interface functions use the __thiscall calling convention on x86, so need to emulate that with __fastcall and a dummy second argument which passes along the EDX register value
-	#define VR_Interface_Impl(type, method_name, vtable_offset, interface_version, impl, return_type, ...) \
+	#define VR_Interface_Impl(type, method_name, vtable_index, interface_version, impl, return_type, ...) \
 		static return_type __fastcall type##_##method_name##_##interface_version(vr::type *pThis, void *EDX, ##__VA_ARGS__) \
 		{ \
-			static const auto trampoline = reshade::hooks::call(type##_##method_name##_##interface_version, vtable_from_instance(pThis) + vtable_offset); \
+			static const auto trampoline = reshade::hooks::call(type##_##method_name##_##interface_version, reshade::hooks::vtable_from_instance(pThis) + vtable_index); \
 			impl \
 		}
 	#define VR_Interface_Call(...) trampoline(pThis, EDX, ##__VA_ARGS__)
@@ -481,13 +480,13 @@ VR_Interface_Impl(IVRClientCore, GetGenericInterface, 3, 001, {
 	{
 		// The 'IVRCompositor::Submit' function definition has been stable and has had the same virtual function table index since the OpenVR 1.0 release (which was at 'IVRCompositor_015')
 		if (compositor_version >= 12)
-			reshade::hooks::install("IVRCompositor::Submit", vtable_from_instance(static_cast<vr::IVRCompositor *>(interface_instance)), 5, reinterpret_cast<reshade::hook::address>(&IVRCompositor_Submit_012));
+			reshade::hooks::install("IVRCompositor::Submit", reshade::hooks::vtable_from_instance(static_cast<vr::IVRCompositor *>(interface_instance)), 5, reinterpret_cast<reshade::hook::address>(&IVRCompositor_Submit_012));
 		else if (compositor_version >= 9)
-			reshade::hooks::install("IVRCompositor::Submit", vtable_from_instance(static_cast<vr::IVRCompositor *>(interface_instance)), 4, reinterpret_cast<reshade::hook::address>(&IVRCompositor_Submit_009));
+			reshade::hooks::install("IVRCompositor::Submit", reshade::hooks::vtable_from_instance(static_cast<vr::IVRCompositor *>(interface_instance)), 4, reinterpret_cast<reshade::hook::address>(&IVRCompositor_Submit_009));
 		else if (compositor_version == 8)
-			reshade::hooks::install("IVRCompositor::Submit", vtable_from_instance(static_cast<vr::IVRCompositor *>(interface_instance)), 6, reinterpret_cast<reshade::hook::address>(&IVRCompositor_Submit_008));
+			reshade::hooks::install("IVRCompositor::Submit", reshade::hooks::vtable_from_instance(static_cast<vr::IVRCompositor *>(interface_instance)), 6, reinterpret_cast<reshade::hook::address>(&IVRCompositor_Submit_008));
 		else if (compositor_version == 7)
-			reshade::hooks::install("IVRCompositor::Submit", vtable_from_instance(static_cast<vr::IVRCompositor *>(interface_instance)), 6, reinterpret_cast<reshade::hook::address>(&IVRCompositor_Submit_007));
+			reshade::hooks::install("IVRCompositor::Submit", reshade::hooks::vtable_from_instance(static_cast<vr::IVRCompositor *>(interface_instance)), 6, reinterpret_cast<reshade::hook::address>(&IVRCompositor_Submit_007));
 	}
 
 	return interface_instance;
@@ -509,8 +508,8 @@ extern "C" void *VR_CALLTYPE VRClientCoreFactory(const char *pInterfaceName, int
 		g_client_core = static_cast<vr::IVRClientCore *>(interface_instance);
 
 		// The 'IVRClientCore::Cleanup' and 'IVRClientCore::GetGenericInterface' functions did not change between 'IVRClientCore_001' and 'IVRClientCore_003'
-		reshade::hooks::install("IVRClientCore::Cleanup", vtable_from_instance(static_cast<vr::IVRClientCore *>(interface_instance)), 1, reinterpret_cast<reshade::hook::address>(&IVRClientCore_Cleanup_001));
-		reshade::hooks::install("IVRClientCore::GetGenericInterface", vtable_from_instance(static_cast<vr::IVRClientCore *>(interface_instance)), 3, reinterpret_cast<reshade::hook::address>(&IVRClientCore_GetGenericInterface_001));
+		reshade::hooks::install("IVRClientCore::Cleanup", reshade::hooks::vtable_from_instance(static_cast<vr::IVRClientCore *>(interface_instance)), 1, reinterpret_cast<reshade::hook::address>(&IVRClientCore_Cleanup_001));
+		reshade::hooks::install("IVRClientCore::GetGenericInterface", reshade::hooks::vtable_from_instance(static_cast<vr::IVRClientCore *>(interface_instance)), 3, reinterpret_cast<reshade::hook::address>(&IVRClientCore_GetGenericInterface_001));
 	}
 
 	return interface_instance;

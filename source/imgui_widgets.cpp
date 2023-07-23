@@ -8,6 +8,8 @@
 #include "fonts/forkawesome.h"
 #include <cassert>
 
+extern std::filesystem::path g_reshade_base_path;
+
 bool reshade::imgui::path_list(const char *label, std::vector<std::filesystem::path> &paths, std::filesystem::path &dialog_path, const std::filesystem::path &default_path)
 {
 	bool res = false;
@@ -96,7 +98,7 @@ bool reshade::imgui::file_dialog(const char *name, std::filesystem::path &path, 
 	if (path.empty())
 		path = L".\\";
 	if (path.is_relative())
-		path = std::filesystem::absolute(path, ec);
+		path = g_reshade_base_path / path;
 	std::filesystem::path parent_path = path.parent_path();
 
 	{	char buf[4096];
@@ -122,7 +124,7 @@ bool reshade::imgui::file_dialog(const char *name, std::filesystem::path &path, 
 
 	if (parent_path.has_parent_path() && parent_path != parent_path.root_path())
 	{
-		if (ImGui::Selectable(ICON_FK_FOLDER " ..", false, ImGuiSelectableFlags_AllowDoubleClick) && (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) || ImGui::IsNavInputTest(ImGuiNavInput_Activate, ImGuiInputReadMode_Pressed)))
+		if (ImGui::Selectable(ICON_FK_FOLDER " ..", false, ImGuiSelectableFlags_AllowDoubleClick) && (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) || ImGui::IsKeyPressed(ImGuiKey_NavGamepadActivate)))
 		{
 			path = parent_path.parent_path();
 			if (path.has_stem())
@@ -143,7 +145,7 @@ bool reshade::imgui::file_dialog(const char *name, std::filesystem::path &path, 
 				path = entry;
 
 				// Navigate into directory when double clicking one
-				if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) || ImGui::IsNavInputTest(ImGuiNavInput_Activate, ImGuiInputReadMode_Pressed))
+				if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) || ImGui::IsKeyPressed(ImGuiKey_NavGamepadActivate))
 					path += std::filesystem::path::preferred_separator;
 			}
 
@@ -152,7 +154,11 @@ bool reshade::imgui::file_dialog(const char *name, std::filesystem::path &path, 
 			continue;
 		}
 
-		if (std::find(exts.cbegin(), exts.cend(), entry.path().extension()) != exts.cend() &&
+		// Convert entry extension to lowercase before parsing
+		std::wstring entry_ext = entry.path().extension().wstring();
+		std::transform(entry_ext.begin(), entry_ext.end(), entry_ext.begin(), towlower);
+		
+		if (std::find(exts.cbegin(), exts.cend(), entry_ext) != exts.cend() &&
 			std::find(hidden_paths.cbegin(), hidden_paths.cend(), entry.path()) == hidden_paths.cend())
 			file_entries.push_back(entry);
 	}
@@ -162,12 +168,14 @@ bool reshade::imgui::file_dialog(const char *name, std::filesystem::path &path, 
 	for (std::filesystem::path &file_path : file_entries)
 	{
 		const bool is_selected = file_path == path;
+		// Convert entry extension to lowercase before parsing
+		std::wstring file_path_ext = file_path.extension().wstring();
+		std::transform(file_path_ext.begin(), file_path_ext.end(), file_path_ext.begin(), towlower);
 
 		std::string label = ICON_FK_FILE " ";
-		if (const std::filesystem::path ext = file_path.extension();
-			ext == L".fx" || ext == L".fxh")
+		if (file_path_ext == L".fx" || file_path_ext == L".fxh")
 			label = ICON_FK_FILE_CODE " " + label;
-		else if (ext == L".bmp" || ext == L".png" || ext == L".jpg" || ext == L".jpeg" || ext == L".dds")
+		else if (file_path_ext == L".bmp" || file_path_ext == L".png" || file_path_ext == L".jpg" || file_path_ext == L".jpeg" || file_path_ext == L".dds")
 			label = ICON_FK_FILE_IMAGE " " + label;
 		label += file_path.filename().u8string();
 
@@ -176,7 +184,7 @@ bool reshade::imgui::file_dialog(const char *name, std::filesystem::path &path, 
 			path = std::move(file_path);
 
 			// Double clicking a file on the other hand acts as if pressing the ok button
-			if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) || ImGui::IsNavInputTest(ImGuiNavInput_Activate, ImGuiInputReadMode_Pressed))
+			if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) || ImGui::IsKeyPressed(ImGuiKey_NavGamepadActivate))
 				has_double_clicked_file = true;
 		}
 
@@ -206,8 +214,12 @@ bool reshade::imgui::file_dialog(const char *name, std::filesystem::path &path, 
 	// Navigate into directory when clicking select button
 	if (select && path.has_stem() && std::filesystem::is_directory(path, ec))
 		path += std::filesystem::path::preferred_separator;
+	
+	// Convert entry extension to lowercase before parsing
+	std::wstring path_ext = path.extension().wstring();
+	std::transform(path_ext.begin(), path_ext.end(), path_ext.begin(), towlower);
 
-	const bool result = (select || ImGui::IsKeyPressed(ImGui::GetKeyIndex(ImGuiKey_Enter)) || has_double_clicked_file) && (exts.empty() || std::find(exts.cbegin(), exts.cend(), path.extension()) != exts.cend());
+	const bool result = (select || ImGui::IsKeyPressed(ImGuiKey_Enter) || has_double_clicked_file) && (exts.empty() || std::find(exts.cbegin(), exts.cend(), path_ext) != exts.cend());
 	if (result || cancel)
 		ImGui::CloseCurrentPopup();
 
@@ -232,7 +244,7 @@ bool reshade::imgui::key_input_box(const char *name, unsigned int key[4], const 
 		const unsigned int last_key_pressed = input.last_key_pressed();
 		if (last_key_pressed != 0)
 		{
-			if (last_key_pressed == static_cast<unsigned int>(ImGui::GetKeyIndex(ImGuiKey_Backspace)))
+			if (last_key_pressed == 0x08) // Backspace
 			{
 				key[0] = 0;
 				key[1] = 0;
@@ -250,9 +262,9 @@ bool reshade::imgui::key_input_box(const char *name, unsigned int key[4], const 
 			res = true;
 		}
 	}
-	else if (ImGui::IsItemHovered())
+	else if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
 	{
-		ImGui::SetTooltip("在字段中单击，并按任意键以更改快捷键");
+		ImGui::SetTooltip("在字段中单击，并按任意键以更改快捷键，或按退格键移除快捷键。");
 	}
 
 	ImGui::EndDisabled();
@@ -269,16 +281,12 @@ bool reshade::imgui::font_input_box(const char *name, std::filesystem::path &pat
 	ImGui::PushID(name);
 
 	ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - spacing - 80);
-	if (file_input_box("##font", nullptr, path, dialog_path, { L".ttf", L".ttc"}))
+	if (file_input_box("##font", "ProggyClean.ttf", path, dialog_path, { L".ttf", L".ttc"}))
 		res = true;
-
-	// Reset to the default font name if path is empty
-	if (path.empty())
-		path = L"ProggyClean.ttf";
 
 	ImGui::SameLine(0, spacing);
 	ImGui::SetNextItemWidth(80);
-	if (ImGui::SliderInt("##size", &size, 8, 32))
+	if (ImGui::SliderInt("##size", &size, 8, 32, "%d", ImGuiSliderFlags_AlwaysClamp))
 		res = true;
 
 	ImGui::PopID();
@@ -328,8 +336,11 @@ bool reshade::imgui::file_input_box(const char *name, const char *hint, std::fil
 	if (ImGui::InputTextWithHint("##path", hint, buf, sizeof(buf), ImGuiInputTextFlags_EnterReturnsTrue))
 	{
 		dialog_path = std::filesystem::u8path(buf);
+		// Convert path extension to lowercase before parsing
+		std::wstring dialog_path_ext = dialog_path.extension().wstring();
+		std::transform(dialog_path_ext.begin(), dialog_path_ext.end(), dialog_path_ext.begin(), towlower);
 		// Succeed only if extension matches
-		if (std::find(exts.cbegin(), exts.cend(), dialog_path.extension()) != exts.cend() || dialog_path.empty())
+		if (std::find(exts.cbegin(), exts.cend(), dialog_path_ext) != exts.cend() || dialog_path.empty())
 			path = dialog_path, res = true;
 	}
 

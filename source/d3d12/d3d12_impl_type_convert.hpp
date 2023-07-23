@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include "reshade_api_pipeline.hpp"
+#include <vector>
 #include <d3d12.h>
 
 namespace reshade::d3d12
@@ -12,6 +14,7 @@ namespace reshade::d3d12
 	static_assert(sizeof(D3D12_BOX) == sizeof(api::subresource_box));
 	static_assert(sizeof(D3D12_RECT) == sizeof(api::rect));
 	static_assert(sizeof(D3D12_VIEWPORT) == sizeof(api::viewport));
+	static_assert(sizeof(D3D12_GPU_DESCRIPTOR_HANDLE) == sizeof(api::descriptor_table));
 
 	struct pipeline_extra_data
 	{
@@ -22,6 +25,13 @@ namespace reshade::d3d12
 	struct pipeline_layout_extra_data
 	{
 		const std::pair<D3D12_DESCRIPTOR_HEAP_TYPE, UINT> *ranges;
+	};
+
+	struct query_heap_extra_data
+	{
+		UINT size;
+		ID3D12Resource *readback_resource;
+		std::pair<ID3D12Fence *, UINT64> *fences;
 	};
 
 	extern const GUID extra_data_guid;
@@ -40,8 +50,12 @@ namespace reshade::d3d12
 
 	void convert_sampler_desc(const api::sampler_desc &desc, D3D12_SAMPLER_DESC &internal_desc);
 	void convert_sampler_desc(const api::sampler_desc &desc, D3D12_SAMPLER_DESC2 &internal_desc);
+	void convert_sampler_desc(const api::sampler_desc &desc, D3D12_STATIC_SAMPLER_DESC &internal_desc);
+	void convert_sampler_desc(const api::sampler_desc &desc, D3D12_STATIC_SAMPLER_DESC1 &internal_desc);
 	api::sampler_desc convert_sampler_desc(const D3D12_SAMPLER_DESC &internal_desc);
 	api::sampler_desc convert_sampler_desc(const D3D12_SAMPLER_DESC2 &internal_desc);
+	api::sampler_desc convert_sampler_desc(const D3D12_STATIC_SAMPLER_DESC &internal_desc);
+	api::sampler_desc convert_sampler_desc(const D3D12_STATIC_SAMPLER_DESC1 &internal_desc);
 
 	void convert_resource_desc(const api::resource_desc &desc, D3D12_RESOURCE_DESC &internal_desc, D3D12_HEAP_PROPERTIES &heap_props, D3D12_HEAP_FLAGS &heap_flags);
 	void convert_resource_desc(const api::resource_desc &desc, D3D12_RESOURCE_DESC1 &internal_desc, D3D12_HEAP_PROPERTIES &heap_props, D3D12_HEAP_FLAGS &heap_flags);
@@ -80,11 +94,17 @@ namespace reshade::d3d12
 	void convert_blend_desc(const api::blend_desc &desc, D3D12_BLEND_DESC &internal_desc);
 	api::blend_desc convert_blend_desc(const D3D12_BLEND_DESC &internal_desc);
 	void convert_rasterizer_desc(const api::rasterizer_desc &desc, D3D12_RASTERIZER_DESC &internal_desc);
+	void convert_rasterizer_desc(const api::rasterizer_desc &desc, D3D12_RASTERIZER_DESC1 &internal_desc);
+	void convert_rasterizer_desc(const api::rasterizer_desc &desc, D3D12_RASTERIZER_DESC2 &internal_desc);
 	api::rasterizer_desc convert_rasterizer_desc(const D3D12_RASTERIZER_DESC &internal_desc);
+	api::rasterizer_desc convert_rasterizer_desc(const D3D12_RASTERIZER_DESC1 &internal_desc);
+	api::rasterizer_desc convert_rasterizer_desc(const D3D12_RASTERIZER_DESC2 &internal_desc);
 	void convert_depth_stencil_desc(const api::depth_stencil_desc &desc, D3D12_DEPTH_STENCIL_DESC &internal_desc);
 	void convert_depth_stencil_desc(const api::depth_stencil_desc &desc, D3D12_DEPTH_STENCIL_DESC1 &internal_desc);
+	void convert_depth_stencil_desc(const api::depth_stencil_desc &desc, D3D12_DEPTH_STENCIL_DESC2 &internal_desc);
 	api::depth_stencil_desc convert_depth_stencil_desc(const D3D12_DEPTH_STENCIL_DESC &internal_desc);
 	api::depth_stencil_desc convert_depth_stencil_desc(const D3D12_DEPTH_STENCIL_DESC1 &internal_desc);
+	api::depth_stencil_desc convert_depth_stencil_desc(const D3D12_DEPTH_STENCIL_DESC2 &internal_desc);
 
 	auto convert_logic_op(api::logic_op value) -> D3D12_LOGIC_OP;
 	auto convert_logic_op(D3D12_LOGIC_OP value) -> api::logic_op;
@@ -125,8 +145,8 @@ namespace reshade::d3d12
 	inline auto to_handle(D3D12_CPU_DESCRIPTOR_HANDLE handle) { return api::resource_view { static_cast<uint64_t>(handle.ptr) }; }
 	inline auto to_handle(ID3D12PipelineState *ptr) { return api::pipeline { reinterpret_cast<uintptr_t>(ptr) }; }
 	inline auto to_handle(ID3D12RootSignature *ptr) { return api::pipeline_layout { reinterpret_cast<uintptr_t>(ptr) }; }
-	inline auto to_handle(ID3D12QueryHeap *ptr) { return api::query_pool { reinterpret_cast<uintptr_t>(ptr) }; }
-	inline auto to_handle(ID3D12DescriptorHeap *ptr) { return api::descriptor_pool { reinterpret_cast<uintptr_t>(ptr) }; }
+	inline auto to_handle(ID3D12QueryHeap *ptr) { return api::query_heap { reinterpret_cast<uintptr_t>(ptr) }; }
+	inline auto to_handle(ID3D12DescriptorHeap *ptr) { return api::descriptor_heap { reinterpret_cast<uintptr_t>(ptr) }; }
 }
 
 #pragma warning(push)
@@ -164,3 +184,6 @@ typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DEPTH_ST
 typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_VIEW_INSTANCING, D3D12_VIEW_INSTANCING_DESC> D3D12_PIPELINE_STATE_STREAM_VIEW_INSTANCING;
 typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_AS, D3D12_SHADER_BYTECODE> D3D12_PIPELINE_STATE_STREAM_AS;
 typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_MS, D3D12_SHADER_BYTECODE> D3D12_PIPELINE_STATE_STREAM_MS;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DEPTH_STENCIL2, D3D12_DEPTH_STENCIL_DESC2> D3D12_PIPELINE_STATE_STREAM_DEPTH_STENCIL2;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_RASTERIZER1, D3D12_RASTERIZER_DESC1> D3D12_PIPELINE_STATE_STREAM_RASTERIZER1;
+typedef D3D12_PIPELINE_STATE_STREAM<D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_RASTERIZER2, D3D12_RASTERIZER_DESC2> D3D12_PIPELINE_STATE_STREAM_RASTERIZER2;

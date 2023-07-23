@@ -177,6 +177,8 @@ auto reshade::vulkan::convert_format(api::format format, VkComponentMapping *com
 		return VK_FORMAT_A1R5G5B5_UNORM_PACK16;
 	case api::format::b4g4r4a4_unorm:
 		return VK_FORMAT_A4R4G4B4_UNORM_PACK16;
+	case api::format::a4b4g4r4_unorm:
+		return VK_FORMAT_A4B4G4R4_UNORM_PACK16;
 	case api::format::s8_uint:
 		return VK_FORMAT_S8_UINT;
 	case api::format::d16_unorm:
@@ -414,6 +416,8 @@ auto reshade::vulkan::convert_format(VkFormat vk_format, const VkComponentMappin
 		return api::format::b5g5r5a1_unorm;
 	case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
 		return api::format::b4g4r4a4_unorm;
+	case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
+		return api::format::a4b4g4r4_unorm;
 	case VK_FORMAT_D16_UNORM:
 		return api::format::d16_unorm;
 	case VK_FORMAT_X8_D24_UNORM_PACK32:
@@ -468,6 +472,7 @@ auto reshade::vulkan::convert_color_space(VkColorSpaceKHR color_space) -> api::c
 	switch (color_space)
 	{
 	default:
+		assert(false);
 		return api::color_space::unknown;
 	case VK_COLOR_SPACE_SRGB_NONLINEAR_KHR:
 		return api::color_space::srgb_nonlinear;
@@ -861,6 +866,15 @@ void reshade::vulkan::convert_sampler_desc(const api::sampler_desc &desc, VkSamp
 		create_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 		create_info.anisotropyEnable = VK_FALSE;
 		break;
+	case api::filter_mode::compare_min_mag_anisotropic_mip_point:
+		create_info.compareEnable = VK_TRUE;
+		[[fallthrough]];
+	case api::filter_mode::min_mag_anisotropic_mip_point:
+		create_info.magFilter = VK_FILTER_LINEAR;
+		create_info.minFilter = VK_FILTER_LINEAR;
+		create_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+		create_info.anisotropyEnable = VK_TRUE;
+		break;
 	case api::filter_mode::compare_anisotropic:
 		create_info.compareEnable = VK_TRUE;
 		[[fallthrough]];
@@ -903,9 +917,34 @@ void reshade::vulkan::convert_sampler_desc(const api::sampler_desc &desc, VkSamp
 	const auto border_color_info = const_cast<VkSamplerCustomBorderColorCreateInfoEXT *>(find_in_structure_chain<VkSamplerCustomBorderColorCreateInfoEXT>(
 		create_info.pNext, VK_STRUCTURE_TYPE_SAMPLER_CUSTOM_BORDER_COLOR_CREATE_INFO_EXT));
 
-	if (border_color_info != nullptr && create_info.borderColor == VK_BORDER_COLOR_FLOAT_CUSTOM_EXT)
+	const bool is_float_border_color =
+		create_info.borderColor != VK_BORDER_COLOR_INT_TRANSPARENT_BLACK &&
+		create_info.borderColor != VK_BORDER_COLOR_INT_OPAQUE_BLACK &&
+		create_info.borderColor != VK_BORDER_COLOR_INT_OPAQUE_WHITE &&
+		create_info.borderColor != VK_BORDER_COLOR_INT_CUSTOM_EXT;
+
+	if (border_color_info == nullptr)
 	{
-		std::copy_n(desc.border_color, 4, border_color_info->customBorderColor.float32);
+		if (desc.border_color[3] == 0.0f)
+			create_info.borderColor = is_float_border_color ? VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK : VK_BORDER_COLOR_INT_TRANSPARENT_BLACK;
+		else if (desc.border_color[0] == 0.0f && desc.border_color[1] == 0.0f && desc.border_color[2] == 0.0f)
+			create_info.borderColor = is_float_border_color ? VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK : VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+		else
+			create_info.borderColor = is_float_border_color ? VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE : VK_BORDER_COLOR_INT_OPAQUE_WHITE;
+	}
+	else
+	{
+		if (is_float_border_color)
+		{
+			create_info.borderColor = VK_BORDER_COLOR_FLOAT_CUSTOM_EXT;
+			std::copy_n(desc.border_color, 4, border_color_info->customBorderColor.float32);
+		}
+		else
+		{
+			create_info.borderColor = VK_BORDER_COLOR_INT_CUSTOM_EXT;
+			for (int i = 0; i < 4; ++i)
+				border_color_info->customBorderColor.int32[i] = static_cast<int>(desc.border_color[i]);
+		}
 	}
 }
 reshade::api::sampler_desc reshade::vulkan::convert_sampler_desc(const VkSamplerCreateInfo &create_info)
@@ -913,7 +952,15 @@ reshade::api::sampler_desc reshade::vulkan::convert_sampler_desc(const VkSampler
 	api::sampler_desc desc = {};
 	if (create_info.anisotropyEnable)
 	{
-		desc.filter = api::filter_mode::anisotropic;
+		switch (create_info.mipmapMode)
+		{
+		case VK_SAMPLER_MIPMAP_MODE_NEAREST:
+			desc.filter = create_info.compareEnable ? api::filter_mode::compare_min_mag_anisotropic_mip_point : api::filter_mode::min_mag_anisotropic_mip_point;
+			break;
+		case VK_SAMPLER_MIPMAP_MODE_LINEAR:
+			desc.filter = create_info.compareEnable ? api::filter_mode::compare_anisotropic : api::filter_mode::anisotropic;
+			break;
+		}
 	}
 	else
 	{
@@ -1027,7 +1074,7 @@ reshade::api::sampler_desc reshade::vulkan::convert_sampler_desc(const VkSampler
 	case VK_BORDER_COLOR_INT_CUSTOM_EXT:
 		assert(border_color_info != nullptr);
 		for (int i = 0; i < 4; ++i)
-			desc.border_color[i] = border_color_info->customBorderColor.int32[i] / 255.0f;
+			desc.border_color[i] = static_cast<float>(border_color_info->customBorderColor.int32[i]);
 		break;
 	}
 
@@ -1309,13 +1356,16 @@ void reshade::vulkan::convert_dynamic_states(uint32_t count, const api::dynamic_
 		case api::dynamic_state::blend_constant:
 			internal_states.push_back(VK_DYNAMIC_STATE_BLEND_CONSTANTS);
 			break;
-		case api::dynamic_state::stencil_read_mask:
+		case api::dynamic_state::front_stencil_read_mask:
+		case api::dynamic_state::back_stencil_read_mask:
 			internal_states.push_back(VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK);
 			break;
-		case api::dynamic_state::stencil_write_mask:
+		case api::dynamic_state::front_stencil_write_mask:
+		case api::dynamic_state::back_stencil_write_mask:
 			internal_states.push_back(VK_DYNAMIC_STATE_STENCIL_WRITE_MASK);
 			break;
-		case api::dynamic_state::stencil_reference_value:
+		case api::dynamic_state::front_stencil_reference_value:
+		case api::dynamic_state::back_stencil_reference_value:
 			internal_states.push_back(VK_DYNAMIC_STATE_STENCIL_REFERENCE);
 			break;
 		case api::dynamic_state::cull_mode:
@@ -1339,8 +1389,8 @@ void reshade::vulkan::convert_dynamic_states(uint32_t count, const api::dynamic_
 		case api::dynamic_state::stencil_enable:
 			internal_states.push_back(VK_DYNAMIC_STATE_STENCIL_TEST_ENABLE);
 			break;
-		case api::dynamic_state::back_stencil_func:
 		case api::dynamic_state::front_stencil_func:
+		case api::dynamic_state::back_stencil_func:
 			internal_states.push_back(VK_DYNAMIC_STATE_STENCIL_OP);
 			break;
 		case api::dynamic_state::logic_op:
@@ -1376,13 +1426,16 @@ std::vector<reshade::api::dynamic_state> reshade::vulkan::convert_dynamic_states
 			states.push_back(api::dynamic_state::blend_constant);
 			break;
 		case VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK:
-			states.push_back(api::dynamic_state::stencil_read_mask);
+			states.push_back(api::dynamic_state::front_stencil_read_mask);
+			states.push_back(api::dynamic_state::back_stencil_read_mask);
 			break;
 		case VK_DYNAMIC_STATE_STENCIL_WRITE_MASK:
-			states.push_back(api::dynamic_state::stencil_write_mask);
+			states.push_back(api::dynamic_state::front_stencil_write_mask);
+			states.push_back(api::dynamic_state::back_stencil_write_mask);
 			break;
 		case VK_DYNAMIC_STATE_STENCIL_REFERENCE:
-			states.push_back(api::dynamic_state::stencil_reference_value);
+			states.push_back(api::dynamic_state::front_stencil_reference_value);
+			states.push_back(api::dynamic_state::back_stencil_reference_value);
 			break;
 		case VK_DYNAMIC_STATE_CULL_MODE:
 			states.push_back(api::dynamic_state::cull_mode);
@@ -1406,8 +1459,8 @@ std::vector<reshade::api::dynamic_state> reshade::vulkan::convert_dynamic_states
 			states.push_back(api::dynamic_state::stencil_enable);
 			break;
 		case VK_DYNAMIC_STATE_STENCIL_OP:
-			states.push_back(api::dynamic_state::back_stencil_func);
 			states.push_back(api::dynamic_state::front_stencil_func);
+			states.push_back(api::dynamic_state::back_stencil_func);
 			break;
 		case VK_DYNAMIC_STATE_DEPTH_BIAS_ENABLE:
 			states.push_back(api::dynamic_state::depth_bias);
@@ -1616,20 +1669,20 @@ void reshade::vulkan::convert_depth_stencil_desc(const api::depth_stencil_desc &
 	create_info.depthWriteEnable = desc.depth_write_mask;
 	create_info.depthCompareOp = convert_compare_op(desc.depth_func);
 	create_info.stencilTestEnable = desc.stencil_enable;
-	create_info.back.failOp = convert_stencil_op(desc.back_stencil_fail_op);
-	create_info.back.passOp = convert_stencil_op(desc.back_stencil_pass_op);
-	create_info.back.depthFailOp = convert_stencil_op(desc.back_stencil_depth_fail_op);
-	create_info.back.compareOp = convert_compare_op(desc.back_stencil_func);
-	create_info.back.compareMask = desc.stencil_read_mask;
-	create_info.back.writeMask = desc.stencil_write_mask;
-	create_info.back.reference = desc.stencil_reference_value;
 	create_info.front.failOp = convert_stencil_op(desc.front_stencil_fail_op);
 	create_info.front.passOp = convert_stencil_op(desc.front_stencil_pass_op);
 	create_info.front.depthFailOp = convert_stencil_op(desc.front_stencil_depth_fail_op);
 	create_info.front.compareOp = convert_compare_op(desc.front_stencil_func);
-	create_info.front.compareMask = desc.stencil_read_mask;
-	create_info.front.writeMask = desc.stencil_write_mask;
-	create_info.front.reference = desc.stencil_reference_value;
+	create_info.front.compareMask = desc.front_stencil_read_mask;
+	create_info.front.writeMask = desc.front_stencil_write_mask;
+	create_info.front.reference = desc.front_stencil_reference_value;
+	create_info.back.failOp = convert_stencil_op(desc.back_stencil_fail_op);
+	create_info.back.passOp = convert_stencil_op(desc.back_stencil_pass_op);
+	create_info.back.depthFailOp = convert_stencil_op(desc.back_stencil_depth_fail_op);
+	create_info.back.compareOp = convert_compare_op(desc.back_stencil_func);
+	create_info.back.compareMask = desc.back_stencil_read_mask;
+	create_info.back.writeMask = desc.back_stencil_write_mask;
+	create_info.back.reference = desc.back_stencil_reference_value;
 }
 reshade::api::depth_stencil_desc reshade::vulkan::convert_depth_stencil_desc(const VkPipelineDepthStencilStateCreateInfo *create_info)
 {
@@ -1641,17 +1694,20 @@ reshade::api::depth_stencil_desc reshade::vulkan::convert_depth_stencil_desc(con
 		desc.depth_write_mask = create_info->depthWriteEnable;
 		desc.depth_func = convert_compare_op(create_info->depthCompareOp);
 		desc.stencil_enable = create_info->stencilTestEnable;
-		desc.stencil_read_mask = create_info->back.compareMask & 0xFF;
-		desc.stencil_write_mask = create_info->back.writeMask & 0xFF;
-		desc.stencil_reference_value = create_info->back.reference & 0xFF;
-		desc.back_stencil_fail_op = convert_stencil_op(create_info->back.failOp);
-		desc.back_stencil_pass_op = convert_stencil_op(create_info->back.passOp);
-		desc.back_stencil_depth_fail_op = convert_stencil_op(create_info->back.depthFailOp);
-		desc.back_stencil_func = convert_compare_op(create_info->back.compareOp);
+		desc.front_stencil_read_mask = create_info->front.compareMask & 0xFF;
+		desc.front_stencil_write_mask = create_info->front.writeMask & 0xFF;
+		desc.front_stencil_reference_value = create_info->front.reference & 0xFF;
+		desc.front_stencil_func = convert_compare_op(create_info->front.compareOp);
 		desc.front_stencil_fail_op = convert_stencil_op(create_info->front.failOp);
 		desc.front_stencil_pass_op = convert_stencil_op(create_info->front.passOp);
 		desc.front_stencil_depth_fail_op = convert_stencil_op(create_info->front.depthFailOp);
-		desc.front_stencil_func = convert_compare_op(create_info->front.compareOp);
+		desc.back_stencil_read_mask = create_info->back.compareMask & 0xFF;
+		desc.back_stencil_write_mask = create_info->back.writeMask & 0xFF;
+		desc.back_stencil_reference_value = create_info->back.reference & 0xFF;
+		desc.back_stencil_func = convert_compare_op(create_info->back.compareOp);
+		desc.back_stencil_fail_op = convert_stencil_op(create_info->back.failOp);
+		desc.back_stencil_pass_op = convert_stencil_op(create_info->back.passOp);
+		desc.back_stencil_depth_fail_op = convert_stencil_op(create_info->back.depthFailOp);
 	}
 	else
 	{

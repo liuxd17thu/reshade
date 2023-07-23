@@ -5,10 +5,10 @@
 
 #if RESHADE_GUI
 
+#include "runtime.hpp"
 #include "version.h"
 #include "dll_log.hpp"
 #include "dll_resources.hpp"
-#include "runtime.hpp"
 #include "imgui_widgets.hpp"
 #include "vulkan/vulkan_impl_device.hpp"
 #include <openvr.h>
@@ -101,8 +101,7 @@ void reshade::runtime::draw_gui_vr()
 	if (s_main_handle == vr::k_ulOverlayHandleInvalid || !s_overlay->IsOverlayVisible(s_main_handle))
 		return;
 
-	if (_rebuild_font_atlas)
-		build_font_atlas();
+	build_font_atlas();
 	if (_font_atlas_srv == 0)
 		return; // Cannot render GUI without font atlas
 
@@ -230,9 +229,9 @@ void reshade::runtime::draw_gui_vr()
 	}
 
 #if RESHADE_ADDON
-#  if RESHADE_ADDON_LITE
+#if RESHADE_ADDON_LITE
 	if (addon_enabled)
-#  endif
+#endif
 	{
 		for (const addon_info &info : addon_loaded_info)
 		{
@@ -259,9 +258,9 @@ void reshade::runtime::draw_gui_vr()
 #if RESHADE_ADDON
 	else if (selected_overlay_index < overlay_index)
 	{
-#  if RESHADE_ADDON_LITE
+#if RESHADE_ADDON_LITE
 		assert(addon_enabled);
-#  endif
+#endif
 
 		overlay_index = static_cast<int>(std::size(overlay_callbacks));
 

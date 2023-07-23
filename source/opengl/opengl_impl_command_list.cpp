@@ -130,11 +130,12 @@ void reshade::opengl::pipeline_impl::apply(api::pipeline_stage stages) const
 		if (stencil_test)
 		{
 			gl.Enable(GL_STENCIL_TEST);
-			gl.StencilMask(stencil_write_mask);
-			gl.StencilOpSeparate(GL_BACK, back_stencil_op_fail, back_stencil_op_depth_fail, back_stencil_op_pass);
+			gl.StencilMaskSeparate(GL_FRONT, front_stencil_write_mask);
+			gl.StencilMaskSeparate(GL_BACK, back_stencil_write_mask);
 			gl.StencilOpSeparate(GL_FRONT, front_stencil_op_fail, front_stencil_op_depth_fail, front_stencil_op_pass);
-			gl.StencilFuncSeparate(GL_BACK, back_stencil_func, stencil_reference_value, stencil_read_mask);
-			gl.StencilFuncSeparate(GL_FRONT, front_stencil_func, stencil_reference_value, stencil_read_mask);
+			gl.StencilOpSeparate(GL_BACK, back_stencil_op_fail, back_stencil_op_depth_fail, back_stencil_op_pass);
+			gl.StencilFuncSeparate(GL_FRONT, front_stencil_func, front_stencil_reference_value, front_stencil_read_mask);
+			gl.StencilFuncSeparate(GL_BACK, back_stencil_func, back_stencil_reference_value, back_stencil_read_mask);
 		}
 		else
 		{
@@ -475,6 +476,9 @@ void reshade::opengl::render_context_impl::update_current_window_height(api::res
 
 void reshade::opengl::render_context_impl::bind_pipeline(api::pipeline_stage stages, api::pipeline pipeline)
 {
+	if (pipeline.handle == 0)
+		return;
+
 	// Special case for application pipeline handles
 	if ((pipeline.handle >> 40) == GL_PROGRAM)
 	{
@@ -482,8 +486,6 @@ void reshade::opengl::render_context_impl::bind_pipeline(api::pipeline_stage sta
 		gl.UseProgram(pipeline.handle & 0xFFFFFFFF);
 		return;
 	}
-
-	assert(pipeline.handle != 0);
 
 	// Set clip space to something consistent
 	if (gl.ClipControl != nullptr)
@@ -636,25 +638,25 @@ void reshade::opengl::render_context_impl::bind_pipeline_states(uint32_t count, 
 		case api::dynamic_state::stencil_enable:
 			glEnableOrDisable(GL_STENCIL_TEST, values[i]);
 			break;
-		case api::dynamic_state::stencil_read_mask:
+		case api::dynamic_state::front_stencil_read_mask:
 		{
 			GLint prev_stencil_func = GL_NONE;
 			GLint prev_stencil_reference_value = 0;
 			gl.GetIntegerv(GL_STENCIL_FUNC, &prev_stencil_func);
 			gl.GetIntegerv(GL_STENCIL_REF, &prev_stencil_reference_value);
-			gl.StencilFunc(prev_stencil_func, prev_stencil_reference_value, values[i]);
+			gl.StencilFuncSeparate(GL_FRONT, prev_stencil_func, prev_stencil_reference_value, values[i]);
 			break;
 		}
-		case api::dynamic_state::stencil_write_mask:
-			gl.StencilMask(values[i]);
+		case api::dynamic_state::front_stencil_write_mask:
+			gl.StencilMaskSeparate(GL_FRONT, values[i]);
 			break;
-		case api::dynamic_state::stencil_reference_value:
+		case api::dynamic_state::front_stencil_reference_value:
 		{
 			GLint prev_stencil_func = GL_NONE;
 			GLint prev_stencil_read_mask = 0;
 			gl.GetIntegerv(GL_STENCIL_FUNC, &prev_stencil_func);
 			gl.GetIntegerv(GL_STENCIL_VALUE_MASK, &prev_stencil_read_mask);
-			gl.StencilFunc(prev_stencil_func, values[i], prev_stencil_read_mask);
+			gl.StencilFuncSeparate(GL_FRONT, prev_stencil_func, values[i], prev_stencil_read_mask);
 			break;
 		}
 		case api::dynamic_state::front_stencil_func:
@@ -691,6 +693,27 @@ void reshade::opengl::render_context_impl::bind_pipeline_states(uint32_t count, 
 			gl.GetIntegerv(GL_STENCIL_FAIL, &prev_stencil_fail_op);
 			gl.GetIntegerv(GL_STENCIL_PASS_DEPTH_PASS, &prev_stencil_pass_op);
 			gl.StencilOpSeparate(GL_FRONT, prev_stencil_fail_op, convert_stencil_op(static_cast<api::stencil_op>(values[i])), prev_stencil_pass_op);
+			break;
+		}
+		case api::dynamic_state::back_stencil_read_mask:
+		{
+			GLint prev_stencil_func = GL_NONE;
+			GLint prev_stencil_reference_value = 0;
+			gl.GetIntegerv(GL_STENCIL_BACK_FUNC, &prev_stencil_func);
+			gl.GetIntegerv(GL_STENCIL_BACK_REF, &prev_stencil_reference_value);
+			gl.StencilFuncSeparate(GL_BACK, prev_stencil_func, prev_stencil_reference_value, values[i]);
+			break;
+		}
+		case api::dynamic_state::back_stencil_write_mask:
+			gl.StencilMaskSeparate(GL_BACK, values[i]);
+			break;
+		case api::dynamic_state::back_stencil_reference_value:
+		{
+			GLint prev_stencil_func = GL_NONE;
+			GLint prev_stencil_read_mask = 0;
+			gl.GetIntegerv(GL_STENCIL_BACK_FUNC, &prev_stencil_func);
+			gl.GetIntegerv(GL_STENCIL_BACK_VALUE_MASK, &prev_stencil_read_mask);
+			gl.StencilFuncSeparate(GL_BACK, prev_stencil_func, values[i], prev_stencil_read_mask);
 			break;
 		}
 		case api::dynamic_state::back_stencil_func:
@@ -765,6 +788,8 @@ void reshade::opengl::render_context_impl::bind_scissor_rects(uint32_t first, ui
 
 void reshade::opengl::render_context_impl::push_constants(api::shader_stage, api::pipeline_layout layout, uint32_t layout_param, uint32_t first, uint32_t count, const void *values)
 {
+	assert(first == 0);
+
 	const GLuint push_constants_size = (first + count) * sizeof(uint32_t);
 	const GLuint push_constants_binding = (layout.handle != 0 && layout != global_pipeline_layout) ? reinterpret_cast<pipeline_layout_impl *>(layout.handle)->ranges[layout_param].binding : 0;
 
@@ -789,9 +814,9 @@ void reshade::opengl::render_context_impl::push_constants(api::shader_stage, api
 		gl.UnmapBuffer(GL_UNIFORM_BUFFER);
 	}
 }
-void reshade::opengl::render_context_impl::push_descriptors(api::shader_stage, api::pipeline_layout layout, uint32_t layout_param, const api::descriptor_set_update &update)
+void reshade::opengl::render_context_impl::push_descriptors(api::shader_stage, api::pipeline_layout layout, uint32_t layout_param, const api::descriptor_table_update &update)
 {
-	assert(update.set.handle == 0 && update.array_offset == 0);
+	assert(update.table.handle == 0 && update.array_offset == 0);
 
 	const uint32_t first = update.binding;
 	assert(layout.handle == 0 || layout == global_pipeline_layout || update.binding >= reinterpret_cast<pipeline_layout_impl *>(layout.handle)->ranges[layout_param].binding);
@@ -897,17 +922,17 @@ void reshade::opengl::render_context_impl::push_descriptors(api::shader_stage, a
 		break;
 	}
 }
-void reshade::opengl::render_context_impl::bind_descriptor_sets(api::shader_stage stages, api::pipeline_layout layout, uint32_t first, uint32_t count, const api::descriptor_set *sets)
+void reshade::opengl::render_context_impl::bind_descriptor_tables(api::shader_stage stages, api::pipeline_layout layout, uint32_t first, uint32_t count, const api::descriptor_table *tables)
 {
 	for (uint32_t i = 0; i < count; ++i)
 	{
-		const auto set_impl = reinterpret_cast<const descriptor_set_impl *>(sets[i].handle);
+		const auto table_impl = reinterpret_cast<const descriptor_table_impl *>(tables[i].handle);
 
 		push_descriptors(
 			stages,
 			layout,
 			first + i,
-			api::descriptor_set_update { {}, set_impl->base_binding, 0, set_impl->count, set_impl->type, set_impl->descriptors.data() });
+			api::descriptor_table_update { {}, table_impl->base_binding, 0, table_impl->count, table_impl->type, table_impl->descriptors.data() });
 	}
 }
 
@@ -1031,7 +1056,7 @@ void reshade::opengl::render_context_impl::copy_buffer_region(api::resource src,
 
 	if (_device_impl->_supports_dsa)
 	{
-		if (size == UINT64_MAX)
+		if (UINT64_MAX == size)
 		{
 #ifndef _WIN64
 			GLint max_size = 0;
@@ -1050,7 +1075,7 @@ void reshade::opengl::render_context_impl::copy_buffer_region(api::resource src,
 		gl.BindBuffer(GL_COPY_READ_BUFFER, src_object);
 		gl.BindBuffer(GL_COPY_WRITE_BUFFER, dst_object);
 
-		if (size == UINT64_MAX)
+		if (UINT64_MAX == size)
 		{
 #ifndef _WIN64
 			GLint max_size = 0;
@@ -1633,26 +1658,26 @@ void reshade::opengl::render_context_impl::generate_mipmaps(api::resource_view s
 #endif
 }
 
-void reshade::opengl::render_context_impl::begin_query(api::query_pool pool, api::query_type type, uint32_t index)
+void reshade::opengl::render_context_impl::begin_query(api::query_heap heap, api::query_type type, uint32_t index)
 {
-	assert(pool.handle != 0);
+	assert(heap.handle != 0);
 
 	switch (type)
 	{
 	default:
-		gl.BeginQuery(convert_query_type(type), reinterpret_cast<query_pool_impl *>(pool.handle)->queries[index]);
+		gl.BeginQuery(convert_query_type(type), reinterpret_cast<query_heap_impl *>(heap.handle)->queries[index]);
 		break;
 	case api::query_type::stream_output_statistics_0:
 	case api::query_type::stream_output_statistics_1:
 	case api::query_type::stream_output_statistics_2:
 	case api::query_type::stream_output_statistics_3:
-		gl.BeginQueryIndexed(GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN, reinterpret_cast<query_pool_impl *>(pool.handle)->queries[index], static_cast<uint32_t>(type) - static_cast<uint32_t>(api::query_type::stream_output_statistics_0));
+		gl.BeginQueryIndexed(GL_TRANSFORM_FEEDBACK_PRIMITIVES_WRITTEN, reinterpret_cast<query_heap_impl *>(heap.handle)->queries[index], static_cast<uint32_t>(type) - static_cast<uint32_t>(api::query_type::stream_output_statistics_0));
 		break;
 	}
 }
-void reshade::opengl::render_context_impl::end_query(api::query_pool pool, api::query_type type, uint32_t index)
+void reshade::opengl::render_context_impl::end_query(api::query_heap heap, api::query_type type, uint32_t index)
 {
-	assert(pool.handle != 0);
+	assert(heap.handle != 0);
 
 	switch (type)
 	{
@@ -1660,7 +1685,7 @@ void reshade::opengl::render_context_impl::end_query(api::query_pool pool, api::
 		gl.EndQuery(convert_query_type(type));
 		break;
 	case api::query_type::timestamp:
-		gl.QueryCounter(reinterpret_cast<query_pool_impl *>(pool.handle)->queries[index], GL_TIMESTAMP);
+		gl.QueryCounter(reinterpret_cast<query_heap_impl *>(heap.handle)->queries[index], GL_TIMESTAMP);
 		break;
 	case api::query_type::stream_output_statistics_0:
 	case api::query_type::stream_output_statistics_1:
@@ -1670,15 +1695,15 @@ void reshade::opengl::render_context_impl::end_query(api::query_pool pool, api::
 		break;
 	}
 }
-void reshade::opengl::render_context_impl::copy_query_pool_results(api::query_pool pool, api::query_type, uint32_t first, uint32_t count, api::resource dst, uint64_t dst_offset, uint32_t stride)
+void reshade::opengl::render_context_impl::copy_query_heap_results(api::query_heap heap, api::query_type, uint32_t first, uint32_t count, api::resource dst, uint64_t dst_offset, uint32_t stride)
 {
-	assert(pool.handle != 0);
+	assert(heap.handle != 0);
 
 	for (size_t i = 0; i < count; ++i)
 	{
 		assert(dst_offset <= static_cast<uint64_t>(std::numeric_limits<GLintptr>::max()));
 
-		gl.GetQueryBufferObjectui64v(reinterpret_cast<query_pool_impl *>(pool.handle)->queries[first + i], dst.handle & 0xFFFFFFFF, GL_QUERY_RESULT_NO_WAIT, static_cast<GLintptr>(dst_offset + i * stride));
+		gl.GetQueryBufferObjectui64v(reinterpret_cast<query_heap_impl *>(heap.handle)->queries[first + i], dst.handle & 0xFFFFFFFF, GL_QUERY_RESULT_NO_WAIT, static_cast<GLintptr>(dst_offset + i * stride));
 	}
 }
 

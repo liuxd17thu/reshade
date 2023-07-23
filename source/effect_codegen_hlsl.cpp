@@ -55,7 +55,16 @@ private:
 
 		if (_shader_model >= 40)
 		{
-			preamble += "struct __sampler2D { Texture2D t; SamplerState s; };\n";
+			preamble +=
+				"struct __sampler1D_int { Texture1D<int> t; SamplerState s; };\n"
+				"struct __sampler2D_int { Texture2D<int> t; SamplerState s; };\n"
+				"struct __sampler3D_int { Texture3D<int> t; SamplerState s; };\n"
+				"struct __sampler1D_uint { Texture1D<uint> t; SamplerState s; };\n"
+				"struct __sampler2D_uint { Texture2D<uint> t; SamplerState s; };\n"
+				"struct __sampler3D_uint { Texture3D<uint> t; SamplerState s; };\n"
+				"struct __sampler1D_float4 { Texture1D<float4> t; SamplerState s; };\n"
+				"struct __sampler2D_float4 { Texture2D<float4> t; SamplerState s; };\n"
+				"struct __sampler3D_float4 { Texture3D<float4> t; SamplerState s; };\n";
 
 			if (!_cbuffer_block.empty())
 			{
@@ -67,8 +76,11 @@ private:
 		}
 		else
 		{
-			preamble += "struct __sampler2D { sampler2D s; float2 pixelsize; };\n";
-			preamble += "uniform float2 __TEXEL_SIZE__ : register(c255);\n";
+			preamble +=
+				"struct __sampler1D { sampler1D s; float1 pixelsize; };\n"
+				"struct __sampler2D { sampler2D s; float2 pixelsize; };\n"
+				"struct __sampler3D { sampler3D s; float3 pixelsize; };\n"
+				"uniform float2 __TEXEL_SIZE__ : register(c255);\n";
 
 			if (_uses_bitwise_cast)
 				preamble +=
@@ -152,7 +164,7 @@ private:
 		{
 		case type::t_void:
 			s += "void";
-			break;
+			return;
 		case type::t_bool:
 			s += "bool";
 			break;
@@ -179,15 +191,82 @@ private:
 			break;
 		case type::t_struct:
 			s += id_to_name(type.definition);
-			break;
-		case type::t_sampler:
+			return;
+		case type::t_sampler1d_int:
+			s += "__sampler1D";
+			if (_shader_model >= 40)
+				s += "_int" + (type.rows > 1 ? std::to_string(type.rows) : std::string());
+			return;
+		case type::t_sampler2d_int:
 			s += "__sampler2D";
-			break;
-		case type::t_storage:
-			s += "RWTexture2D<float4>";
-			break;
+			if (_shader_model >= 40)
+				s += "_int" + (type.rows > 1 ? std::to_string(type.rows) : std::string());
+			return;
+		case type::t_sampler3d_int:
+			s += "__sampler3D";
+			if (_shader_model >= 40)
+				s += "_int" + (type.rows > 1 ? std::to_string(type.rows) : std::string());
+			return;
+		case type::t_sampler1d_uint:
+			s += "__sampler1D";
+			if (_shader_model >= 40)
+				s += "_uint" + (type.rows > 1 ? std::to_string(type.rows) : std::string());
+			return;
+		case type::t_sampler2d_uint:
+			s += "__sampler2D";
+			if (_shader_model >= 40)
+				s += "_uint" + (type.rows > 1 ? std::to_string(type.rows) : std::string());
+			return;
+		case type::t_sampler3d_uint:
+			s += "__sampler3D";
+			if (_shader_model >= 40)
+				s += "_uint" + (type.rows > 1 ? std::to_string(type.rows) : std::string());
+			return;
+		case type::t_sampler1d_float:
+			s += "__sampler1D";
+			if (_shader_model >= 40)
+				s += "_float" + (type.rows > 1 ? std::to_string(type.rows) : std::string());
+			return;
+		case type::t_sampler2d_float:
+			s += "__sampler2D";
+			if (_shader_model >= 40)
+				s += "_float" + (type.rows > 1 ? std::to_string(type.rows) : std::string());
+			return;
+		case type::t_sampler3d_float:
+			s += "__sampler3D";
+			if (_shader_model >= 40)
+				s += "_float" + (type.rows > 1 ? std::to_string(type.rows) : std::string());
+			return;
+		case type::t_storage1d_int:
+			s += "RWTexture1D<int" + (type.rows > 1 ? std::to_string(type.rows) : std::string()) + '>';
+			return;
+		case type::t_storage2d_int:
+			s += "RWTexture2D<int" + (type.rows > 1 ? std::to_string(type.rows) : std::string()) + '>';
+			return;
+		case type::t_storage3d_int:
+			s += "RWTexture3D<int" + (type.rows > 1 ? std::to_string(type.rows) : std::string()) + '>';
+			return;
+		case type::t_storage1d_uint:
+			s += "RWTexture1D<uint" + (type.rows > 1 ? std::to_string(type.rows) : std::string()) + '>';
+			return;
+		case type::t_storage2d_uint:
+			s += "RWTexture2D<uint" + (type.rows > 1 ? std::to_string(type.rows) : std::string()) + '>';
+			return;
+		case type::t_storage3d_uint:
+			s += "RWTexture3D<uint" + (type.rows > 1 ? std::to_string(type.rows) : std::string()) + '>';
+			return;
+		case type::t_storage1d_float:
+			s += "RWTexture1D<float" + (type.rows > 1 ? std::to_string(type.rows) : std::string()) + '>';
+			return;
+		case type::t_storage2d_float:
+			s += "RWTexture2D<float" + (type.rows > 1 ? std::to_string(type.rows) : std::string()) + '>';
+			return;
+		case type::t_storage3d_float:
+			s += "RWTexture3D<float" + (type.rows > 1 ? std::to_string(type.rows) : std::string()) + '>';
+			return;
 		default:
 			assert(false);
+			return;
 		}
 
 		if (type.rows > 1)
@@ -302,6 +381,37 @@ private:
 
 		s += '\n';
 	}
+	void write_texture_format(std::string &s, texture_format format)
+	{
+		switch (format)
+		{
+		case texture_format::r32i:
+			s += "int";
+			break;
+		case texture_format::r32u:
+			s += "uint";
+			break;
+		default:
+			assert(false);
+			[[fallthrough]];
+		case texture_format::unknown:
+		case texture_format::r8:
+		case texture_format::r16:
+		case texture_format::r16f:
+		case texture_format::r32f:
+		case texture_format::rg8:
+		case texture_format::rg16:
+		case texture_format::rg16f:
+		case texture_format::rg32f:
+		case texture_format::rgba8:
+		case texture_format::rgba16:
+		case texture_format::rgba16f:
+		case texture_format::rgba32f:
+		case texture_format::rgb10a2:
+			s += "float4";
+			break;
+		}
+	}
 
 	std::string id_to_name(id id) const
 	{
@@ -396,7 +506,7 @@ private:
 
 		code += "struct " + id_to_name(info.definition) + "\n{\n";
 
-		for (const auto &member : info.member_list)
+		for (const struct_member_info &member : info.member_list)
 		{
 			code += '\t';
 			write_type<true>(code, member.type); // HLSL allows interpolation attributes on struct members, so handle this like a parameter
@@ -431,29 +541,27 @@ private:
 			if (_shader_model >= 60)
 				code += "[[vk::binding(" + std::to_string(info.binding + 0) + ", 2)]] "; // Descriptor set 2
 
-			code += "Texture2D __"     + info.unique_name + " : register(t" + std::to_string(info.binding + 0) + ");\n";
+			code += "Texture" + std::to_string(static_cast<unsigned int>(info.type)) + "D<";
+			write_texture_format(code, info.format);
+			code += "> __"     + info.unique_name + " : register(t" + std::to_string(info.binding + 0) + "); \n";
 
 			if (_shader_model >= 60)
 				code += "[[vk::binding(" + std::to_string(info.binding + 1) + ", 2)]] "; // Descriptor set 2
 
-			code += "Texture2D __srgb" + info.unique_name + " : register(t" + std::to_string(info.binding + 1) + ");\n";
+			code += "Texture" + std::to_string(static_cast<unsigned int>(info.type)) + "D<";
+			write_texture_format(code, info.format);
+			code += "> __srgb" + info.unique_name + " : register(t" + std::to_string(info.binding + 1) + "); \n";
 		}
 
 		_module.textures.push_back(info);
 
 		return info.id;
 	}
-	id   define_sampler(const location &loc, sampler_info &info) override
+	id   define_sampler(const location &loc, const texture_info &tex_info, sampler_info &info) override
 	{
 		info.id = make_id();
 
 		define_name<naming::unique>(info.id, info.unique_name);
-
-		const auto texture = std::find_if(_module.textures.begin(), _module.textures.end(),
-			[&info](const auto &it) {
-				return it.unique_name == info.texture_name;
-			});
-		assert(texture != _module.textures.end());
 
 		std::string &code = _blocks.at(_current_block);
 
@@ -480,27 +588,42 @@ private:
 			}
 
 			assert(info.srgb == 0 || info.srgb == 1);
-			info.texture_binding = texture->binding + info.srgb; // Offset binding by one to choose the SRGB variant
+			info.texture_binding = tex_info.binding + info.srgb; // Offset binding by one to choose the SRGB variant
 
 			write_location(code, loc);
 
-			code += "static const __sampler2D " + id_to_name(info.id) + " = { " + (info.srgb ? "__srgb" : "__") + info.texture_name + ", __s" + std::to_string(info.binding) + " };\n";
+			code += "static const ";
+			write_type(code, info.type);
+			code += ' ' + id_to_name(info.id) + " = { " + (info.srgb ? "__srgb" : "__") + info.texture_name + ", __s" + std::to_string(info.binding) + " };\n";
 		}
 		else
 		{
 			info.binding = _module.num_sampler_bindings++;
 			info.texture_binding = ~0u; // Unset texture binding
 
-			code += "sampler2D __" + info.unique_name + "_s : register(s" + std::to_string(info.binding) + ");\n";
+			const unsigned int texture_dimension = info.type.texture_dimension();
+
+			code += "sampler" + std::to_string(texture_dimension) + "D __" + info.unique_name + "_s : register(s" + std::to_string(info.binding) + ");\n";
 
 			write_location(code, loc);
 
-			code += "static const __sampler2D " + id_to_name(info.id) + " = { __" + info.unique_name + "_s, float2(";
+			code += "static const ";
+			write_type(code, info.type);
+			code += ' ' + id_to_name(info.id) + " = { __" + info.unique_name + "_s, float" + std::to_string(texture_dimension) + '(';
 
-			if (texture->semantic.empty())
-				code += "1.0 / " + std::to_string(texture->width) + ", 1.0 / " + std::to_string(texture->height);
+			if (tex_info.semantic.empty())
+			{
+				code += "1.0 / " + std::to_string(tex_info.width);
+				if (texture_dimension >= 2)
+					code += ", 1.0 / " + std::to_string(tex_info.height);
+				if (texture_dimension >= 3)
+					code += ", 1.0 / " + std::to_string(tex_info.depth);
+			}
 			else
-				code += texture->semantic + "_PIXEL_SIZE"; // Expect application to set inverse texture size via a define if it is not known here
+			{
+				// Expect application to set inverse texture size via a define if it is not known here
+				code += tex_info.semantic + "_PIXEL_SIZE";
+			}
 
 			code += ") }; \n";
 		}
@@ -509,7 +632,7 @@ private:
 
 		return info.id;
 	}
-	id   define_storage(const location &loc, storage_info &info) override
+	id   define_storage(const location &loc, const texture_info &, storage_info &info) override
 	{
 		info.id = make_id();
 		info.binding = ~0u;
@@ -527,34 +650,8 @@ private:
 			if (_shader_model >= 60)
 				code += "[[vk::binding(" + std::to_string(info.binding) + ", 3)]] "; // Descriptor set 3
 
-			code += "RWTexture2D<";
-
-			switch (info.format)
-			{
-			case texture_format::r8:
-			case texture_format::r16:
-			case texture_format::r16f:
-			case texture_format::r32f:
-				code += "float";
-				break;
-			default:
-				assert(false);
-				[[fallthrough]];
-			case texture_format::unknown:
-			case texture_format::rg8:
-			case texture_format::rg16:
-			case texture_format::rg16f:
-			case texture_format::rg32f:
-			case texture_format::rgba8:
-			case texture_format::rgba16:
-			case texture_format::rgba16f:
-			case texture_format::rgba32f:
-			case texture_format::rgb10a2:
-				code += "float4";
-				break;
-			}
-
-			code += "> " + info.unique_name + " : register(u" + std::to_string(info.binding) + ");\n";
+			write_type(code, info.type);
+			code += ' ' + info.unique_name + " : register(u" + std::to_string(info.binding) + ");\n";
 		}
 
 		_module.storages.push_back(info);
@@ -760,7 +857,7 @@ private:
 			if (func.return_type.is_struct() && stype == shader_type::vs)
 			{
 				// If this function returns a struct which contains a position output, keep track of its member name
-				for (const struct_member_info &member : find_struct(func.return_type.definition).member_list)
+				for (const struct_member_info &member : get_struct(func.return_type.definition).member_list)
 					if (is_position_semantic(member.semantic))
 						position_variable_name = id_to_name(ret) + '.' + member.name;
 			}
@@ -781,7 +878,7 @@ private:
 		{
 			if (param.type.is_struct() && stype == shader_type::vs)
 			{
-				for (const struct_member_info &member : find_struct(param.type.definition).member_list)
+				for (const struct_member_info &member : get_struct(param.type.definition).member_list)
 					if (is_position_semantic(member.semantic))
 						position_variable_name = param.name + '.' + member.name;
 			}
@@ -898,7 +995,7 @@ private:
 				break;
 			case expression::operation::op_member:
 				expr_code += '.';
-				expr_code += find_struct(op.from.definition).member_list[op.index].name;
+				expr_code += get_struct(op.from.definition).member_list[op.index].name;
 				break;
 			case expression::operation::op_dynamic_index:
 				expr_code += '[' + id_to_name(op.index) + ']';
@@ -959,7 +1056,7 @@ private:
 			{
 			case expression::operation::op_member:
 				code += '.';
-				code += find_struct(op.from.definition).member_list[op.index].name;
+				code += get_struct(op.from.definition).member_list[op.index].name;
 				break;
 			case expression::operation::op_dynamic_index:
 				code += '[' + id_to_name(op.index) + ']';
@@ -1219,18 +1316,14 @@ private:
 			#include "effect_symbol_table_intrinsics.inl"
 		};
 
-		if (intrinsic == tex2Dstore0)
-			code += "#pragma warning(disable : 3206)\n";
-
 		write_location(code, loc);
 
 		code += '\t';
 
 		if (_shader_model >= 40 && (
-			intrinsic == tex2Dsize0 || intrinsic == tex2Dsize1 || intrinsic == tex2Dsize2 ||
-			intrinsic == atomicAdd0 || intrinsic == atomicAnd0 || intrinsic == atomicOr0  || intrinsic == atomicXor0 ||
-			intrinsic == atomicMin0 || intrinsic == atomicMin1 || intrinsic == atomicMax0 || intrinsic == atomicMax1 ||
-			intrinsic == atomicExchange0 || intrinsic == atomicCompareExchange0))
+			(intrinsic >= tex1Dsize0 && intrinsic <= tex3Dsize2) ||
+			(intrinsic >= atomicAdd0 && intrinsic <= atomicCompareExchange1) ||
+			(!(res_type.is_floating_point() || _shader_model >= 67) && (intrinsic >= tex1D0 && intrinsic <= tex3Dlod1))))
 		{
 			// Implementation of the 'tex2Dsize' intrinsic passes the result variable into 'GetDimensions' as output argument
 			// Same with the atomic intrinsics, which use the last parameter to return the previous value of the target
@@ -1252,9 +1345,6 @@ private:
 		}
 
 		code += ";\n";
-
-		if (intrinsic == tex2Dstore0)
-			code += "#pragma warning(default : 3206)\n";
 
 		return res;
 	}

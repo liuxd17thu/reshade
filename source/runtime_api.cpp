@@ -392,16 +392,16 @@ void reshade::runtime::set_uniform_value_bool([[maybe_unused]] api::effect_unifo
 	if (variable == nullptr)
 		return;
 
-#  if RESHADE_ADDON
+#if RESHADE_ADDON
 	const bool was_is_in_api_call = _is_in_api_call;
 	_is_in_api_call = true;
-#  endif
+#endif
 
 	set_uniform_value(*variable, values, count, array_index);
 
-#  if RESHADE_ADDON
+#if RESHADE_ADDON
 	_is_in_api_call = was_is_in_api_call;
-#  endif
+#endif
 #endif
 }
 void reshade::runtime::set_uniform_value_float([[maybe_unused]] api::effect_uniform_variable handle, [[maybe_unused]] const float *values, [[maybe_unused]] size_t count, [[maybe_unused]] size_t array_index)
@@ -411,16 +411,16 @@ void reshade::runtime::set_uniform_value_float([[maybe_unused]] api::effect_unif
 	if (variable == nullptr)
 		return;
 
-#  if RESHADE_ADDON
+#if RESHADE_ADDON
 	const bool was_is_in_api_call = _is_in_api_call;
 	_is_in_api_call = true;
-#  endif
+#endif
 
 	set_uniform_value(*variable, values, count, array_index);
 
-#  if RESHADE_ADDON
+#if RESHADE_ADDON
 	_is_in_api_call = was_is_in_api_call;
-#  endif
+#endif
 #endif
 }
 void reshade::runtime::set_uniform_value_int([[maybe_unused]] api::effect_uniform_variable handle, [[maybe_unused]] const int32_t *values, [[maybe_unused]] size_t count, [[maybe_unused]] size_t array_index)
@@ -430,16 +430,16 @@ void reshade::runtime::set_uniform_value_int([[maybe_unused]] api::effect_unifor
 	if (variable == nullptr)
 		return;
 
-#  if RESHADE_ADDON
+#if RESHADE_ADDON
 	const bool was_is_in_api_call = _is_in_api_call;
 	_is_in_api_call = true;
-#  endif
+#endif
 
 	set_uniform_value(*variable, values, count, array_index);
 
-#  if RESHADE_ADDON
+#if RESHADE_ADDON
 	_is_in_api_call = was_is_in_api_call;
-#  endif
+#endif
 #endif
 }
 void reshade::runtime::set_uniform_value_uint([[maybe_unused]] api::effect_uniform_variable handle, [[maybe_unused]] const uint32_t *values, [[maybe_unused]] size_t count, [[maybe_unused]] size_t array_index)
@@ -449,16 +449,16 @@ void reshade::runtime::set_uniform_value_uint([[maybe_unused]] api::effect_unifo
 	if (variable == nullptr)
 		return;
 
-#  if RESHADE_ADDON
+#if RESHADE_ADDON
 	const bool was_is_in_api_call = _is_in_api_call;
 	_is_in_api_call = true;
-#  endif
+#endif
 
 	set_uniform_value(*variable, values, count, array_index);
 
-#  if RESHADE_ADDON
+#if RESHADE_ADDON
 	_is_in_api_call = was_is_in_api_call;
-#  endif
+#endif
 #endif
 }
 
@@ -674,7 +674,7 @@ void reshade::runtime::update_texture([[maybe_unused]] api::effect_texture_varia
 	if (variable == nullptr || variable->resource == 0)
 		return;
 
-	update_texture(*variable, width, height, pixels);
+	update_texture(*variable, width, height, 1, pixels);
 #endif
 }
 
@@ -731,7 +731,7 @@ void reshade::runtime::update_texture_bindings([[maybe_unused]] const char *sema
 	for (const effect &effect_data : _effects)
 		num_bindings += effect_data.texture_semantic_to_binding.size();
 
-	std::vector<api::descriptor_set_update> descriptor_writes;
+	std::vector<api::descriptor_table_update> descriptor_writes;
 	descriptor_writes.reserve(num_bindings);
 	std::vector<api::sampler_with_resource_view> sampler_descriptors(num_bindings);
 
@@ -742,8 +742,8 @@ void reshade::runtime::update_texture_bindings([[maybe_unused]] const char *sema
 			if (binding.semantic != semantic)
 				continue;
 
-			api::descriptor_set_update &write = descriptor_writes.emplace_back();
-			write.set = binding.set;
+			api::descriptor_table_update &write = descriptor_writes.emplace_back();
+			write.table = binding.table;
 			write.binding = binding.index;
 			write.count = 1;
 
@@ -771,7 +771,7 @@ void reshade::runtime::update_texture_bindings([[maybe_unused]] const char *sema
 	if (_is_initialized)
 		_graphics_queue->wait_idle();
 
-	_device->update_descriptor_sets(static_cast<uint32_t>(descriptor_writes.size()), descriptor_writes.data());
+	_device->update_descriptor_tables(static_cast<uint32_t>(descriptor_writes.size()), descriptor_writes.data());
 #endif
 }
 
@@ -993,19 +993,19 @@ void reshade::runtime::set_technique_state([[maybe_unused]] api::effect_techniqu
 	if (tech == nullptr)
 		return;
 
-#  if RESHADE_ADDON
+#if RESHADE_ADDON
 	const bool was_is_in_api_call = _is_in_api_call;
 	_is_in_api_call = true;
-#  endif
+#endif
 
 	if (enabled)
 		enable_technique(*tech);
 	else
 		disable_technique(*tech);
 
-#  if RESHADE_ADDON
+#if RESHADE_ADDON
 	_is_in_api_call = was_is_in_api_call;
-#  endif
+#endif
 #endif
 }
 
@@ -1024,7 +1024,7 @@ void reshade::runtime::set_preprocessor_definition_for_effect([[maybe_unused]] c
 	if (value == nullptr || *value == '\0')
 	{
 		if (const auto it = std::remove_if(_global_preprocessor_definitions.begin(), _global_preprocessor_definitions.end(),
-			[name](const std::pair<std::string, std::string> &preset_definition) { return preset_definition.first == name; });
+				[name](const std::pair<std::string, std::string> &preset_definition) { return preset_definition.first == name; });
 			it != _global_preprocessor_definitions.end())
 		{
 			_global_preprocessor_definitions.erase(it, _global_preprocessor_definitions.end());
@@ -1081,7 +1081,7 @@ bool reshade::runtime::get_preprocessor_definition(const char *name, char *value
 {
 	return get_preprocessor_definition_for_effect(nullptr, name, value, size);
 }
-bool reshade::runtime::get_preprocessor_definition_for_effect([[maybe_unused]] const char *effect_name, const char *name, [[maybe_unused]] char *value, size_t *size) const
+bool reshade::runtime::get_preprocessor_definition_for_effect([[maybe_unused]] const char *effect_name, [[maybe_unused]] const char *name, [[maybe_unused]] char *value, size_t *size) const
 {
 #if RESHADE_FX
 	const std::string effect_name_string = effect_name != nullptr ? effect_name : std::string();
@@ -1167,7 +1167,7 @@ void reshade::runtime::render_technique(api::effect_technique handle, api::comma
 
 	const api::resource back_buffer_resource = _device->get_resource_from_view(rtv);
 
-#  if RESHADE_ADDON
+#if RESHADE_ADDON
 	{
 		const api::resource_desc back_buffer_desc = _device->get_resource_desc(back_buffer_resource);
 		if (back_buffer_desc.texture.samples > 1)
@@ -1183,15 +1183,15 @@ void reshade::runtime::render_technique(api::effect_technique handle, api::comma
 
 	const bool was_is_in_api_call = _is_in_api_call;
 	_is_in_api_call = true;
-#  endif
+#endif
 
 	render_technique(*tech, cmd_list, back_buffer_resource, rtv, rtv_srgb);
 
-#  if RESHADE_ADDON
+#if RESHADE_ADDON
 	_is_in_api_call = was_is_in_api_call;
 
 	invoke_addon_event<addon_event::reshade_finish_effects>(this, cmd_list, rtv, rtv_srgb);
-#  endif
+#endif
 }
 #endif
 
@@ -1234,10 +1234,10 @@ void reshade::runtime::get_current_preset_path([[maybe_unused]] char *path, size
 void reshade::runtime::set_current_preset_path([[maybe_unused]] const char *path)
 {
 #if RESHADE_FX
-#  if RESHADE_ADDON
+#if RESHADE_ADDON
 	const bool was_is_in_api_call = _is_in_api_call;
 	_is_in_api_call = true;
-#  endif
+#endif
 
 	std::error_code ec;
 	std::filesystem::path preset_path = std::filesystem::u8path(path);
@@ -1246,7 +1246,7 @@ void reshade::runtime::set_current_preset_path([[maybe_unused]] const char *path
 	if (resolve_preset_path(preset_path, ec))
 	{
 		// Stop any preset transition that may still be happening
-		_is_in_between_presets_transition = false;
+		_is_in_preset_transition = false;
 
 		// First save current preset, before switching to a new one
 		save_current_preset();
@@ -1257,9 +1257,9 @@ void reshade::runtime::set_current_preset_path([[maybe_unused]] const char *path
 		load_current_preset();
 	}
 
-#  if RESHADE_ADDON
+#if RESHADE_ADDON
 	_is_in_api_call = was_is_in_api_call;
-#  endif
+#endif
 #endif
 }
 
@@ -1286,16 +1286,15 @@ void reshade::runtime::reorder_techniques([[maybe_unused]] size_t count, [[maybe
 		technique_indices[i] = _technique_sorting[k];
 	}
 
-#  if RESHADE_ADDON
+#if RESHADE_ADDON
 	const bool was_is_in_api_call = _is_in_api_call;
 	_is_in_api_call = true;
-#  endif
+#endif
 
 	reorder_techniques(std::move(technique_indices));
 
-#  if RESHADE_ADDON
+#if RESHADE_ADDON
 	_is_in_api_call = was_is_in_api_call;
-#  endif
+#endif
 #endif
 }
-

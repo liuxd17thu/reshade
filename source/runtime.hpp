@@ -5,6 +5,10 @@
 
 #pragma once
 
+#include "reshade_api.hpp"
+#if RESHADE_GUI
+#include "imgui_code_editor.hpp"
+#endif
 #include <chrono>
 #include <memory>
 #include <filesystem>
@@ -13,10 +17,6 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
-#include "reshade_api.hpp"
-#if RESHADE_GUI
-#include "imgui_code_editor.hpp"
-#endif
 
 class ini_file;
 
@@ -51,15 +51,13 @@ namespace reshade
 		/// <summary>
 		/// Gets the path to the configuration file used by this effect runtime.
 		/// </summary>
-		inline std::filesystem::path get_config_path() const { return _config_path; }
+		inline const std::filesystem::path &get_config_path() const { return _config_path; }
 
 #if RESHADE_FX
 		/// <summary>
 		/// Gets a boolean indicating whether effects are being loaded.
 		/// </summary>
 		bool is_loading() const { return _reload_remaining_effects != std::numeric_limits<size_t>::max() || !_reload_create_queue.empty() || (!_textures_loaded && _is_initialized); }
-#else
-		bool is_loading() const { return false; }
 #endif
 		/// <summary>
 		/// Gets a boolean indicating whether the runtime is initialized.
@@ -72,6 +70,8 @@ namespace reshade
 #else
 		virtual void render_effects(api::command_list *cmd_list, api::resource_view rtv, api::resource_view rtv_srgb) final { cmd_list; rtv; rtv_srgb; }
 		virtual void render_technique(api::effect_technique handle, api::command_list *cmd_list, api::resource_view rtv, api::resource_view rtv_srgb) final { handle; cmd_list; rtv; rtv_srgb; }
+
+		void save_current_preset() const final {}
 #endif
 
 		/// <summary>
@@ -195,7 +195,7 @@ namespace reshade
 #endif
 
 	private:
-		static bool check_for_update(unsigned long latest_version[3]);
+		static void check_for_update();
 
 		void load_config();
 		void save_config() const;
@@ -235,7 +235,7 @@ namespace reshade
 		void render_technique(technique &technique, api::command_list *cmd_list, api::resource back_buffer_resource, api::resource_view back_buffer_rtv, api::resource_view back_buffer_rtv_srgb);
 
 		void save_texture(const texture &texture);
-		void update_texture(texture &texture, uint32_t width, uint32_t height, const uint8_t *pixels);
+		void update_texture(texture &texture, uint32_t width, uint32_t height, uint32_t depth, const uint8_t *pixels);
 
 		void reset_uniform_value(uniform &variable);
 
@@ -264,12 +264,12 @@ namespace reshade
 		bool execute_screenshot_post_save_command(const std::filesystem::path &screenshot_path, unsigned int screenshot_count);
 
 		#pragma region Status
-		bool _needs_update = false;
-		unsigned long _latest_version[3] = {};
-		std::filesystem::path _config_path;
+		static bool s_needs_update;
+		static unsigned int s_latest_version[3];
 
 		bool _is_initialized = false;
 		bool _preset_save_successfull = true;
+		std::filesystem::path _config_path;
 
 		bool _ignore_shortcuts = false;
 		bool _force_shortcut_modifiers = true;
@@ -302,6 +302,9 @@ namespace reshade
 		std::vector<std::pair<std::string, std::string>> _global_preprocessor_definitions;
 		std::unordered_map<std::string, std::vector<std::pair<std::string, std::string>>> _preset_preprocessor_definitions;
 		size_t _should_reload_effect = std::numeric_limits<size_t>::max();
+#if RESHADE_ADDON
+		bool _should_block_effect_reload = false;
+#endif
 
 		std::filesystem::path _effect_cache_path;
 		std::vector<std::filesystem::path> _effect_search_paths;
@@ -387,7 +390,7 @@ namespace reshade
 		std::filesystem::path _startup_preset_path;
 		std::filesystem::path _current_preset_path;
 
-		bool _is_in_between_presets_transition = false;
+		bool _is_in_preset_transition = false;
 		std::chrono::high_resolution_clock::time_point _last_preset_switching_time;
 
 		struct preset_shortcut
@@ -415,20 +418,20 @@ namespace reshade
 		void draw_gui();
 		void draw_gui_vr();
 
-#  if RESHADE_FX
+#if RESHADE_FX
 		void draw_gui_home();
-#  endif
+#endif
 		void draw_gui_settings();
 		void draw_gui_statistics();
 		void draw_gui_log();
 		void draw_gui_about();
-#  if RESHADE_ADDON
+#if RESHADE_ADDON
 		void draw_gui_addons();
-#  endif
-#  if RESHADE_FX
+#endif
+#if RESHADE_FX
 		void draw_variable_editor();
 		void draw_technique_editor();
-#  endif
+#endif
 
 		bool init_imgui_resources();
 		void render_imgui_draw_data(api::command_list *cmd_list, ImDrawData *draw_data, api::resource_view rtv);
@@ -443,10 +446,10 @@ namespace reshade
 		unsigned int _show_clock = false;
 		unsigned int _show_frametime = false;
 		bool _show_screenshot_message = true;
-		bool _rebuild_font_atlas = true;
-#  if RESHADE_FX
+#if RESHADE_FX
+		bool _show_preset_transition_message = true;
 		unsigned int _reload_count = 0;
-#  endif
+#endif
 
 		bool _no_font_scaling = false;
 		bool _block_input_next_frame = false;
@@ -472,7 +475,7 @@ namespace reshade
 		#pragma endregion
 
 		#pragma region Overlay Home
-#  if RESHADE_FX
+#if RESHADE_FX
 		char _effect_filter[32] = {};
 		bool _variable_editor_tabs = false;
 		bool _auto_save_preset = true;
@@ -485,7 +488,7 @@ namespace reshade
 		unsigned int _tutorial_index = 0;
 		unsigned int _effects_expanded_state = 2;
 		float _variable_editor_height = 200.0f;
-#  endif
+#endif
 		#pragma endregion
 
 		#pragma region Overlay Add-ons
@@ -497,22 +500,25 @@ namespace reshade
 		int _editor_font_size = 0;
 		int _style_index = 2;
 		int _editor_style_index = 0;
-		std::filesystem::path _font = "C:\\Windows\\Fonts\\msyh.ttc";
-		std::filesystem::path _editor_font = "C:\\Windows\\Fonts\\msyh.ttc";
+		std::filesystem::path _font_path = "C:\\Windows\\Fonts\\msyh.ttc";
+		std::filesystem::path _editor_font_path = "C:\\Windows\\Fonts\\msyh.ttc";
 		std::filesystem::path _file_selection_path;
 		float _fps_col[4] = { 1.0f, 1.0f, 0.784314f, 1.0f };
 		float _fps_scale = 1.0f;
-#  if RESHADE_FX
+		float _hdr_overlay_brightness = 203.f; // HDR reference white as per BT.2408
+		api::color_space _hdr_overlay_overwrite_color_space = api::color_space::unknown;
+
+#if RESHADE_FX
 		bool  _show_force_load_effects_button = true;
-#  endif
+#endif
 		#pragma endregion
 
 		#pragma region Overlay Statistics
-#  if RESHADE_FX
+#if RESHADE_FX
 		bool _gather_gpu_statistics = false;
 		api::resource_view _preview_texture = {};
 		unsigned int _preview_size[3] = { 0, 0, 0xFFFFFFFF };
-#  endif
+#endif
 		#pragma endregion
 
 		#pragma region Overlay Log
@@ -523,7 +529,7 @@ namespace reshade
 		#pragma endregion
 
 		#pragma region Overlay Code Editor
-#  if RESHADE_FX
+#if RESHADE_FX
 		struct editor_instance
 		{
 			size_t effect_index;
@@ -540,7 +546,7 @@ namespace reshade
 		void draw_code_editor(editor_instance &instance);
 
 		std::vector<editor_instance> _editors;
-#  endif
+#endif
 		uint32_t _editor_palette[imgui::code_editor::color_palette_max];
 		#pragma endregion
 #endif

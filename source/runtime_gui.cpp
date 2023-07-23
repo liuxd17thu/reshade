@@ -5,13 +5,13 @@
 
 #if RESHADE_GUI
 
+#include "runtime.hpp"
+#include "runtime_objects.hpp"
 #include "version.h"
 #include "dll_log.hpp"
 #include "dll_resources.hpp"
 #include "ini_file.hpp"
 #include "addon_manager.hpp"
-#include "runtime.hpp"
-#include "runtime_objects.hpp"
 #include "input.hpp"
 #include "input_gamepad.hpp"
 #include "imgui_widgets.hpp"
@@ -88,10 +88,25 @@ void reshade::runtime::init_gui()
 	imgui_io.KeyMap[ImGuiKey_Escape] = 0x1B; // VK_ESCAPE
 	imgui_io.KeyMap[ImGuiKey_A] = 'A';
 	imgui_io.KeyMap[ImGuiKey_C] = 'C';
+	imgui_io.KeyMap[ImGuiKey_F] = 'F';
+	imgui_io.KeyMap[ImGuiKey_H] = 'H';
+	imgui_io.KeyMap[ImGuiKey_R] = 'R';
 	imgui_io.KeyMap[ImGuiKey_V] = 'V';
 	imgui_io.KeyMap[ImGuiKey_X] = 'X';
 	imgui_io.KeyMap[ImGuiKey_Y] = 'Y';
 	imgui_io.KeyMap[ImGuiKey_Z] = 'Z';
+	imgui_io.KeyMap[ImGuiKey_F1] = 0x70; // VK_F1
+	imgui_io.KeyMap[ImGuiKey_F2] = 0x71; // VK_F2
+	imgui_io.KeyMap[ImGuiKey_F3] = 0x72; // VK_F3
+	imgui_io.KeyMap[ImGuiKey_F4] = 0x73; // VK_F4
+	imgui_io.KeyMap[ImGuiKey_F5] = 0x74; // VK_F5
+	imgui_io.KeyMap[ImGuiKey_F6] = 0x75; // VK_F6
+	imgui_io.KeyMap[ImGuiKey_F7] = 0x76; // VK_F7
+	imgui_io.KeyMap[ImGuiKey_F8] = 0x77; // VK_F8
+	imgui_io.KeyMap[ImGuiKey_F9] = 0x78; // VK_F9
+	imgui_io.KeyMap[ImGuiKey_F10] = 0x79; // VK_F10
+	imgui_io.KeyMap[ImGuiKey_F11] = 0x80; // VK_F11
+	imgui_io.KeyMap[ImGuiKey_F12] = 0x81; // VK_F12
 	imgui_io.ConfigFlags = ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_NavEnableKeyboard;
 	imgui_io.BackendFlags = ImGuiBackendFlags_HasMouseCursors | ImGuiBackendFlags_RendererHasVtxOffset;
 
@@ -114,43 +129,75 @@ void reshade::runtime::deinit_gui()
 void reshade::runtime::build_font_atlas()
 {
 	ImFontAtlas *const atlas = _imgui_context->IO.Fonts;
+
+	if (atlas->IsBuilt())
+		return;
+
 	// Remove any existing fonts from atlas first
 	atlas->Clear();
 
-	for (int i = 0; i < 2; ++i)
+	extern bool resolve_path(std::filesystem::path &path, std::error_code &ec);
+
+	// Add main font
 	{
 		ImFontConfig cfg;
-		cfg.SizePixels = static_cast<float>(i == 0 ? _font_size : _editor_font_size);
-
-		const std::filesystem::path &font_path = (i == 0) ? _font : _editor_font;
+		cfg.SizePixels = static_cast<float>(_font_size);
 
 		std::error_code ec;
-		if (!std::filesystem::is_regular_file(font_path, ec) || !atlas->AddFontFromFileTTF(font_path.u8string().c_str(), cfg.SizePixels, &cfg, atlas->GetGlyphRangesChineseFull()))
-			atlas->AddFontDefault(&cfg); // Use default font if custom font failed to load or does not exist
-
-		if (i == 0)
+		std::filesystem::path resolved_font_path = _font_path;
+		if (!resolved_font_path.empty() && (!resolve_path(resolved_font_path, ec) || atlas->AddFontFromFileTTF(resolved_font_path.u8string().c_str(), cfg.SizePixels, &cfg, atlas->GetGlyphRangesChineseFull()) == nullptr))
 		{
-			// Merge icons into main font
-			ImFontConfig icon_config;
-			icon_config.MergeMode = true;
-			icon_config.PixelSnapH = true;
-			icon_config.GlyphOffset = ImVec2(0.0f, 0.1f * _font_size);
-			constexpr ImWchar icon_ranges[] = { ICON_MIN_FK, ICON_MAX_FK, 0 }; // Zero-terminated list
-
-			atlas->AddFontFromMemoryCompressedBase85TTF(FONT_ICON_BUFFER_NAME_FK, cfg.SizePixels, &icon_config, icon_ranges);
+			LOG(ERROR) << "Failed to load font from " << _font_path << " with error code " << ec.value() << '!';
+			_font_path.clear();
 		}
+
+		// Use default font if custom font failed to load
+		if (_font_path.empty())
+			atlas->AddFontDefault(&cfg);
+
+		// Merge icons into main font
+		ImFontConfig icon_config;
+		icon_config.MergeMode = true;
+		icon_config.PixelSnapH = true;
+		icon_config.GlyphOffset = ImVec2(0.0f, 0.1f * _font_size);
+		constexpr ImWchar icon_ranges[] = { ICON_MIN_FK, ICON_MAX_FK, 0 }; // Zero-terminated list
+
+		atlas->AddFontFromMemoryCompressedBase85TTF(FONT_ICON_BUFFER_NAME_FK, cfg.SizePixels, &icon_config, icon_ranges);
 	}
 
-	// If unable to build font atlas due to an invalid font, revert to the default font
-	if (!atlas->Build())
+	// Add editor font
 	{
-		LOG(ERROR) << "Failed to build front atlas!";
+		ImFontConfig cfg;
+		cfg.SizePixels = static_cast<float>(_editor_font_size);
 
-		_font.clear();
-		_editor_font.clear();
+		std::error_code ec;
+		std::filesystem::path resolved_font_path = _editor_font_path;
+		if (!resolved_font_path.empty() && (!resolve_path(resolved_font_path, ec) || atlas->AddFontFromFileTTF(resolved_font_path.u8string().c_str(), cfg.SizePixels) == nullptr))
+		{
+			LOG(ERROR) << "Failed to load editor font from " << _editor_font_path << " with error code " << ec.value() << '!';
+			_editor_font_path.clear();
+		}
+
+		if (_editor_font_path.empty())
+			atlas->AddFontDefault(&cfg);
+	}
+
+	if (atlas->Build())
+	{
+#if RESHADE_VERBOSE_LOG
+		LOG(DEBUG) << "Font atlas size: " << atlas->TexWidth << 'x' << atlas->TexHeight;
+#endif
+	}
+	else
+	{
+		LOG(ERROR) << "Failed to build font atlas!";
+
+		_font_path.clear();
+		_editor_font_path.clear();
 
 		atlas->Clear();
 
+		// If unable to build font atlas due to an invalid custom font, revert to the default font
 		for (int i = 0; i < 2; ++i)
 		{
 			ImFontConfig cfg;
@@ -161,10 +208,10 @@ void reshade::runtime::build_font_atlas()
 	}
 
 	_show_splash = true;
-	_rebuild_font_atlas = false;
 
 	int width, height;
 	unsigned char *pixels;
+	// This will also build the font atlas again if that previously failed above
 	atlas->GetTexDataAsRGBA32(&pixels, &width, &height);
 
 	// Make sure font atlas is not currently in use before destroying it
@@ -185,6 +232,10 @@ void reshade::runtime::build_font_atlas()
 		LOG(ERROR) << "Failed to create front atlas resource!";
 		return;
 	}
+
+	// Texture data is now uploaded, so can free the memory
+	atlas->ClearTexData();
+
 	if (!_device->create_resource_view(_font_atlas_tex, api::resource_usage::shader_resource, api::resource_view_desc(api::format::r8g8b8a8_unorm), &_font_atlas_srv))
 	{
 		LOG(ERROR) << "Failed to create font atlas resource view!";
@@ -219,16 +270,17 @@ void reshade::runtime::load_config_gui(const ini_file &config)
 	config.get("OVERLAY", "VariableListHeight", _variable_editor_height);
 	config.get("OVERLAY", "VariableListUseTabs", _variable_editor_tabs);
 	config.get("OVERLAY", "AutoSavePreset", _auto_save_preset);
+	config.get("OVERLAY", "ShowPresetTransitionMessage", _show_preset_transition_message);
 #endif
 
 	ImGuiStyle &imgui_style = _imgui_context->Style;
 	config.get("STYLE", "Alpha", imgui_style.Alpha);
 	config.get("STYLE", "ChildRounding", imgui_style.ChildRounding);
 	config.get("STYLE", "ColFPSText", _fps_col);
-	config.get("STYLE", "EditorFont", _editor_font);
+	config.get("STYLE", "EditorFont", _editor_font_path);
 	config.get("STYLE", "EditorFontSize", _editor_font_size);
 	config.get("STYLE", "EditorStyleIndex", _editor_style_index);
-	config.get("STYLE", "Font", _font);
+	config.get("STYLE", "Font", _font_path);
 	config.get("STYLE", "FontSize", _font_size);
 	config.get("STYLE", "FPSScale", _fps_scale);
 	config.get("STYLE", "FrameRounding", imgui_style.FrameRounding);
@@ -238,6 +290,8 @@ void reshade::runtime::load_config_gui(const ini_file &config)
 	config.get("STYLE", "StyleIndex", _style_index);
 	config.get("STYLE", "TabRounding", imgui_style.TabRounding);
 	config.get("STYLE", "WindowRounding", imgui_style.WindowRounding);
+	config.get("STYLE", "HdrOverlayBrightness", _hdr_overlay_brightness);
+	config.get("STYLE", "HdrOverlayOverwriteColorSpaceTo", reinterpret_cast<int &>(_hdr_overlay_overwrite_color_space));
 
 	// For compatibility with older versions, set the alpha value if it is missing
 	if (_fps_col[3] == 0.0f)
@@ -312,16 +366,17 @@ void reshade::runtime::save_config_gui(ini_file &config) const
 	config.set("OVERLAY", "VariableListHeight", _variable_editor_height);
 	config.set("OVERLAY", "VariableListUseTabs", _variable_editor_tabs);
 	config.set("OVERLAY", "AutoSavePreset", _auto_save_preset);
+	config.set("OVERLAY", "ShowPresetTransitionMessage", _show_preset_transition_message);
 #endif
 
 	const ImGuiStyle &imgui_style = _imgui_context->Style;
 	config.set("STYLE", "Alpha", imgui_style.Alpha);
 	config.set("STYLE", "ChildRounding", imgui_style.ChildRounding);
 	config.set("STYLE", "ColFPSText", _fps_col);
-	config.set("STYLE", "EditorFont", _editor_font);
+	config.set("STYLE", "EditorFont", _editor_font_path);
 	config.set("STYLE", "EditorFontSize", _editor_font_size);
 	config.set("STYLE", "EditorStyleIndex", _editor_style_index);
-	config.set("STYLE", "Font", _font);
+	config.set("STYLE", "Font", _font_path);
 	config.set("STYLE", "FontSize", _font_size);
 	config.set("STYLE", "FPSScale", _fps_scale);
 	config.set("STYLE", "FrameRounding", imgui_style.FrameRounding);
@@ -331,6 +386,8 @@ void reshade::runtime::save_config_gui(ini_file &config) const
 	config.set("STYLE", "StyleIndex", _style_index);
 	config.set("STYLE", "TabRounding", imgui_style.TabRounding);
 	config.set("STYLE", "WindowRounding", imgui_style.WindowRounding);
+	config.set("STYLE", "HdrOverlayBrightness", _hdr_overlay_brightness);
+	config.set("STYLE", "HdrOverlayOverwriteColorSpaceTo", static_cast<int>(_hdr_overlay_overwrite_color_space));
 
 	// Do not save custom style colors by default, only when actually used and edited
 
@@ -671,15 +728,24 @@ void reshade::runtime::draw_gui()
 	}
 
 #if RESHADE_FX
-	bool show_splash = _show_splash && (is_loading() || (_reload_count <= 1 && (_last_present_time - _last_reload_time) < std::chrono::seconds(5)) || (!_show_overlay && _tutorial_index == 0));
+	const bool show_splash_window = _show_splash && (is_loading() || (_reload_count <= 1 && (_last_present_time - _last_reload_time) < std::chrono::seconds(5)) || (!_show_overlay && _tutorial_index == 0));
 #else
-	bool show_splash = _show_splash && (_last_present_time - _last_reload_time) < std::chrono::seconds(5);
+	const bool show_splash_window = _show_splash && (_last_present_time - _last_reload_time) < std::chrono::seconds(5);
 #endif
+
+	// Do not show this message in the same frame the screenshot is taken (so that it won't show up on the GUI screenshot)
+	const bool show_screenshot_message = (_show_screenshot_message || !_last_screenshot_save_successfull) && !_should_save_screenshot && (_last_present_time - _last_screenshot_time) < std::chrono::seconds(_last_screenshot_save_successfull ? 3 : 5);
+#if RESHADE_FX
+	const bool show_preset_transition_message = _show_preset_transition_message && _is_in_preset_transition;
+#else
+	const bool show_preset_transition_message = false;
+#endif
+	const bool show_message_window = show_screenshot_message || show_preset_transition_message || !_preset_save_successfull;
 
 	const bool show_clock = _show_clock == 1 || (_show_overlay && _show_clock > 1);
 	const bool show_fps = _show_fps == 1 || (_show_overlay && _show_fps > 1);
 	const bool show_frametime = _show_frametime == 1 || (_show_overlay && _show_frametime > 1);
-	bool show_stats_window = show_clock || show_fps || show_frametime;
+	bool show_statistics_window = show_clock || show_fps || show_frametime;
 #if RESHADE_ADDON
 	for (const addon_info &info : addon_loaded_info)
 	{
@@ -687,17 +753,12 @@ void reshade::runtime::draw_gui()
 		{
 			if (widget.title == "OSD")
 			{
-				show_stats_window = true;
+				show_statistics_window = true;
 				break;
 			}
 		}
 	}
 #endif
-
-	// Do not show this message in the same frame the screenshot is taken (so that it won't show up on the GUI screenshot)
-	const bool show_screenshot_message = (_show_screenshot_message || !_last_screenshot_save_successfull) && !_should_save_screenshot && (_last_present_time - _last_screenshot_time) < std::chrono::seconds(_last_screenshot_save_successfull ? 3 : 5);
-	if (show_screenshot_message || !_preset_save_successfull)
-		show_splash = true;
 
 	_ignore_shortcuts = false;
 	_block_input_next_frame = false;
@@ -706,7 +767,7 @@ void reshade::runtime::draw_gui()
 	_effects_expanded_state &= 2;
 #endif
 
-	if (!show_splash && !show_stats_window && !_show_overlay
+	if (!show_splash_window && !show_message_window && !show_statistics_window && !_show_overlay
 #if RESHADE_FX
 		&& _preview_texture == 0
 #endif
@@ -723,8 +784,7 @@ void reshade::runtime::draw_gui()
 		return; // Early-out to avoid costly ImGui calls when no GUI elements are on the screen
 	}
 
-	if (_rebuild_font_atlas)
-		build_font_atlas();
+	build_font_atlas();
 	if (_font_atlas_srv == 0)
 		return; // Cannot render GUI without font atlas
 
@@ -796,14 +856,109 @@ void reshade::runtime::draw_gui()
 	ImVec2 viewport_offset = ImVec2(0, 0);
 
 	// Create ImGui widgets and windows
-	if (show_splash)
+	if (show_splash_window)
 	{
 		ImGui::SetNextWindowPos(_imgui_context->Style.WindowPadding);
 		ImGui::SetNextWindowSize(ImVec2(imgui_io.DisplaySize.x - 20.0f, 0.0f));
 		ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 1.0f);
 		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.862745f, 0.862745f, 0.862745f, 1.0f));
 		ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.117647f, 0.117647f, 0.117647f, 0.7f));
-		ImGui::Begin("Splash Screen", nullptr,
+		ImGui::Begin("Splash Window", nullptr,
+			ImGuiWindowFlags_NoDecoration |
+			ImGuiWindowFlags_NoNav |
+			ImGuiWindowFlags_NoMove |
+			ImGuiWindowFlags_NoInputs |
+			ImGuiWindowFlags_NoSavedSettings |
+			ImGuiWindowFlags_NoDocking |
+			ImGuiWindowFlags_NoFocusOnAppearing);
+
+		ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT);
+
+		if (s_needs_update)
+		{
+			ImGui::TextColored(COLOR_YELLOW,
+				"An update is available! Please visit https://reshade.me and install the new version (v%u.%u.%u).",
+				s_latest_version[0], s_latest_version[1], s_latest_version[2]);
+		}
+		else
+		{
+				//ImGui::TextColored(COLOR_YELLOW, "此界面 可在设置中勾选\"禁用消息提示框\"禁用");
+			ImGui::TextUnformatted("访问https://reshade.me获取新闻、更新、效果和讨论。 ");
+		}
+
+		ImGui::Spacing();
+
+#if RESHADE_FX
+		if (_reload_remaining_effects != 0 && _reload_remaining_effects != std::numeric_limits<size_t>::max())
+		{
+			ImGui::ProgressBar((_effects.size() - _reload_remaining_effects) / float(_effects.size()), ImVec2(-1, 0), "");
+			ImGui::SameLine(15);
+			ImGui::Text(
+				"编译 (剩余 %zu 个效果) ... "
+				"请稍等。程序可能暂时没有响应。",
+				_reload_remaining_effects.load());
+		}
+		else
+#endif
+		{
+			ImGui::ProgressBar(0.0f, ImVec2(-1, 0), "");
+			ImGui::SameLine(15);
+
+			if (_input == nullptr)
+			{
+				ImGui::TextColored(COLOR_YELLOW, "没有键盘或鼠标输入。%s", _input_gamepad != nullptr ? " 或者使用手柄：按下 左+右肩键 + START键 开启配置面板。 " : "");
+			}
+#if RESHADE_FX
+			else if (_tutorial_index == 0)
+			{
+				ImGui::TextUnformatted("ReShade现已成功安装！按 '");
+				ImGui::SameLine(0.0f, 0.0f);
+				ImGui::TextColored(ImVec4(1, 1, 1, 1), "%s", input::key_name(_overlay_key_data).c_str());
+				ImGui::SameLine(0.0f, 0.0f);
+				ImGui::TextUnformatted("' 键，开始教程。");
+			}
+#endif
+			else
+			{
+				ImGui::TextUnformatted("按 '");
+				ImGui::SameLine(0.0f, 0.0f);
+				ImGui::TextColored(ImVec4(1, 1, 1, 1), "%s", input::key_name(_overlay_key_data).c_str());
+				ImGui::SameLine(0.0f, 0.0f);
+				ImGui::TextUnformatted("' 键，打开配置面板。");
+			}
+		}
+
+		std::string error_message;
+#if RESHADE_ADDON
+		if (!addon_all_loaded)
+			error_message += "加载一些插件时";
+#endif
+#if RESHADE_FX
+		if (!_last_reload_successfull)
+			error_message += (error_message.empty() ? std::string() : "以及") + "编译一些效果时";
+#endif
+		if (!error_message.empty())
+		{
+			ImGui::Spacing();
+			ImGui::TextColored(COLOR_RED,
+				"%s 出现了错误，请查看日志以获得详细信息。", error_message.c_str());
+		}
+
+		viewport_offset.y += ImGui::GetWindowHeight() + _imgui_context->Style.WindowPadding.x; // Add small space between windows
+
+		ImGui::End();
+		ImGui::PopStyleColor(2);
+		ImGui::PopStyleVar();
+	}
+
+	if (show_message_window)
+	{
+		ImGui::SetNextWindowPos(_imgui_context->Style.WindowPadding + viewport_offset);
+		ImGui::SetNextWindowSize(ImVec2(imgui_io.DisplaySize.x - 20.0f, 0.0f));
+		ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 1.0f);
+		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.862745f, 0.862745f, 0.862745f, 1.0f));
+		ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.117647f, 0.117647f, 0.117647f, 0.7f));
+		ImGui::Begin("Message Window", nullptr,
 			ImGuiWindowFlags_NoDecoration |
 			ImGuiWindowFlags_NoNav |
 			ImGuiWindowFlags_NoMove |
@@ -830,80 +985,12 @@ void reshade::runtime::draw_gui()
 			else
 				ImGui::Text("截图已成功保存至 %s", _last_screenshot_file.u8string().c_str());
 		}
-		else
+#if RESHADE_FX
+		else if (show_preset_transition_message)
 		{
-			ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT);
-
-			if (_needs_update)
-			{
-				ImGui::TextColored(COLOR_YELLOW,
-					"An update is available! Please visit https://reshade.me and install the new version (v%lu.%lu.%lu).",
-					_latest_version[0], _latest_version[1], _latest_version[2]);
-			}
-			else
-			{
-				//ImGui::TextColored(COLOR_YELLOW, "此界面 可在设置中勾选\"禁用消息提示框\"禁用");
-				ImGui::TextUnformatted("访问https://reshade.me获取新闻、更新、效果和讨论。 ");
-			}
-
-			ImGui::Spacing();
-
-#if RESHADE_FX
-			if (_reload_remaining_effects != 0 && _reload_remaining_effects != std::numeric_limits<size_t>::max())
-			{
-				ImGui::ProgressBar((_effects.size() - _reload_remaining_effects) / float(_effects.size()), ImVec2(-1, 0), "");
-				ImGui::SameLine(15);
-				ImGui::Text(
-					"编译 (剩余 %zu 个效果) ... "
-					"请稍等。程序可能暂时没有响应。",
-					_reload_remaining_effects.load());
-			}
-			else
-#endif
-			{
-				ImGui::ProgressBar(0.0f, ImVec2(-1, 0), "");
-				ImGui::SameLine(15);
-
-				if (_input == nullptr)
-				{
-					ImGui::TextColored(COLOR_YELLOW, "没有键盘或鼠标输入。%s", _input_gamepad != nullptr ? " 或者使用手柄：按下 左+右肩键 + START键 开启配置面板。 " : "");
-				}
-#if RESHADE_FX
-				else if (_tutorial_index == 0)
-				{
-					ImGui::TextUnformatted("ReShade现已成功安装！按 '");
-					ImGui::SameLine(0.0f, 0.0f);
-					ImGui::TextColored(ImVec4(1, 1, 1, 1), "%s", input::key_name(_overlay_key_data).c_str());
-					ImGui::SameLine(0.0f, 0.0f);
-					ImGui::TextUnformatted("' 键，开始教程。");
-				}
-#endif
-				else
-				{
-					ImGui::TextUnformatted("按 '");
-					ImGui::SameLine(0.0f, 0.0f);
-					ImGui::TextColored(ImVec4(1, 1, 1, 1), "%s", input::key_name(_overlay_key_data).c_str());
-					ImGui::SameLine(0.0f, 0.0f);
-					ImGui::TextUnformatted("' 键，打开配置面板。");
-				}
-			}
-
-			std::string error_message;
-#if RESHADE_ADDON
-			if (!addon_all_loaded)
-				error_message += "加载一些插件时";
-#endif
-#if RESHADE_FX
-			if (!_last_reload_successfull)
-				error_message += (error_message.empty() ? std::string() : " and ") + "编译一些效果时";
-#endif
-			if (!error_message.empty())
-			{
-				ImGui::Spacing();
-				ImGui::TextColored(COLOR_RED,
-					"%s 出现了错误，请查看日志以获得详细信息。", error_message.c_str());
-			}
+			ImGui::Text("切换预设至 %s …", _current_preset_path.stem().u8string().c_str());
 		}
+#endif
 
 		viewport_offset.y += ImGui::GetWindowHeight() + _imgui_context->Style.WindowPadding.x; // Add small space between windows
 
@@ -911,7 +998,8 @@ void reshade::runtime::draw_gui()
 		ImGui::PopStyleColor(2);
 		ImGui::PopStyleVar();
 	}
-	else if (show_stats_window)
+
+	if (show_statistics_window && !show_splash_window && !show_message_window)
 	{
 		ImVec2 fps_window_pos(5, 5);
 		ImVec2 fps_window_size(200, 0);
@@ -984,7 +1072,7 @@ void reshade::runtime::draw_gui()
 		{
 			_font_size = ImClamp(_font_size + static_cast<int>(imgui_io.MouseWheel), 8, 32);
 			_editor_font_size = ImClamp(_editor_font_size + static_cast<int>(imgui_io.MouseWheel), 8, 32);
-			_rebuild_font_atlas = true;
+			imgui_io.Fonts->TexReady = false;
 			save_config();
 		}
 
@@ -1050,11 +1138,11 @@ void reshade::runtime::draw_gui()
 		ImGui::DockSpace(root_space_id, ImVec2(0, 0), ImGuiDockNodeFlags_PassthruCentralNode);
 		ImGui::End();
 
-		if (_imgui_context->NavInputSource != ImGuiInputSource_None)
+		if (_imgui_context->NavInputSource > ImGuiInputSource_Mouse && _imgui_context->NavWindowingTarget == nullptr)
 		{
 			// Reset input source to mouse when the cursor is moved
 			if (_input != nullptr && (_input->mouse_movement_delta_x() != 0 || _input->mouse_movement_delta_y() != 0))
-				_imgui_context->NavInputSource = ImGuiInputSource_None;
+				_imgui_context->NavInputSource = ImGuiInputSource_Mouse;
 			// Ensure there is always a window that has navigation focus when keyboard or gamepad navigation is used (choose the first overlay window created next)
 			else if (!ImGui::IsWindowFocused(ImGuiFocusedFlags_AnyWindow))
 				ImGui::SetNextWindowFocus();
@@ -1107,15 +1195,15 @@ void reshade::runtime::draw_gui()
 	}
 
 #if RESHADE_ADDON
-#  if RESHADE_ADDON_LITE
+#if RESHADE_ADDON_LITE
 	if (addon_enabled)
-#  endif
+#endif
 	{
 		for (const addon_info &info : addon_loaded_info)
 		{
 			for (const addon_info::overlay_callback &widget : info.overlay_callbacks)
 			{
-				if (widget.title == "OSD" ? show_splash : !_show_overlay)
+				if (widget.title == "OSD" ? show_splash_window : !_show_overlay)
 					continue;
 
 				if (ImGui::Begin(widget.title.c_str(), nullptr, ImGuiWindowFlags_NoFocusOnAppearing))
@@ -1146,9 +1234,6 @@ void reshade::runtime::draw_gui()
 				ImGuiWindowFlags_NoBackground);
 			ImGui::End();
 		}
-
-		// The preview texture is unset in 'destroy_effect', so should not be able to reach this while loading
-		assert(!is_loading());
 
 		// Scale image to fill the entire viewport by default
 		ImVec2 preview_min = ImVec2(0, 0);
@@ -1254,16 +1339,14 @@ void reshade::runtime::draw_gui_home()
 		if (ImGui::ArrowButtonEx("<", ImGuiDir_Left, ImVec2(button_size, button_size), ImGuiButtonFlags_NoNavFocus))
 			if (switch_to_next_preset(_current_preset_path.parent_path(), true))
 				reload_preset = true;
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("前一个预设");
+		ImGui::SetItemTooltip("前一个预设");
 
 		ImGui::SameLine(0, button_spacing);
 
 		if (ImGui::ArrowButtonEx(">", ImGuiDir_Right, ImVec2(button_size, button_size), ImGuiButtonFlags_NoNavFocus))
 			if (switch_to_next_preset(_current_preset_path.parent_path(), false))
 				reload_preset = true;
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("后一个预设");
+		ImGui::SetItemTooltip("后一个预设");
 
 		ImGui::SameLine();
 
@@ -1297,7 +1380,7 @@ void reshade::runtime::draw_gui_home()
 			else
 				shortcut.preset_path = _current_preset_path;
 
-			ImGui::SetNextItemWidth(230.0f);
+			ImGui::SetNextItemWidth(18.0f * _font_size);
 			if (imgui::key_input_box("##toggle_key", shortcut.key_data, *_input))
 			{
 				if (preset_shortcut_it != _preset_shortcuts.end())
@@ -1319,8 +1402,7 @@ void reshade::runtime::draw_gui_home()
 			save_config();
 		}
 
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("每次修改当前预设时均自动保存。");
+		ImGui::SetItemTooltip("每次修改当前预设时均自动保存。");
 
 		if (was_auto_save_preset)
 		{
@@ -1335,8 +1417,7 @@ void reshade::runtime::draw_gui_home()
 			if (imgui::confirm_button(ICON_FK_UNDO, button_size, "真的要重置所有效果器和值吗？"))
 				reload_preset = true;
 
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("重置当前预设的所有效果器和值");
+			ImGui::SetItemTooltip("重置当前预设的所有效果器和值");
 
 			ImGui::EndDisabled();
 
@@ -1344,7 +1425,7 @@ void reshade::runtime::draw_gui_home()
 		}
 
 		// Cannot save in performance mode, since there are no variables to retrieve values from then
-		ImGui::BeginDisabled(_performance_mode || _is_in_between_presets_transition);
+		ImGui::BeginDisabled(_performance_mode || _is_in_preset_transition);
 
 		if (ImGui::ButtonEx(ICON_FK_FLOPPY, ImVec2(button_size, 0), ImGuiButtonFlags_NoNavFocus))
 		{
@@ -1355,8 +1436,7 @@ void reshade::runtime::draw_gui_home()
 			_preset_is_modified = false;
 		}
 
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("清理并保存当前预设（将移除禁用的效果器的所有设置）");
+		ImGui::SetItemTooltip("清理并保存当前预设（将移除禁用的效果器的所有设置）");
 
 		ImGui::EndDisabled();
 
@@ -1369,8 +1449,7 @@ void reshade::runtime::draw_gui_home()
 			ImGui::OpenPopup("##create");
 		}
 
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("添加一个新预设");
+		ImGui::SetItemTooltip("添加一个新预设");
 
 		if (was_loading)
 		{
@@ -1444,7 +1523,7 @@ void reshade::runtime::draw_gui_home()
 				}
 			}
 
-			if (preset_name[0] == '\0' && ImGui::IsKeyPressedMap(ImGuiKey_Backspace))
+			if (preset_name[0] == '\0' && ImGui::IsKeyPressed(ImGuiKey_Backspace))
 				ImGui::CloseCurrentPopup();
 
 			ImGui::EndPopup();
@@ -1458,11 +1537,13 @@ void reshade::runtime::draw_gui_home()
 
 		if (reload_preset)
 		{
-			_show_splash = true;
-			_preset_is_modified = false;
-
 			save_config();
 			load_current_preset();
+
+			_show_splash = true;
+			_preset_is_modified = false;
+			_last_preset_switching_time = _last_present_time;
+			_is_in_preset_transition = true;
 
 #if RESHADE_ADDON
 			if (!is_loading()) // Will be called by 'update_effects' when 'load_current_preset' forced a reload
@@ -1510,7 +1591,7 @@ void reshade::runtime::draw_gui_home()
 
 		ImGui::SameLine();
 
-		ImGui::BeginDisabled(_is_in_between_presets_transition);
+		ImGui::BeginDisabled(_is_in_preset_transition);
 
 		if (ImGui::Button("置顶激活效果", ImVec2(auto_save_button_spacing + 8.0f * _font_size, 0)))
 		{
@@ -1582,7 +1663,7 @@ void reshade::runtime::draw_gui_home()
 				}
 			}
 
-			ImGui::BeginDisabled(_is_in_between_presets_transition);
+			ImGui::BeginDisabled(_is_in_preset_transition);
 			draw_technique_editor();
 			ImGui::EndDisabled();
 		}
@@ -1603,7 +1684,7 @@ void reshade::runtime::draw_gui_home()
 		if (ImGui::IsItemActive())
 		{
 			ImVec2 move_delta = _imgui_context->IO.MouseDelta;
-			move_delta += ImGui::GetNavInputAmount2d(ImGuiNavDirSourceFlags_RawKeyboard | ImGuiNavDirSourceFlags_PadLStick, ImGuiInputReadMode_Down) * _imgui_context->IO.DeltaTime * 500.0f;
+			move_delta += ImGui::GetKeyMagnitude2d(ImGuiKey_GamepadLStickLeft, ImGuiKey_GamepadLStickRight, ImGuiKey_GamepadLStickUp, ImGuiKey_GamepadLStickDown) * _imgui_context->IO.DeltaTime * 500.0f;
 
 			_variable_editor_height = std::max(_variable_editor_height - move_delta.y, 0.0f);
 			save_config();
@@ -1626,7 +1707,7 @@ void reshade::runtime::draw_gui_home()
 
 		if (ImGui::BeginChild("##variables", ImVec2(0, -bottom_height), true))
 		{
-			ImGui::BeginDisabled(_is_in_between_presets_transition);
+			ImGui::BeginDisabled(_is_in_preset_transition);
 			draw_variable_editor();
 			ImGui::EndDisabled();
 		}
@@ -1658,8 +1739,7 @@ void reshade::runtime::draw_gui_home()
 			reload_effects(); // Reload effects after switching
 		}
 
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("重新编译加载效果为优化形式，提供更好的性能，但禁用预设参数调整。");
+		ImGui::SetItemTooltip("重新编译加载效果为优化形式，提供更好的性能，但禁用预设参数调整。");
 	}
 	else
 	{
@@ -1727,8 +1807,7 @@ void reshade::runtime::draw_gui_settings()
 			modified |= imgui::key_input_box("快捷键：后一个预设", _next_preset_key_data, *_input);
 
 			modified |= ImGui::SliderInt("预设过渡时间", reinterpret_cast<int *>(&_preset_transition_duration), 0, 10 * 1000);
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("切换预设时平滑过渡画面，但只对浮点参数值有效。\n当使用相同效果的多个不同预设时推荐启用，否则设置为0关闭。\n数值单位为毫秒。");
+			ImGui::SetItemTooltip("切换预设时平滑过渡画面，但只对浮点参数值有效。\n当使用相同效果的多个不同预设时推荐启用，否则设置为0关闭。\n数值单位为毫秒。");
 #endif
 
 			modified |= ImGui::Combo("键鼠输入处理", reinterpret_cast<int *>(&_input_processing_mode),
@@ -1742,17 +1821,14 @@ void reshade::runtime::draw_gui_settings()
 
 #if RESHADE_FX
 		modified |= imgui::file_input_box("初始预设", nullptr, _startup_preset_path, _file_selection_path, { L".ini", L".txt" });
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("若不为空，则重新加载时自动重置预设为该文件");
+		ImGui::SetItemTooltip("若不为空，则重新加载时自动重置预设为该文件");
 
 		ImGui::Spacing();
 
 		modified |= imgui::path_list("效果搜索路径", _effect_search_paths, _file_selection_path, g_reshade_base_path);
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("在这些目录下搜索效果文件(.fx)。\n以 \"\\**\"结尾的路径将被递归搜索（即它的子文件夹等也将被搜索）");
+		ImGui::SetItemTooltip("在这些目录下搜索效果文件(.fx)。\n以 \"\\**\"结尾的路径将被递归搜索（即它的子文件夹等也将被搜索）");
 		modified |= imgui::path_list("纹理搜索路径", _texture_search_paths, _file_selection_path, g_reshade_base_path);
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("在这些目录下搜索纹理贴图文件。\n以\"\\**\"结尾的路径将被递归搜索（即它的子文件夹等也将被搜索）");
+		ImGui::SetItemTooltip("在这些目录下搜索纹理贴图文件。\n以\"\\**\"结尾的路径将被递归搜索（即它的子文件夹等也将被搜索）");
 
 		if (ImGui::Checkbox("只加载已启用效果", &_effect_load_skipping))
 		{
@@ -1765,8 +1841,7 @@ void reshade::runtime::draw_gui_settings()
 
 		if (ImGui::Button("清除效果缓存", ImVec2(ImGui::CalcItemWidth(), 0)))
 			clear_effect_cache();
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("清除位于\"%s\"的效果缓存。", _effect_cache_path.u8string().c_str());
+		ImGui::SetItemTooltip("清除位于\"%s\"的效果缓存。", _effect_cache_path.u8string().c_str());
 #endif
 	}
 
@@ -1787,7 +1862,7 @@ void reshade::runtime::draw_gui_settings()
 			_screenshot_name = name;
 		}
 
-		if (ImGui::IsItemHovered())
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
 		{
 			ImGui::SetTooltip(
 				"可用的宏（代名词），保存截图时它们将被自动解析展开\n"
@@ -1816,7 +1891,7 @@ void reshade::runtime::draw_gui_settings()
 		modified |= ImGui::Combo("截图图片格式", reinterpret_cast<int *>(&_screenshot_format), "Bitmap (*.bmp)\0Portable Network Graphics (*.png)\0JPEG (*.jpeg)\0");
 
 		if (_screenshot_format == 2)
-			modified |= ImGui::SliderInt("JPEG质量", reinterpret_cast<int *>(&_screenshot_jpeg_quality), 1, 100);
+			modified |= ImGui::SliderInt("JPEG质量", reinterpret_cast<int *>(&_screenshot_jpeg_quality), 1, 100, "%d", ImGuiSliderFlags_AlwaysClamp);
 		else
 			modified |= ImGui::Checkbox("清除Alpha通道", &_screenshot_clear_alpha);
 
@@ -1827,12 +1902,10 @@ void reshade::runtime::draw_gui_settings()
 		modified |= ImGui::Checkbox("另外保存一张可见设置面板的截图", &_screenshot_save_gui);
 
 		modified |= imgui::file_input_box("截图音效", "sound.wav", _screenshot_sound_path, _file_selection_path, { L".wav" });
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("截图时播放的音效文件");
+		ImGui::SetItemTooltip("截图时播放的音效文件");
 
 		modified |= imgui::file_input_box("保存后执行命令", "command.exe", _screenshot_post_save_command, _file_selection_path, { L".exe" });
-		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("进行截图后自动执行的命令。\n可以用于对截图自动进行后续处理（例如调用其他工具自动压缩等）");
+		ImGui::SetItemTooltip("进行截图后自动执行的命令。\n可以用于对截图自动进行后续处理（例如调用其他工具自动压缩等）");
 
 		char arguments[260];
 		arguments[_screenshot_post_save_command_arguments.copy(arguments, sizeof(arguments) - 1)] = '\0';
@@ -1842,7 +1915,7 @@ void reshade::runtime::draw_gui_settings()
 			_screenshot_post_save_command_arguments = arguments;
 		}
 
-		if (ImGui::IsItemHovered())
+		if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
 		{
 			const std::string extension = _screenshot_format == 0 ? ".bmp" : _screenshot_format == 1 ? ".png" : ".jpg";
 
@@ -1894,6 +1967,12 @@ void reshade::runtime::draw_gui_settings()
 		modified |= ImGui::Checkbox("显示截图消息", &_show_screenshot_message);
 
 #if RESHADE_FX
+		ImGui::BeginDisabled(_preset_transition_duration == 0);
+		modified |= ImGui::Checkbox("Show preset transition message", &_show_preset_transition_message);
+		ImGui::EndDisabled();
+		if (_preset_transition_duration == 0 && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_ForTooltip))
+			ImGui::SetTooltip("Preset transition duration has to be non-zero for the preset transition message to show up.");
+
 		if (_effect_load_skipping)
 			modified |= ImGui::Checkbox("显示“加载所有效果”按钮", &_show_force_load_effects_button);
 #endif
@@ -2018,30 +2097,45 @@ void reshade::runtime::draw_gui_settings()
 		}
 #pragma endregion
 
-		if (imgui::font_input_box("全局字体", _font, _file_selection_path, _font_size))
+		if (imgui::font_input_box("全局字体", _font_path, _file_selection_path, _font_size))
 		{
 			modified = true;
-			_rebuild_font_atlas = true;
+			_imgui_context->IO.Fonts->TexReady = false;
 		}
 
-		if (imgui::font_input_box("文本编辑器字体", _editor_font, _file_selection_path, _editor_font_size))
+		if (imgui::font_input_box("文本编辑器字体", _editor_font_path, _file_selection_path, _editor_font_size))
 		{
 			modified = true;
-			_rebuild_font_atlas = true;
+			_imgui_context->IO.Fonts->TexReady = false;
 		}
 
-		if (float &alpha = _imgui_context->Style.Alpha; ImGui::SliderFloat("全局透明度", &alpha, 0.1f, 1.0f, "%.2f"))
+		if (float &alpha = _imgui_context->Style.Alpha; ImGui::SliderFloat("全局透明度", &alpha, 0.1f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp))
 		{
 			// Prevent user from setting alpha to zero
 			alpha = std::max(alpha, 0.1f);
 			modified = true;
 		}
 
-		if (float &rounding = _imgui_context->Style.FrameRounding; ImGui::SliderFloat("框架圆角", &rounding, 0.0f, 12.0f, "%.0f"))
+		// Only show on possible HDR swap chains
+		if ((_renderer_id & 0xB000 || _renderer_id & 0xC000 || _renderer_id & 0x20000) &&
+			(_back_buffer_format == reshade::api::format::r10g10b10a2_unorm || _back_buffer_format == reshade::api::format::b10g10r10a2_unorm || _back_buffer_format == reshade::api::format::r16g16b16a16_float))
+		{
+			if (ImGui::SliderFloat("HDR覆盖层亮度", &_hdr_overlay_brightness, 20.f, 400.f, "%.0f 尼特", ImGuiSliderFlags_AlwaysClamp))
+				modified = true;
+
+			if (ImGui::Combo("覆盖层色彩空间", reinterpret_cast<int *>(&_hdr_overlay_overwrite_color_space), "自动\0SDR\0scRGB\0HDR10\0HLG\0"))
+				modified = true;
+		}
+
+		if (float &rounding = _imgui_context->Style.FrameRounding; ImGui::SliderFloat("框架圆角", &rounding, 0.0f, 12.0f, "%.0f", ImGuiSliderFlags_AlwaysClamp))
 		{
 			// Apply the same rounding to everything
-			_imgui_context->Style.GrabRounding = _imgui_context->Style.TabRounding = _imgui_context->Style.ScrollbarRounding = rounding;
-			_imgui_context->Style.WindowRounding = _imgui_context->Style.ChildRounding = _imgui_context->Style.PopupRounding = rounding;
+			_imgui_context->Style.WindowRounding = rounding;
+			_imgui_context->Style.ChildRounding = rounding;
+			_imgui_context->Style.PopupRounding = rounding;
+			_imgui_context->Style.ScrollbarRounding = rounding;
+			_imgui_context->Style.GrabRounding = rounding;
+			_imgui_context->Style.TabRounding = rounding;
 			modified = true;
 		}
 
@@ -2054,13 +2148,12 @@ void reshade::runtime::draw_gui_settings()
 			ImGui::SameLine(0, 10);
 			modified |= imgui::checkbox_tristate("显示帧生成时间", &_show_frametime);
 			ImGui::EndGroup();
-			if (ImGui::IsItemHovered())
-				ImGui::SetTooltip("勾选以始终显示");
+			ImGui::SetItemTooltip("勾选以始终显示");
 
 			if (_show_clock)
 				modified |= ImGui::Combo("时间格式", reinterpret_cast<int *>(&_clock_format), "HH:mm\0HH:mm:ss\0");
 
-			modified |= ImGui::SliderFloat("OSD字体大小", &_fps_scale, 0.2f, 2.5f, "%.1f");
+			modified |= ImGui::SliderFloat("OSD字体大小", &_fps_scale, 0.2f, 2.5f, "%.1f", ImGuiSliderFlags_AlwaysClamp);
 			modified |= ImGui::ColorEdit4("OSD字体颜色", _fps_col, ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreview);
 			modified |= ImGui::Combo("OSD在屏幕上的位置", reinterpret_cast<int *>(&_fps_pos), "左上角\0右上角\0左下角\0右下角\0");
 		}
@@ -2187,8 +2280,11 @@ void reshade::runtime::draw_gui_statistics()
 
 		ImGui::BeginGroup();
 
-		for (const technique &tech : _techniques)
+		std::vector<bool> long_technique_name(_techniques.size());
+		for (size_t technique_index : _technique_sorting)
 		{
+			const reshade::technique &tech = _techniques[technique_index];
+
 			if (!tech.enabled)
 				continue;
 
@@ -2196,16 +2292,25 @@ void reshade::runtime::draw_gui_statistics()
 				ImGui::Text("%s (%zu 传递[pass])", tech.name.c_str(), tech.passes.size());
 			else
 				ImGui::TextUnformatted(tech.name.c_str());
+
+			long_technique_name[technique_index] = (ImGui::GetItemRectSize().x + 10.0f) > (ImGui::GetWindowWidth() * 0.33333333f);
+			if (long_technique_name[technique_index])
+				ImGui::NewLine();
 		}
 
 		ImGui::EndGroup();
 		ImGui::SameLine(ImGui::GetWindowWidth() * 0.33333333f);
 		ImGui::BeginGroup();
 
-		for (const technique &tech : _techniques)
+		for (size_t technique_index : _technique_sorting)
 		{
+			const reshade::technique &tech = _techniques[technique_index];
+
 			if (!tech.enabled)
 				continue;
+
+			if (long_technique_name[technique_index])
+				ImGui::NewLine();
 
 			if (tech.average_cpu_duration != 0)
 				ImGui::Text("%*.3f ms CPU", cpu_digits + 4, tech.average_cpu_duration * 1e-6f);
@@ -2217,10 +2322,15 @@ void reshade::runtime::draw_gui_statistics()
 		ImGui::SameLine(ImGui::GetWindowWidth() * 0.66666666f);
 		ImGui::BeginGroup();
 
-		for (const technique &tech : _techniques)
+		for (size_t technique_index : _technique_sorting)
 		{
+			const reshade::technique &tech = _techniques[technique_index];
+
 			if (!tech.enabled)
 				continue;
+
+			if (long_technique_name[technique_index])
+				ImGui::NewLine();
 
 			// GPU timings are not available for all APIs
 			if (_gather_gpu_statistics && tech.average_gpu_duration != 0)
@@ -2236,11 +2346,11 @@ void reshade::runtime::draw_gui_statistics()
 	{
 		static const char *texture_formats[] = {
 			"未知",
-			"R8", "R16", "R16F", "R32F", "RG8", "RG16", "RG16F", "RG32F", "RGBA8", "RGBA16", "RGBA16F", "RGBA32F", "RGB10A2"
+			"R8", "R16", "R16F", "R32I", "R32U", "R32F", "RG8", "RG16", "RG16F", "RG32F", "RGBA8", "RGBA16", "RGBA16F", "RGBA32F", "RGB10A2"
 		};
 		static constexpr uint32_t pixel_sizes[] = {
 			0,
-			1 /*R8*/, 2 /*R16*/, 2 /*R16F*/, 4 /*R32F*/, 2 /*RG8*/, 4 /*RG16*/, 4 /*RG16F*/, 8 /*RG32F*/, 4 /*RGBA8*/, 8 /*RGBA16*/, 8 /*RGBA16F*/, 16 /*RGBA32F*/, 4 /*RGB10A2*/
+			1 /*R8*/, 2 /*R16*/, 2 /*R16F*/, 4 /*R32I*/, 4 /*R32U*/, 4 /*R32F*/, 2 /*RG8*/, 4 /*RG16*/, 4 /*RG16F*/, 8 /*RG32F*/, 4 /*RGBA8*/, 8 /*RGBA16*/, 8 /*RGBA16F*/, 16 /*RGBA32F*/, 4 /*RGB10A2*/
 		};
 
 		static_assert((std::size(texture_formats) - 1) == static_cast<size_t>(reshadefx::texture_format::rgb10a2));
@@ -2264,8 +2374,8 @@ void reshade::runtime::draw_gui_statistics()
 			ImGui::BeginGroup();
 
 			int64_t memory_size = 0;
-			for (uint32_t level = 0, width = tex.width, height = tex.height; level < tex.levels; ++level, width /= 2, height /= 2)
-				memory_size += static_cast<size_t>(width) * static_cast<size_t>(height) * pixel_sizes[static_cast<int>(tex.format)];
+			for (uint32_t level = 0, width = tex.width, height = tex.height, depth = tex.depth; level < tex.levels; ++level, width /= 2, height /= 2, depth /= 2)
+				memory_size += static_cast<size_t>(width) * static_cast<size_t>(height) * static_cast<size_t>(depth) * pixel_sizes[static_cast<int>(tex.format)];
 
 			post_processing_memory_size += memory_size;
 
@@ -2282,12 +2392,33 @@ void reshade::runtime::draw_gui_statistics()
 			}
 
 			ImGui::TextColored(ImVec4(1, 1, 1, 1), "%s%s", tex.unique_name.c_str(), tex.shared.size() > 1 ? " (Pooled)" : "");
-			ImGui::Text("%ux%u | %u mipmap(s) | %s | %lld.%03lld %s",
-				tex.width,
-				tex.height,
-				tex.levels - 1,
-				texture_formats[static_cast<int>(tex.format)],
-				memory_view.quot, memory_view.rem, memory_size_unit);
+			switch (tex.type)
+			{
+			case reshadefx::texture_type::texture_1d:
+				ImGui::Text("%u | %u mipmap(s) | %s | %lld.%03lld %s",
+					tex.width,
+					tex.levels - 1,
+					texture_formats[static_cast<int>(tex.format)],
+					memory_view.quot, memory_view.rem, memory_size_unit);
+				break;
+			case reshadefx::texture_type::texture_2d:
+				ImGui::Text("%ux%u | %u mipmap(s) | %s | %lld.%03lld %s",
+					tex.width,
+					tex.height,
+					tex.levels - 1,
+					texture_formats[static_cast<int>(tex.format)],
+					memory_view.quot, memory_view.rem, memory_size_unit);
+				break;
+			case reshadefx::texture_type::texture_3d:
+				ImGui::Text("%ux%ux%u | %u mipmap(s) | %s | %lld.%03lld %s",
+					tex.width,
+					tex.height,
+					tex.depth,
+					tex.levels - 1,
+					texture_formats[static_cast<int>(tex.format)],
+					memory_view.quot, memory_view.rem, memory_size_unit);
+				break;
+			}
 
 			size_t num_referenced_passes = 0;
 			std::vector<std::pair<size_t, std::vector<std::string>>> references;
@@ -2342,7 +2473,8 @@ void reshade::runtime::draw_gui_statistics()
 				}
 			}
 
-			const bool supports_saving = (
+			const bool supports_saving =
+				tex.type != reshadefx::texture_type::texture_3d && (
 				tex.format == reshadefx::texture_format::r8 ||
 				tex.format == reshadefx::texture_format::rg8 ||
 				tex.format == reshadefx::texture_format::rgba8 ||
@@ -2359,8 +2491,7 @@ void reshade::runtime::draw_gui_statistics()
 				ImGui::SameLine(0, button_spacing);
 				if (ImGui::Button(ICON_FK_FLOPPY, ImVec2(button_size, 0)))
 					save_texture(tex);
-				if (ImGui::IsItemHovered())
-					ImGui::SetTooltip("保存%s", tex.unique_name.c_str());
+				ImGui::SetItemTooltip("保存%s", tex.unique_name.c_str());
 			}
 			ImGui::PopStyleVar();
 
@@ -2391,47 +2522,50 @@ void reshade::runtime::draw_gui_statistics()
 				ImGui::EndPopup();
 			}
 
-			if (bool check = _preview_texture == tex.srv[0] && _preview_size[0] == 0; ImGui::RadioButton("预览缩放", check))
+			if (tex.type == reshadefx::texture_type::texture_2d)
 			{
-				_preview_size[0] = 0;
-				_preview_size[1] = 0;
-				_preview_texture = !check ? tex.srv[0] : api::resource_view { 0 };
-			}
-			ImGui::SameLine();
-			if (bool check = _preview_texture == tex.srv[0] && _preview_size[0] != 0; ImGui::RadioButton("预览原始", check))
-			{
-				_preview_size[0] = tex.width;
-				_preview_size[1] = tex.height;
-				_preview_texture = !check ? tex.srv[0] : api::resource_view { 0 };
-			}
+				if (bool check = _preview_texture == tex.srv[0] && _preview_size[0] == 0; ImGui::RadioButton("预览缩放", check))
+				{
+					_preview_size[0] = 0;
+					_preview_size[1] = 0;
+					_preview_texture = !check ? tex.srv[0] : api::resource_view { 0 };
+				}
+				ImGui::SameLine();
+				if (bool check = _preview_texture == tex.srv[0] && _preview_size[0] != 0; ImGui::RadioButton("预览原始", check))
+				{
+					_preview_size[0] = tex.width;
+					_preview_size[1] = tex.height;
+					_preview_texture = !check ? tex.srv[0] : api::resource_view { 0 };
+				}
 
-			bool r = (_preview_size[2] & 0x000000FF) != 0;
-			bool g = (_preview_size[2] & 0x0000FF00) != 0;
-			bool b = (_preview_size[2] & 0x00FF0000) != 0;
-			ImGui::SameLine();
-			ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(_imgui_context->Style.FramePadding.x, 0));
-			ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1, 0, 0, 1));
-			imgui::toggle_button("R", r, 0.0f, ImGuiButtonFlags_AlignTextBaseLine);
-			ImGui::PopStyleColor();
-			if (tex.format >= reshadefx::texture_format::rg8)
-			{
-				ImGui::SameLine(0, 1);
-				ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0, 1, 0, 1));
-				imgui::toggle_button("G", g, 0.0f, ImGuiButtonFlags_AlignTextBaseLine);
+				bool r = (_preview_size[2] & 0x000000FF) != 0;
+				bool g = (_preview_size[2] & 0x0000FF00) != 0;
+				bool b = (_preview_size[2] & 0x00FF0000) != 0;
+				ImGui::SameLine();
+				ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(_imgui_context->Style.FramePadding.x, 0));
+				ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1, 0, 0, 1));
+				imgui::toggle_button("R", r, 0.0f, ImGuiButtonFlags_AlignTextBaseLine);
 				ImGui::PopStyleColor();
-				if (tex.format >= reshadefx::texture_format::rgba8)
+				if (tex.format >= reshadefx::texture_format::rg8)
 				{
 					ImGui::SameLine(0, 1);
-					ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0, 0, 1, 1));
-					imgui::toggle_button("B", b, 0.0f, ImGuiButtonFlags_AlignTextBaseLine);
+					ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0, 1, 0, 1));
+					imgui::toggle_button("G", g, 0.0f, ImGuiButtonFlags_AlignTextBaseLine);
 					ImGui::PopStyleColor();
+					if (tex.format >= reshadefx::texture_format::rgba8)
+					{
+						ImGui::SameLine(0, 1);
+						ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0, 0, 1, 1));
+						imgui::toggle_button("B", b, 0.0f, ImGuiButtonFlags_AlignTextBaseLine);
+						ImGui::PopStyleColor();
+					}
 				}
-			}
-			ImGui::PopStyleVar();
-			_preview_size[2] = (r ? 0x000000FF : 0) | (g ? 0x0000FF00 : 0) | (b ? 0x00FF0000 : 0) | 0xFF000000;
+				ImGui::PopStyleVar();
+				_preview_size[2] = (r ? 0x000000FF : 0) | (g ? 0x0000FF00 : 0) | (b ? 0x00FF0000 : 0) | 0xFF000000;
 
-			const float aspect_ratio = static_cast<float>(tex.width) / static_cast<float>(tex.height);
-			imgui::image_with_checkerboard_background(tex.srv[0].handle, ImVec2(single_image_width, single_image_width / aspect_ratio), _preview_size[2]);
+				const float aspect_ratio = static_cast<float>(tex.width) / static_cast<float>(tex.height);
+				imgui::image_with_checkerboard_background(tex.srv[0].handle, ImVec2(single_image_width, single_image_width / aspect_ratio), _preview_size[2]);
+			}
 
 			ImGui::EndGroup();
 			ImGui::PopID();
@@ -2636,7 +2770,7 @@ void reshade::runtime::draw_gui_addons()
 {
 	ini_file &config = global_config();
 
-#  if RESHADE_ADDON_LITE
+#if RESHADE_ADDON_LITE
 	if (!addon_enabled)
 	{
 		ImGui::TextColored(COLOR_YELLOW, "High network activity discovered.\nAll add-ons are disabled to prevent exploitation.");
@@ -2645,12 +2779,12 @@ void reshade::runtime::draw_gui_addons()
 
 	ImGui::AlignTextToFramePadding();
 	ImGui::TextUnformatted("This build of ReShade has only limited add-on functionality.");
-#  else
+#else
 	std::filesystem::path addon_search_path = g_reshade_base_path;
 	config.get("ADDON", "AddonPath", addon_search_path);
 	if (imgui::directory_input_box("插件搜索路径", addon_search_path, _file_selection_path))
 		config.set("ADDON", "AddonPath", addon_search_path);
-#  endif
+#endif
 
 	ImGui::Spacing();
 	ImGui::Separator();
@@ -2666,7 +2800,13 @@ void reshade::runtime::draw_gui_addons()
 
 	if (!addon_all_loaded)
 	{
+		ImGui::PushTextWrapPos();
+#if RESHADE_ADDON_LITE
+		ImGui::TextColored(COLOR_YELLOW, "由于该ReShade构建限制了插件功能，一些插件没有被加载。");
+#else
 		ImGui::TextColored(COLOR_RED, "加载一些插件时出现了错误，请查看日志以获得详细信息。");
+#endif
+		ImGui::PopTextWrapPos();
 		ImGui::Spacing();
 	}
 
@@ -2797,7 +2937,7 @@ void reshade::runtime::draw_variable_editor()
 		const float button_size = ImGui::GetFrameHeight();
 		const float button_spacing = _imgui_context->Style.ItemInnerSpacing.x;
 
-		ImGui::BeginChild("##definitions", ImVec2(400.0f, popup_height), false, ImGuiWindowFlags_NoScrollWithMouse);
+		ImGui::BeginChild("##definitions", ImVec2(30.0f * _font_size, popup_height));
 
 		if (ImGui::BeginTabBar("##definition_types", ImGuiTabBarFlags_NoTooltip))
 		{
@@ -3052,6 +3192,7 @@ void reshade::runtime::draw_variable_editor()
 			}
 
 			bool modified = false;
+			bool is_default_value = true;
 			std::string_view label = variable.annotation_as_string("ui_label");
 			if (label.empty())
 				label = variable.name;
@@ -3061,83 +3202,98 @@ void reshade::runtime::draw_variable_editor()
 
 			switch (variable.type.base)
 			{
-			case reshadefx::type::t_bool:
-			{
-				bool data;
-				get_uniform_value(variable, &data);
+				case reshadefx::type::t_bool:
+				{
+					bool data;
+					get_uniform_value(variable, &data);
+
+					is_default_value = (data == (variable.initializer_value.as_uint[0] != 0));
 
 				if (ui_type == "combo")
 					modified = imgui::combo_with_buttons(label.data(), data);
 				else
 					modified = ImGui::Checkbox(label.data(), &data);
 
-				if (modified)
-					set_uniform_value(variable, &data);
-				break;
-			}
-			case reshadefx::type::t_int:
-			case reshadefx::type::t_uint:
-			{
-				int data[16];
-				get_uniform_value(variable, data, 16);
+					if (modified)
+						set_uniform_value(variable, &data);
+					break;
+				}
+				case reshadefx::type::t_int:
+				case reshadefx::type::t_uint:
+				{
+					int data[16];
+					get_uniform_value(variable, data, 16);
 
-				const int ui_min_val = variable.annotation_as_int("ui_min", 0, ui_type == "slider" ? 0 : std::numeric_limits<int>::lowest());
-				const int ui_max_val = variable.annotation_as_int("ui_max", 0, ui_type == "slider" ? 1 : std::numeric_limits<int>::max());
-				const int ui_stp_val = std::max(1, variable.annotation_as_int("ui_step"));
+					is_default_value = std::memcmp(data, variable.initializer_value.as_int, variable.type.components() * sizeof(int)) == 0;
 
-				if (ui_type == "slider")
-					modified = imgui::slider_with_buttons(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, data, variable.type.rows, &ui_stp_val, &ui_min_val, &ui_max_val);
-				else if (ui_type == "drag")
-					modified = variable.annotation_as_int("ui_step") == 0 ?
-					ImGui::DragScalarN(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, data, variable.type.rows, 1.0f, &ui_min_val, &ui_max_val) :
-					imgui::drag_with_buttons(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, data, variable.type.rows, &ui_stp_val, &ui_min_val, &ui_max_val);
-				else if (ui_type == "list")
-					modified = imgui::list_with_buttons(label.data(), variable.annotation_as_string("ui_items"), data[0]);
-				else if (ui_type == "combo")
-					modified = imgui::combo_with_buttons(label.data(), variable.annotation_as_string("ui_items"), data[0]);
-				else if (ui_type == "radio")
-					modified = imgui::radio_list(label.data(), variable.annotation_as_string("ui_items"), data[0]);
-				else if (variable.type.is_matrix())
-					for (unsigned int row = 0; row < variable.type.rows; ++row)
-						modified = ImGui::InputScalarN((std::string(label) + " [row " + std::to_string(row) + ']').c_str(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, &data[0] + row * variable.type.cols, variable.type.cols) || modified;
-				else
-					modified = ImGui::InputScalarN(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, data, variable.type.rows);
+					const int ui_min_val = variable.annotation_as_int("ui_min", 0, ui_type == "slider" ? 0 : std::numeric_limits<int>::lowest());
+					const int ui_max_val = variable.annotation_as_int("ui_max", 0, ui_type == "slider" ? 1 : std::numeric_limits<int>::max());
+					const int ui_stp_val = variable.annotation_as_int("ui_step", 0, 1);
 
-				if (modified)
-					set_uniform_value(variable, data, 16);
-				break;
-			}
-			case reshadefx::type::t_float:
-			{
-				float data[16];
-				get_uniform_value(variable, data, 16);
+					// Append units
+					std::string format = "%d";
+					const std::string_view units = variable.annotation_as_string("ui_units");
+					format.append(units);
 
-				const float ui_min_val = variable.annotation_as_float("ui_min", 0, ui_type == "slider" ? 0.0f : std::numeric_limits<float>::lowest());
-				const float ui_max_val = variable.annotation_as_float("ui_max", 0, ui_type == "slider" ? 1.0f : std::numeric_limits<float>::max());
-				const float ui_stp_val = std::max(0.001f, variable.annotation_as_float("ui_step"));
+					if (ui_type == "slider")
+						modified = imgui::slider_with_buttons(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, data, variable.type.rows, &ui_stp_val, &ui_min_val, &ui_max_val, format.c_str());
+					else if (ui_type == "drag")
+						modified = variable.annotation_as_int("ui_step") == 0 ?
+							ImGui::DragScalarN(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, data, variable.type.rows, 1.0f, &ui_min_val, &ui_max_val, format.c_str()) :
+							imgui::drag_with_buttons(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, data, variable.type.rows, &ui_stp_val, &ui_min_val, &ui_max_val, format.c_str());
+					else if (ui_type == "list")
+						modified = imgui::list_with_buttons(label.data(), variable.annotation_as_string("ui_items"), data[0]);
+					else if (ui_type == "combo")
+						modified = imgui::combo_with_buttons(label.data(), variable.annotation_as_string("ui_items"), data[0]);
+					else if (ui_type == "radio")
+						modified = imgui::radio_list(label.data(), variable.annotation_as_string("ui_items"), data[0]);
+					else if (variable.type.is_matrix())
+						for (unsigned int row = 0; row < variable.type.rows; ++row)
+							modified = ImGui::InputScalarN((std::string(label) + " [row " + std::to_string(row) + ']').c_str(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, &data[0] + row * variable.type.cols, variable.type.cols) || modified;
+					else
+						modified = ImGui::InputScalarN(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, data, variable.type.rows);
 
-				// Calculate display precision based on step value
-				char precision_format[] = "%.0f";
-				for (float x = 1.0f; x * ui_stp_val < 1.0f && precision_format[2] < '9'; x *= 10.0f)
-					++precision_format[2]; // This changes the text to "%.1f", "%.2f", "%.3f", ...
+					if (modified)
+						set_uniform_value(variable, data, 16);
+					break;
+				}
+				case reshadefx::type::t_float:
+				{
+					float data[16];
+					get_uniform_value(variable, data, 16);
 
-				if (ui_type == "slider")
-					modified = imgui::slider_with_buttons(label.data(), ImGuiDataType_Float, data, variable.type.rows, &ui_stp_val, &ui_min_val, &ui_max_val, precision_format);
-				else if (ui_type == "drag")
-					modified = variable.annotation_as_float("ui_step") == 0 ?
-					ImGui::DragScalarN(label.data(), ImGuiDataType_Float, data, variable.type.rows, ui_stp_val, &ui_min_val, &ui_max_val, precision_format) :
-					imgui::drag_with_buttons(label.data(), ImGuiDataType_Float, data, variable.type.rows, &ui_stp_val, &ui_min_val, &ui_max_val, precision_format);
-				else if (ui_type == "color" && variable.type.rows == 1)
-					modified = imgui::slider_for_alpha_value(label.data(), data);
-				else if (ui_type == "color" && variable.type.rows == 3)
-					modified = ImGui::ColorEdit3(label.data(), data, ImGuiColorEditFlags_NoOptions);
-				else if (ui_type == "color" && variable.type.rows == 4)
-					modified = ImGui::ColorEdit4(label.data(), data, ImGuiColorEditFlags_NoOptions | ImGuiColorEditFlags_AlphaPreview | ImGuiColorEditFlags_AlphaBar);
-				else if (variable.type.is_matrix())
-					for (unsigned int row = 0; row < variable.type.rows; ++row)
-						modified = ImGui::InputScalarN((std::string(label) + " [row " + std::to_string(row) + ']').c_str(), ImGuiDataType_Float, &data[0] + row * variable.type.cols, variable.type.cols) || modified;
-				else
-					modified = ImGui::InputScalarN(label.data(), ImGuiDataType_Float, data, variable.type.rows);
+					is_default_value = std::memcmp(data, variable.initializer_value.as_float, variable.type.components() * sizeof(float)) == 0;
+
+					const float ui_min_val = variable.annotation_as_float("ui_min", 0, ui_type == "slider" ? 0.0f : std::numeric_limits<float>::lowest());
+					const float ui_max_val = variable.annotation_as_float("ui_max", 0, ui_type == "slider" ? 1.0f : std::numeric_limits<float>::max());
+					const float ui_stp_val = variable.annotation_as_float("ui_step", 0, 0.001f);
+
+					// Calculate display precision based on step value
+					std::string precision_format = "%.0f";
+					for (float x = 1.0f; x * ui_stp_val < 1.0f && precision_format[2] < '9'; x *= 10.0f)
+						++precision_format[2]; // This changes the text to "%.1f", "%.2f", "%.3f", ...
+
+					// Append units
+					const std::string_view units = variable.annotation_as_string("ui_units");
+					precision_format.append(units);
+
+					if (ui_type == "slider")
+						modified = imgui::slider_with_buttons(label.data(), ImGuiDataType_Float, data, variable.type.rows, &ui_stp_val, &ui_min_val, &ui_max_val, precision_format.c_str());
+					else if (ui_type == "drag")
+						modified = variable.annotation_as_float("ui_step") == 0.0f ?
+							ImGui::DragScalarN(label.data(), ImGuiDataType_Float, data, variable.type.rows, ui_stp_val, &ui_min_val, &ui_max_val, precision_format.c_str()) :
+							imgui::drag_with_buttons(label.data(), ImGuiDataType_Float, data, variable.type.rows, &ui_stp_val, &ui_min_val, &ui_max_val, precision_format.c_str());
+					else if (ui_type == "color" && variable.type.rows == 1)
+						modified = imgui::slider_for_alpha_value(label.data(), data);
+					else if (ui_type == "color" && variable.type.rows == 3)
+						modified = ImGui::ColorEdit3(label.data(), data, ImGuiColorEditFlags_NoOptions);
+					else if (ui_type == "color" && variable.type.rows == 4)
+						modified = ImGui::ColorEdit4(label.data(), data, ImGuiColorEditFlags_NoOptions | ImGuiColorEditFlags_AlphaPreview | ImGuiColorEditFlags_AlphaBar);
+					else if (variable.type.is_matrix())
+						for (unsigned int row = 0; row < variable.type.rows; ++row)
+							modified = ImGui::InputScalarN((std::string(label) + " [row " + std::to_string(row) + ']').c_str(), ImGuiDataType_Float, &data[0] + row * variable.type.cols, variable.type.cols) || modified;
+					else
+						modified = ImGui::InputScalarN(label.data(), ImGuiDataType_Float, data, variable.type.rows);
 
 				if (modified)
 					set_uniform_value(variable, data, 16);
@@ -3152,23 +3308,25 @@ void reshade::runtime::draw_variable_editor()
 
 			// Display tooltip
 			if (const std::string_view tooltip = variable.annotation_as_string("ui_tooltip");
-				(!tooltip.empty()) && ImGui::IsItemHovered())
+				!tooltip.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
 			{
-				ImGui::BeginTooltip();
-				ImGui::TextUnformatted(tooltip.data());
-				ImGui::EndTooltip();
+				if (ImGui::BeginTooltip())
+				{
+					ImGui::TextUnformatted(tooltip.data());
+					ImGui::EndTooltip();
+				}
 			}
 
 			// Create context menu
 			if (ImGui::BeginPopupContextItem("##context"))
 			{
-				ImGui::SetNextItemWidth(230.0f);
+				ImGui::SetNextItemWidth(18.0f * _font_size);
 				if (variable.supports_toggle_key() &&
 					_input != nullptr &&
 					imgui::key_input_box("##toggle_key", variable.toggle_key_data, *_input))
 					modified = true;
 
-				if (ImGui::Button(ICON_FK_UNDO " 重设为默认值", ImVec2(230.0f, 0)))
+				if (ImGui::Button(ICON_FK_UNDO " 重设为默认值", ImVec2(18.0f * _font_size, 0)))
 				{
 					modified = true;
 					reset_uniform_value(variable);
@@ -3176,6 +3334,16 @@ void reshade::runtime::draw_variable_editor()
 				}
 
 				ImGui::EndPopup();
+			}
+
+			if (!is_default_value)
+			{
+				ImGui::SameLine();
+				if (ImGui::SmallButton(ICON_FK_UNDO))
+				{
+					modified = true;
+					reset_uniform_value(variable);
+				}
 			}
 
 			if (variable.toggle_key_data[0] != 0)
@@ -3255,7 +3423,7 @@ void reshade::runtime::draw_variable_editor()
 					if (!force_reload_effect && // Cannot compare iterators if definitions were just modified above
 						ImGui::BeginPopupContextItem())
 					{
-						if (ImGui::Button(ICON_FK_UNDO " 重设为默认值", ImVec2(230.0f, 0)))
+						if (ImGui::Button(ICON_FK_UNDO " 重设为默认值", ImVec2(18.0f * _font_size, 0)))
 						{
 							if (definition_scope != nullptr)
 							{
@@ -3323,7 +3491,7 @@ void reshade::runtime::draw_variable_editor()
 }
 void reshade::runtime::draw_technique_editor()
 {
-	if (_effects.empty())
+	if (_reload_count != 0 && _effects.empty())
 	{
 		ImGui::TextColored(COLOR_YELLOW, "在效果搜索路径中没有找到效果文件(.fx)%c", _effect_search_paths.empty() ? '.' : ':');
 		for (const std::filesystem::path &search_path : _effect_search_paths)
@@ -3355,11 +3523,13 @@ void reshade::runtime::draw_technique_editor()
 			ImGui::PopItemFlag();
 
 			// Display tooltip
-			if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !effect.errors.empty())
+			if (!effect.errors.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_ForTooltip))
 			{
-				ImGui::BeginTooltip();
-				ImGui::TextUnformatted(effect.errors.c_str());
-				ImGui::EndTooltip();
+				if (ImGui::BeginTooltip())
+				{
+					ImGui::TextUnformatted(effect.errors.c_str());
+					ImGui::EndTooltip();
+				}
 			}
 
 			ImGui::PopStyleColor();
@@ -3370,12 +3540,12 @@ void reshade::runtime::draw_technique_editor()
 
 			if (ImGui::BeginPopup("##context"))
 			{
-				if (ImGui::Button("在文件资源管理器中打开文件夹", ImVec2(230.0f, 0)))
+				if (ImGui::Button("在文件资源管理器中打开文件夹", ImVec2(18.0f * _font_size, 0)))
 					utils::open_explorer(effect.source_file);
 
 				ImGui::Separator();
 
-				if (imgui::popup_button(ICON_FK_PENCIL " 编辑源代码", 230.0f))
+				if (imgui::popup_button(ICON_FK_PENCIL " 编辑源代码", 18.0f * _font_size))
 				{
 					std::unordered_map<std::string, std::string> file_errors_lookup;
 					parse_errors(effect.errors,
@@ -3393,11 +3563,13 @@ void reshade::runtime::draw_technique_editor()
 
 					if (source_file_errors_it != file_errors_lookup.end())
 					{
-						if (ImGui::IsItemHovered())
+						if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
 						{
-							ImGui::BeginTooltip();
-							ImGui::TextUnformatted(source_file_errors_it->second.c_str());
-							ImGui::EndTooltip();
+							if (ImGui::BeginTooltip())
+							{
+								ImGui::TextUnformatted(source_file_errors_it->second.c_str());
+								ImGui::EndTooltip();
+							}
 						}
 
 						ImGui::PopStyleColor();
@@ -3422,11 +3594,13 @@ void reshade::runtime::draw_technique_editor()
 
 							if (included_file_errors_it != file_errors_lookup.end())
 							{
-								if (ImGui::IsItemHovered())
+								if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
 								{
-									ImGui::BeginTooltip();
-									ImGui::TextUnformatted(included_file_errors_it->second.c_str());
-									ImGui::EndTooltip();
+									if (ImGui::BeginTooltip())
+									{
+										ImGui::TextUnformatted(included_file_errors_it->second.c_str());
+										ImGui::EndTooltip();
+									}
 								}
 
 								ImGui::PopStyleColor();
@@ -3444,7 +3618,7 @@ void reshade::runtime::draw_technique_editor()
 				}
 
 				if (_renderer_id < 0x20000 && // Hide if using SPIR-V, since that cannot easily be shown here
-					imgui::popup_button("显示编译结果", 230.0f))
+					imgui::popup_button("显示编译结果", 18.0f * _font_size))
 				{
 					const bool open_generated_code = ImGui::MenuItem("生成的代码");
 
@@ -3469,201 +3643,195 @@ void reshade::runtime::draw_technique_editor()
 
 	for (size_t index = 0; index < _technique_sorting.size(); ++index)
 	{
-		size_t technique_index = _technique_sorting[index];
-		reshade::technique &tech = _techniques[technique_index];
-
-		// Skip hidden techniques
-		if (tech.hidden || !_effects[tech.effect_index].compiled)
-			continue;
-
-		ImGui::PushID(static_cast<int>(index));
-
-		// Look up effect that contains this technique
-		const reshade::effect &effect = _effects[tech.effect_index];
-
-		// Draw border around the item if it is selected
-		const bool draw_border = _selected_technique == index;
-		if (draw_border)
-			ImGui::Separator();
-
-		// Prevent user from disabling the technique when it is set to always be enabled via annotation
-		const bool force_enabled = tech.annotation_as_int("enabled");
-
-		// Gray out disabled techniques
-		ImGui::PushStyleColor(ImGuiCol_Text, _imgui_context->Style.Colors[tech.enabled ? ImGuiCol_Text : ImGuiCol_TextDisabled]);
-
-		std::string label(tech.annotation_as_string("ui_label"));
-		if (label.empty())
-			label = tech.name;
-		label += " [" + effect.source_file.filename().u8string() + ']';
-
-		if (bool status = tech.enabled;
-			ImGui::Checkbox(label.c_str(), &status) && !force_enabled)
+		const size_t technique_index = _technique_sorting[index];
 		{
-			if (status)
-				enable_technique(tech);
-			else
-				disable_technique(tech);
+			reshade::technique &tech = _techniques[technique_index];
 
-			if (_auto_save_preset)
-				save_current_preset();
-			else
-				_preset_is_modified = true;
-		}
+			// Skip hidden techniques
+			if (tech.hidden || !_effects[tech.effect_index].compiled)
+				continue;
 
-		ImGui::PopStyleColor();
+			ImGui::PushID(static_cast<int>(index));
 
-		if (ImGui::IsItemActive())
-			_selected_technique = index;
-		if (ImGui::IsItemClicked())
-			_focused_effect = tech.effect_index;
-		if (ImGui::IsItemHovered(ImGuiHoveredFlags_RectOnly))
-			hovered_technique_index = index;
+			// Look up effect that contains this technique
+			const reshade::effect &effect = _effects[tech.effect_index];
 
-		// Display tooltip
-		if (const std::string_view tooltip = tech.annotation_as_string("ui_tooltip");
-			(!tooltip.empty() || !effect.errors.empty()) && ImGui::IsItemHovered())
-		{
-			ImGui::BeginTooltip();
-			if (!tooltip.empty())
-			{
-				ImGui::TextUnformatted(tooltip.data());
-				ImGui::Spacing();
-			}
-			if (!effect.errors.empty())
-			{
-				ImGui::PushStyleColor(ImGuiCol_Text, COLOR_YELLOW);
-				ImGui::TextUnformatted(effect.errors.c_str());
-				ImGui::PopStyleColor();
-			}
-			ImGui::EndTooltip();
-		}
-
-		// Create context menu
-		if (ImGui::BeginPopupContextItem("##context"))
-		{
-			ImGui::TextUnformatted(tech.name.c_str());
-			ImGui::Separator();
-
-			ImGui::SetNextItemWidth(230.0f);
-			if (_input != nullptr && !force_enabled &&
-				imgui::key_input_box("##toggle_key", tech.toggle_key_data, *_input))
-			{
-				if (_auto_save_preset)
-					save_current_preset();
-				else
-					_preset_is_modified = true;
-			}
-
-			const bool is_not_top = index > 0;
-			const bool is_not_bottom = index < _technique_sorting.size() - 1;
-
-			if (is_not_top && ImGui::Button("移到顶部", ImVec2(230.0f, 0)))
-			{
-				std::vector<size_t> technique_indices = _technique_sorting;
-				technique_indices.insert(technique_indices.begin(), technique_indices[index]);
-				technique_indices.erase(technique_indices.begin() + 1 + index);
-				reorder_techniques(std::move(technique_indices));
-
-				if (_auto_save_preset)
-					save_current_preset();
-				else
-					_preset_is_modified = true;
-
-				ImGui::CloseCurrentPopup();
-			}
-			if (is_not_bottom && ImGui::Button("移到底部", ImVec2(230.0f, 0)))
-			{
-				std::vector<size_t> technique_indices = _technique_sorting;
-				technique_indices.push_back(technique_indices[index]);
-				technique_indices.erase(technique_indices.begin() + index);
-				reorder_techniques(std::move(technique_indices));
-
-				if (_auto_save_preset)
-					save_current_preset();
-				else
-					_preset_is_modified = true;
-
-				ImGui::CloseCurrentPopup();
-			}
-
-			if (is_not_top || is_not_bottom || (_input != nullptr && !force_enabled))
+			// Draw border around the item if it is selected
+			const bool draw_border = _selected_technique == index;
+			if (draw_border)
 				ImGui::Separator();
 
-			if (ImGui::Button("在文件资源管理器中打开文件夹", ImVec2(230.0f, 0)))
-				utils::open_explorer(effect.source_file);
+			// Prevent user from disabling the technique when it is set to always be enabled via annotation
+			const bool force_enabled = tech.annotation_as_int("enabled");
 
-			ImGui::Separator();
+			// Gray out disabled techniques
+			ImGui::PushStyleColor(ImGuiCol_Text, _imgui_context->Style.Colors[tech.enabled ? ImGuiCol_Text : ImGuiCol_TextDisabled]);
 
-			if (imgui::popup_button(ICON_FK_PENCIL " 编辑源代码", 230.0f))
+			std::string label(tech.annotation_as_string("ui_label"));
+			if (label.empty())
+				label = tech.name;
+			label += " [" + effect.source_file.filename().u8string() + ']';
+
+			if (bool status = tech.enabled;
+				ImGui::Checkbox(label.c_str(), &status) && !force_enabled)
 			{
-				std::filesystem::path source_file;
-				if (ImGui::MenuItem(effect.source_file.filename().u8string().c_str()))
-					source_file = effect.source_file;
+				if (status)
+					enable_technique(tech);
+				else
+					disable_technique(tech);
 
-				if (!effect.preprocessed)
+				if (_auto_save_preset)
+					save_current_preset();
+				else
+					_preset_is_modified = true;
+			}
+
+			ImGui::PopStyleColor();
+
+			if (ImGui::IsItemActive())
+				_selected_technique = index;
+			if (ImGui::IsItemClicked())
+				_focused_effect = tech.effect_index;
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_RectOnly))
+				hovered_technique_index = index;
+
+			// Display tooltip
+			if (const std::string_view tooltip = tech.annotation_as_string("ui_tooltip");
+				!tooltip.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+			{
+				if (ImGui::BeginTooltip())
 				{
-					// Force preprocessor to run to update included files
-					force_reload_effect = tech.effect_index;
+					ImGui::TextUnformatted(tooltip.data());
+					ImGui::EndTooltip();
 				}
-				else if (!effect.included_files.empty())
+			}
+
+			// Create context menu
+			if (ImGui::BeginPopupContextItem("##context"))
+			{
+				ImGui::TextUnformatted(tech.name.c_str());
+				ImGui::Separator();
+
+				ImGui::SetNextItemWidth(18.0f * _font_size);
+				if (_input != nullptr && !force_enabled &&
+					imgui::key_input_box("##toggle_key", tech.toggle_key_data, *_input))
 				{
+					if (_auto_save_preset)
+						save_current_preset();
+					else
+						_preset_is_modified = true;
+				}
+
+				const bool is_not_top = index > 0;
+				const bool is_not_bottom = index < _technique_sorting.size() - 1;
+
+				if (is_not_top && ImGui::Button("移到顶部", ImVec2(18.0f * _font_size, 0)))
+				{
+					std::vector<size_t> technique_indices = _technique_sorting;
+					technique_indices.insert(technique_indices.begin(), technique_indices[index]);
+					technique_indices.erase(technique_indices.begin() + 1 + index);
+					reorder_techniques(std::move(technique_indices));
+
+					if (_auto_save_preset)
+						save_current_preset();
+					else
+						_preset_is_modified = true;
+
+					ImGui::CloseCurrentPopup();
+				}
+				if (is_not_bottom && ImGui::Button("移到底部", ImVec2(18.0f * _font_size, 0)))
+				{
+					std::vector<size_t> technique_indices = _technique_sorting;
+					technique_indices.push_back(technique_indices[index]);
+					technique_indices.erase(technique_indices.begin() + index);
+					reorder_techniques(std::move(technique_indices));
+
+					if (_auto_save_preset)
+						save_current_preset();
+					else
+						_preset_is_modified = true;
+
+					ImGui::CloseCurrentPopup();
+				}
+
+				if (is_not_top || is_not_bottom || (_input != nullptr && !force_enabled))
 					ImGui::Separator();
 
-					for (const std::filesystem::path &included_file : effect.included_files)
+				if (ImGui::Button("在文件资源管理器中打开文件夹", ImVec2(18.0f * _font_size, 0)))
+					utils::open_explorer(effect.source_file);
+
+				ImGui::Separator();
+
+				if (imgui::popup_button(ICON_FK_PENCIL " 编辑源代码", 18.0f * _font_size))
+				{
+					std::filesystem::path source_file;
+					if (ImGui::MenuItem(effect.source_file.filename().u8string().c_str()))
+						source_file = effect.source_file;
+
+					if (!effect.preprocessed)
 					{
-						std::filesystem::path display_path = included_file.lexically_relative(effect.source_file.parent_path());
-						if (display_path.empty())
-							display_path = included_file.filename();
-						if (ImGui::MenuItem(display_path.u8string().c_str()))
-							source_file = included_file;
+						// Force preprocessor to run to update included files
+						force_reload_effect = tech.effect_index;
+					}
+					else if (!effect.included_files.empty())
+					{
+						ImGui::Separator();
+
+						for (const std::filesystem::path &included_file : effect.included_files)
+						{
+							std::filesystem::path display_path = included_file.lexically_relative(effect.source_file.parent_path());
+							if (display_path.empty())
+								display_path = included_file.filename();
+							if (ImGui::MenuItem(display_path.u8string().c_str()))
+								source_file = included_file;
+						}
+					}
+
+					ImGui::EndPopup();
+
+					if (!source_file.empty())
+					{
+						open_code_editor(tech.effect_index, source_file);
+						ImGui::CloseCurrentPopup();
+					}
+				}
+
+				if (_renderer_id < 0x20000 && // Hide if using SPIR-V, since that cannot easily be shown here
+					imgui::popup_button("显示编译结果", 18.0f * _font_size))
+				{
+					const bool open_generated_code = ImGui::MenuItem("生成的代码");
+
+					ImGui::Separator();
+
+					std::string entry_point_name;
+					for (const reshadefx::entry_point &entry_point : effect.module.entry_points)
+						if (const auto assembly_it = effect.assembly_text.find(entry_point.name);
+							assembly_it != effect.assembly_text.end() && ImGui::MenuItem(entry_point.name.c_str()))
+							entry_point_name = entry_point.name;
+
+					ImGui::EndPopup();
+
+					if (open_generated_code || !entry_point_name.empty())
+					{
+						open_code_editor(tech.effect_index, entry_point_name);
+						ImGui::CloseCurrentPopup();
 					}
 				}
 
 				ImGui::EndPopup();
-
-				if (!source_file.empty())
-				{
-					open_code_editor(tech.effect_index, source_file);
-					ImGui::CloseCurrentPopup();
-				}
 			}
 
-			if (_renderer_id < 0x20000 && // Hide if using SPIR-V, since that cannot easily be shown here
-				imgui::popup_button("显示编译结果", 230.0f))
+			if (tech.toggle_key_data[0] != 0)
 			{
-				const bool open_generated_code = ImGui::MenuItem("生成的代码");
+				ImGui::SameLine(ImGui::GetContentRegionAvail().x - 120);
+				ImGui::TextDisabled("%s", input::key_name(tech.toggle_key_data).c_str());
+			}
 
+			if (draw_border)
 				ImGui::Separator();
 
-				std::string entry_point_name;
-				for (const reshadefx::entry_point &entry_point : effect.module.entry_points)
-					if (const auto assembly_it = effect.assembly_text.find(entry_point.name);
-						assembly_it != effect.assembly_text.end() && ImGui::MenuItem(entry_point.name.c_str()))
-						entry_point_name = entry_point.name;
-
-				ImGui::EndPopup();
-
-				if (open_generated_code || !entry_point_name.empty())
-				{
-					open_code_editor(tech.effect_index, entry_point_name);
-					ImGui::CloseCurrentPopup();
-				}
-			}
-
-			ImGui::EndPopup();
+			ImGui::PopID();
 		}
-
-		if (tech.toggle_key_data[0] != 0)
-		{
-			ImGui::SameLine(ImGui::GetContentRegionAvail().x - 120);
-			ImGui::TextDisabled("%s", input::key_name(tech.toggle_key_data).c_str());
-		}
-
-		if (draw_border)
-			ImGui::Separator();
-
-		ImGui::PopID();
 	}
 
 	// Move the selected technique to the position of the mouse in the list
@@ -3861,9 +4029,9 @@ bool reshade::runtime::init_imgui_resources()
 	{
 		api::sampler_desc sampler_desc = {};
 		sampler_desc.filter = api::filter_mode::min_mag_mip_linear;
-		sampler_desc.address_u = api::texture_address_mode::wrap;
-		sampler_desc.address_v = api::texture_address_mode::wrap;
-		sampler_desc.address_w = api::texture_address_mode::wrap;
+		sampler_desc.address_u = api::texture_address_mode::clamp;
+		sampler_desc.address_v = api::texture_address_mode::clamp;
+		sampler_desc.address_w = api::texture_address_mode::clamp;
 
 		if (!_device->create_sampler(sampler_desc, &_imgui_sampler_state))
 		{
@@ -3887,7 +4055,18 @@ bool reshade::runtime::init_imgui_resources()
 			layout_params[num_layout_params++] = api::descriptor_range { 0, 0, 0, 1, api::shader_stage::pixel, 1, api::descriptor_type::shader_resource_view }; // t0
 		}
 
-		layout_params[num_layout_params++] = api::constant_range { 0, 0, 0, 16, api::shader_stage::vertex }; // b0
+		uint32_t num_push_constants = 16;
+		reshade::api::shader_stage shader_stage = api::shader_stage::vertex;
+
+		// Add HDR push constants for possible HDR swap chains
+		if ((_renderer_id & 0xB000 || _renderer_id & 0xC000 || _renderer_id & 0x20000) &&
+			(_back_buffer_format == reshade::api::format::r10g10b10a2_unorm || _back_buffer_format == reshade::api::format::b10g10r10a2_unorm || _back_buffer_format == reshade::api::format::r16g16b16a16_float))
+		{
+			num_push_constants += 4;
+			shader_stage |= api::shader_stage::pixel;
+		}
+
+		layout_params[num_layout_params++] = api::constant_range { 0, 0, 0, num_push_constants, shader_stage }; // b0
 
 		if (!_device->create_pipeline_layout(num_layout_params, layout_params, &_imgui_pipeline_layout))
 		{
@@ -3903,11 +4082,15 @@ bool reshade::runtime::init_imgui_resources()
 
 	if ((_renderer_id & 0xF0000) == 0 || _renderer_id >= 0x20000)
 	{
+		const bool is_possibe_hdr_swapchain =
+			(_renderer_id & 0xB000 || _renderer_id & 0xC000 || _renderer_id & 0x20000) &&
+			(_back_buffer_format == reshade::api::format::r10g10b10a2_unorm || _back_buffer_format == reshade::api::format::b10g10r10a2_unorm || _back_buffer_format == reshade::api::format::r16g16b16a16_float);
+
 		const resources::data_resource vs_res = resources::load_data_resource(_renderer_id >= 0x20000 ? IDR_IMGUI_VS_SPIRV : _renderer_id < 0xa000 ? IDR_IMGUI_VS_3_0 : IDR_IMGUI_VS_4_0);
 		vs_desc.code = vs_res.data;
 		vs_desc.code_size = vs_res.data_size;
 
-		const resources::data_resource ps_res = resources::load_data_resource(_renderer_id >= 0x20000 ? IDR_IMGUI_PS_SPIRV : _renderer_id < 0xa000 ? IDR_IMGUI_PS_3_0 : IDR_IMGUI_PS_4_0);
+		const resources::data_resource ps_res = resources::load_data_resource(_renderer_id >= 0x20000 ? !is_possibe_hdr_swapchain ? IDR_IMGUI_PS_SPIRV : IDR_IMGUI_PS_SPIRV_HDR : _renderer_id < 0xa000 ? IDR_IMGUI_PS_3_0 : !is_possibe_hdr_swapchain ? IDR_IMGUI_PS_4_0 : IDR_IMGUI_PS_4_0_HDR);
 		ps_desc.code = ps_res.data;
 		ps_desc.code_size = ps_res.data_size;
 	}
@@ -4100,7 +4283,26 @@ void reshade::runtime::render_imgui_draw_data(api::command_list *cmd_list, ImDra
 	const bool has_combined_sampler_and_view = _device->check_capability(api::device_caps::sampler_with_resource_view);
 	cmd_list->push_constants(api::shader_stage::vertex, _imgui_pipeline_layout, has_combined_sampler_and_view ? 1 : 2, 0, sizeof(ortho_projection) / 4, ortho_projection);
 	if (!has_combined_sampler_and_view)
-		cmd_list->push_descriptors(api::shader_stage::pixel, _imgui_pipeline_layout, 0, api::descriptor_set_update { {}, 0, 0, 1, api::descriptor_type::sampler, &_imgui_sampler_state });
+		cmd_list->push_descriptors(api::shader_stage::pixel, _imgui_pipeline_layout, 0, api::descriptor_table_update { {}, 0, 0, 1, api::descriptor_type::sampler, &_imgui_sampler_state });
+
+	// Add HDR push constants for possible HDR swap chains
+	if ((_renderer_id & 0xB000 || _renderer_id & 0xC000 || _renderer_id & 0x20000) &&
+		(_back_buffer_format == reshade::api::format::r10g10b10a2_unorm || _back_buffer_format == reshade::api::format::b10g10r10a2_unorm || _back_buffer_format == reshade::api::format::r16g16b16a16_float))
+	{
+		const struct {
+			api::format back_buffer_format;
+			api::color_space back_buffer_color_space;
+			float hdr_overlay_brightness;
+			api::color_space hdr_overlay_overwrite_color_space;
+		} hdr_push_constants = {
+			_back_buffer_format,
+			_back_buffer_color_space,
+			_hdr_overlay_brightness,
+			_hdr_overlay_overwrite_color_space
+		};
+
+		cmd_list->push_constants(api::shader_stage::pixel, _imgui_pipeline_layout, has_combined_sampler_and_view ? 1 : 2, sizeof(ortho_projection) / 4, sizeof(hdr_push_constants) / 4, &hdr_push_constants);
+	}
 
 	int vtx_offset = 0, idx_offset = 0;
 	for (int n = 0; n < draw_data->CmdListsCount; ++n)
@@ -4130,11 +4332,11 @@ void reshade::runtime::render_imgui_draw_data(api::command_list *cmd_list, ImDra
 			if (has_combined_sampler_and_view)
 			{
 				api::sampler_with_resource_view sampler_and_view = { _imgui_sampler_state, srv };
-				cmd_list->push_descriptors(api::shader_stage::pixel, _imgui_pipeline_layout, 0, api::descriptor_set_update { {}, 0, 0, 1, api::descriptor_type::sampler_with_resource_view, &sampler_and_view });
+				cmd_list->push_descriptors(api::shader_stage::pixel, _imgui_pipeline_layout, 0, api::descriptor_table_update { {}, 0, 0, 1, api::descriptor_type::sampler_with_resource_view, &sampler_and_view });
 			}
 			else
 			{
-				cmd_list->push_descriptors(api::shader_stage::pixel, _imgui_pipeline_layout, 1, api::descriptor_set_update { {}, 0, 0, 1, api::descriptor_type::shader_resource_view, &srv });
+				cmd_list->push_descriptors(api::shader_stage::pixel, _imgui_pipeline_layout, 1, api::descriptor_table_update { {}, 0, 0, 1, api::descriptor_type::shader_resource_view, &srv });
 			}
 
 			cmd_list->draw_indexed(cmd.ElemCount, 1, cmd.IdxOffset + idx_offset, cmd.VtxOffset + vtx_offset, 0);
@@ -4152,11 +4354,12 @@ void reshade::runtime::render_imgui_draw_data(api::command_list *cmd_list, ImDra
 }
 void reshade::runtime::destroy_imgui_resources()
 {
+	_imgui_context->IO.Fonts->Clear();
+
 	_device->destroy_resource(_font_atlas_tex);
 	_font_atlas_tex = {};
 	_device->destroy_resource_view(_font_atlas_srv);
 	_font_atlas_srv = {};
-	_rebuild_font_atlas = true;
 
 	for (size_t i = 0; i < std::size(_imgui_vertices); ++i)
 	{

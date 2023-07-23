@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: BSD-3-Clause OR MIT
  */
 
-#include "dll_log.hpp"
 #include "dxgi_device.hpp"
+#include "dll_log.hpp"
 
 DXGIDevice::DXGIDevice(IDXGIDevice1 *original) :
 	_orig(original),
@@ -28,7 +28,7 @@ bool DXGIDevice::check_and_upgrade_interface(REFIID riid)
 		__uuidof(IDXGIDevice4),
 	};
 
-	for (unsigned int version = 0; version < ARRAYSIZE(iid_lookup); ++version)
+	for (unsigned short version = 0; version < ARRAYSIZE(iid_lookup); ++version)
 	{
 		if (riid != iid_lookup[version])
 			continue;

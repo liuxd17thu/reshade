@@ -3,11 +3,10 @@
  * SPDX-License-Identifier: BSD-3-Clause OR MIT
  */
 
-#include "version.h"
+#include "vulkan_hooks.hpp"
 #include "dll_log.hpp"
 #include "hook_manager.hpp"
 #include "lockfree_linear_map.hpp"
-#include "vulkan_hooks.hpp"
 
 lockfree_linear_map<void *, instance_dispatch_table, 16> g_instance_dispatch;
 lockfree_linear_map<VkSurfaceKHR, HWND, 16> g_surface_windows;
@@ -211,6 +210,9 @@ void     VKAPI_CALL vkDestroySurfaceKHR(VkInstance instance, VkSurfaceKHR surfac
 }
 
 #ifdef VK_EXT_tooling_info
+
+#include "version.h"
+
 VkResult VKAPI_CALL vkGetPhysicalDeviceToolPropertiesEXT(VkPhysicalDevice physicalDevice, uint32_t *pToolCount, VkPhysicalDeviceToolPropertiesEXT *pToolProperties)
 {
 	GET_DISPATCH_PTR(GetPhysicalDeviceToolPropertiesEXT, physicalDevice);
@@ -232,7 +234,7 @@ VkResult VKAPI_CALL vkGetPhysicalDeviceToolPropertiesEXT(VkPhysicalDevice physic
 		return VK_SUCCESS;
 	}
 
-	// Workaround bug in validation layers that cause them to not update "pToolCount" after writing their properties
+	// Workaround bug in validation layers that causes them to not update "pToolCount" after writing their properties
 	if (*pToolCount == available_tool_count && available_tool_count > 1)
 		*pToolCount -= 1;
 
@@ -248,4 +250,5 @@ VkResult VKAPI_CALL vkGetPhysicalDeviceToolPropertiesEXT(VkPhysicalDevice physic
 
 	return VK_SUCCESS;
 }
+
 #endif

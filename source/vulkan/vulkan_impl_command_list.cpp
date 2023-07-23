@@ -130,11 +130,10 @@ void reshade::vulkan::command_list_impl::begin_render_pass(uint32_t count, const
 			std::copy_n(rts[i].clear_color, 4, color_attachments[i].clearValue.color.float32);
 
 			const auto view_data = _device_impl->get_private_data_for_object<VK_OBJECT_TYPE_IMAGE_VIEW>(color_attachments[i].imageView);
-			const auto image_data = _device_impl->get_private_data_for_object<VK_OBJECT_TYPE_IMAGE>(view_data->create_info.image);
 
-			rendering_info.renderArea.extent.width = std::min(rendering_info.renderArea.extent.width, image_data->create_info.extent.width);
-			rendering_info.renderArea.extent.height = std::min(rendering_info.renderArea.extent.height, image_data->create_info.extent.height);
-			rendering_info.layerCount = std::min(rendering_info.layerCount, image_data->create_info.arrayLayers);
+			rendering_info.renderArea.extent.width = std::min(rendering_info.renderArea.extent.width, view_data->image_extent.width);
+			rendering_info.renderArea.extent.height = std::min(rendering_info.renderArea.extent.height, view_data->image_extent.height);
+			rendering_info.layerCount = std::min(rendering_info.layerCount, view_data->create_info.subresourceRange.layerCount);
 		}
 
 		rendering_info.colorAttachmentCount = count;
@@ -144,9 +143,8 @@ void reshade::vulkan::command_list_impl::begin_render_pass(uint32_t count, const
 		if (ds != nullptr && ds->view.handle != 0)
 		{
 			const auto view_data = _device_impl->get_private_data_for_object<VK_OBJECT_TYPE_IMAGE_VIEW>((VkImageView)ds->view.handle);
-			const auto image_data = _device_impl->get_private_data_for_object<VK_OBJECT_TYPE_IMAGE>(view_data->create_info.image);
 
-			if (aspect_flags_from_format(image_data->create_info.format) & VK_IMAGE_ASPECT_DEPTH_BIT)
+			if (aspect_flags_from_format(view_data->create_info.format) & VK_IMAGE_ASPECT_DEPTH_BIT)
 			{
 				depth_attachment = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
 				depth_attachment.imageView = (VkImageView)ds->view.handle;
@@ -158,7 +156,7 @@ void reshade::vulkan::command_list_impl::begin_render_pass(uint32_t count, const
 				rendering_info.pDepthAttachment = &depth_attachment;
 			}
 
-			if (aspect_flags_from_format(image_data->create_info.format) & VK_IMAGE_ASPECT_STENCIL_BIT)
+			if (aspect_flags_from_format(view_data->create_info.format) & VK_IMAGE_ASPECT_STENCIL_BIT)
 			{
 				stencil_attachment = { VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
 				stencil_attachment.imageView = (VkImageView)ds->view.handle;
@@ -170,9 +168,9 @@ void reshade::vulkan::command_list_impl::begin_render_pass(uint32_t count, const
 				rendering_info.pStencilAttachment = &stencil_attachment;
 			}
 
-			rendering_info.renderArea.extent.width = std::min(rendering_info.renderArea.extent.width, image_data->create_info.extent.width);
-			rendering_info.renderArea.extent.height = std::min(rendering_info.renderArea.extent.height, image_data->create_info.extent.height);
-			rendering_info.layerCount = std::min(rendering_info.layerCount, image_data->create_info.arrayLayers);
+			rendering_info.renderArea.extent.width = std::min(rendering_info.renderArea.extent.width, view_data->image_extent.width);
+			rendering_info.renderArea.extent.height = std::min(rendering_info.renderArea.extent.height, view_data->image_extent.height);
+			rendering_info.layerCount = std::min(rendering_info.layerCount, view_data->create_info.subresourceRange.layerCount);
 		}
 
 		vk.CmdBeginRendering(_orig, &rendering_info);
@@ -202,7 +200,6 @@ void reshade::vulkan::command_list_impl::begin_render_pass(uint32_t count, const
 		}
 
 		const uint32_t max_attachments = count + 1;
-
 		VkRenderPassBeginInfo begin_info;
 
 		std::unique_lock<std::shared_mutex> lock(_device_impl->_mutex);
@@ -253,7 +250,6 @@ void reshade::vulkan::command_list_impl::begin_render_pass(uint32_t count, const
 				attach_views[i] = (VkImageView)rts[i].view.handle;
 
 				const auto view_data = _device_impl->get_private_data_for_object<VK_OBJECT_TYPE_IMAGE_VIEW>(attach_views[i]);
-				const auto image_data = _device_impl->get_private_data_for_object<VK_OBJECT_TYPE_IMAGE>(view_data->create_info.image);
 
 				VkAttachmentReference &attach_ref = attach_refs[i];
 				attach_ref.attachment = (rts[i].load_op == api::render_pass_load_op::discard && rts[i].store_op == api::render_pass_store_op::discard) ? VK_ATTACHMENT_UNUSED : i;
@@ -262,7 +258,7 @@ void reshade::vulkan::command_list_impl::begin_render_pass(uint32_t count, const
 				VkAttachmentDescription &attach_desc = attach_descs[i];
 				attach_desc.flags = 0;
 				attach_desc.format = view_data->create_info.format;
-				attach_desc.samples = image_data->create_info.samples;
+				attach_desc.samples = VK_SAMPLE_COUNT_1_BIT;
 				attach_desc.loadOp = convert_render_pass_load_op(rts[i].load_op);
 				attach_desc.storeOp = convert_render_pass_store_op(rts[i].store_op);
 				attach_desc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -270,8 +266,8 @@ void reshade::vulkan::command_list_impl::begin_render_pass(uint32_t count, const
 				attach_desc.initialLayout = attach_ref.layout;
 				attach_desc.finalLayout = attach_ref.layout;
 
-				framebuffer_create_info.width  = std::min(framebuffer_create_info.width,  image_data->create_info.extent.width);
-				framebuffer_create_info.height = std::min(framebuffer_create_info.height, image_data->create_info.extent.height);
+				framebuffer_create_info.width  = std::min(framebuffer_create_info.width,  view_data->image_extent.width);
+				framebuffer_create_info.height = std::min(framebuffer_create_info.height, view_data->image_extent.height);
 				framebuffer_create_info.layers = std::min(framebuffer_create_info.layers, view_data->create_info.subresourceRange.layerCount);
 			}
 
@@ -280,7 +276,6 @@ void reshade::vulkan::command_list_impl::begin_render_pass(uint32_t count, const
 				attach_views[count] = (VkImageView)ds->view.handle;
 
 				const auto view_data = _device_impl->get_private_data_for_object<VK_OBJECT_TYPE_IMAGE_VIEW>(attach_views[count]);
-				const auto image_data = _device_impl->get_private_data_for_object<VK_OBJECT_TYPE_IMAGE>(view_data->create_info.image);
 
 				VkAttachmentReference &attach_ref = attach_refs[count];
 				attach_ref.attachment =
@@ -291,7 +286,7 @@ void reshade::vulkan::command_list_impl::begin_render_pass(uint32_t count, const
 				VkAttachmentDescription &attach_desc = attach_descs[count];
 				attach_desc.flags = 0;
 				attach_desc.format = view_data->create_info.format;
-				attach_desc.samples = image_data->create_info.samples;
+				attach_desc.samples = VK_SAMPLE_COUNT_1_BIT;
 				attach_desc.loadOp = convert_render_pass_load_op(ds->depth_load_op);
 				attach_desc.storeOp = convert_render_pass_store_op(ds->depth_store_op);
 				attach_desc.stencilLoadOp = convert_render_pass_load_op(ds->stencil_load_op);
@@ -299,8 +294,8 @@ void reshade::vulkan::command_list_impl::begin_render_pass(uint32_t count, const
 				attach_desc.initialLayout = attach_ref.layout;
 				attach_desc.finalLayout = attach_ref.layout;
 
-				framebuffer_create_info.width = std::min(framebuffer_create_info.width, image_data->create_info.extent.width);
-				framebuffer_create_info.height = std::min(framebuffer_create_info.height, image_data->create_info.extent.height);
+				framebuffer_create_info.width = std::min(framebuffer_create_info.width, view_data->image_extent.width);
+				framebuffer_create_info.height = std::min(framebuffer_create_info.height, view_data->image_extent.height);
 				framebuffer_create_info.layers = std::min(framebuffer_create_info.layers, view_data->create_info.subresourceRange.layerCount);
 			}
 
@@ -364,7 +359,9 @@ void reshade::vulkan::command_list_impl::bind_render_targets_and_depth_stencil(u
 
 void reshade::vulkan::command_list_impl::bind_pipeline(api::pipeline_stage stages, api::pipeline pipeline)
 {
-	assert(pipeline.handle != 0);
+	if (pipeline.handle == 0)
+		return;
+
 	// Cannot bind state to individual pipeline stages
 	assert(stages == api::pipeline_stage::all_compute || stages == api::pipeline_stage::all_graphics);
 
@@ -384,14 +381,23 @@ void reshade::vulkan::command_list_impl::bind_pipeline_states(uint32_t count, co
 			vk.CmdSetBlendConstants(_orig, blend_constant);
 			continue;
 		}
-		case api::dynamic_state::stencil_read_mask:
-			vk.CmdSetStencilCompareMask(_orig, VK_STENCIL_FACE_FRONT_AND_BACK, values[i]);
+		case api::dynamic_state::front_stencil_read_mask:
+			vk.CmdSetStencilCompareMask(_orig, VK_STENCIL_FACE_FRONT_BIT, values[i]);
 			continue;
-		case api::dynamic_state::stencil_write_mask:
-			vk.CmdSetStencilWriteMask(_orig, VK_STENCIL_FACE_FRONT_AND_BACK, values[i]);
+		case api::dynamic_state::front_stencil_write_mask:
+			vk.CmdSetStencilWriteMask(_orig, VK_STENCIL_FACE_FRONT_BIT, values[i]);
 			continue;
-		case api::dynamic_state::stencil_reference_value:
-			vk.CmdSetStencilReference(_orig, VK_STENCIL_FACE_FRONT_AND_BACK, values[i]);
+		case api::dynamic_state::front_stencil_reference_value:
+			vk.CmdSetStencilReference(_orig, VK_STENCIL_FACE_FRONT_BIT, values[i]);
+			continue;
+		case api::dynamic_state::back_stencil_read_mask:
+			vk.CmdSetStencilCompareMask(_orig, VK_STENCIL_FACE_BACK_BIT, values[i]);
+			continue;
+		case api::dynamic_state::back_stencil_write_mask:
+			vk.CmdSetStencilWriteMask(_orig, VK_STENCIL_FACE_BACK_BIT, values[i]);
+			continue;
+		case api::dynamic_state::back_stencil_reference_value:
+			vk.CmdSetStencilReference(_orig, VK_STENCIL_FACE_BACK_BIT, values[i]);
 			continue;
 		}
 
@@ -466,19 +472,17 @@ void reshade::vulkan::command_list_impl::bind_scissor_rects(uint32_t first, uint
 
 void reshade::vulkan::command_list_impl::push_constants(api::shader_stage stages, api::pipeline_layout layout, uint32_t, uint32_t first, uint32_t count, const void *values)
 {
-	assert(count != 0);
-
 	vk.CmdPushConstants(_orig,
 		(VkPipelineLayout)layout.handle,
 		static_cast<VkShaderStageFlags>(stages),
 		first * 4, count * 4, values);
 }
-void reshade::vulkan::command_list_impl::push_descriptors(api::shader_stage stages, api::pipeline_layout layout, uint32_t layout_param, const api::descriptor_set_update &update)
+void reshade::vulkan::command_list_impl::push_descriptors(api::shader_stage stages, api::pipeline_layout layout, uint32_t layout_param, const api::descriptor_table_update &update)
 {
 	if (update.count == 0)
 		return;
 
-	assert(update.set.handle == 0);
+	assert(update.table.handle == 0);
 
 	VkWriteDescriptorSet write { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
 	write.dstBinding = update.binding;
@@ -487,7 +491,6 @@ void reshade::vulkan::command_list_impl::push_descriptors(api::shader_stage stag
 	write.descriptorType = convert_descriptor_type(update.type, true);
 
 	temp_mem<VkDescriptorImageInfo> image_info(update.count);
-
 	switch (update.type)
 	{
 	case api::descriptor_type::sampler:
@@ -524,15 +527,12 @@ void reshade::vulkan::command_list_impl::push_descriptors(api::shader_stage stag
 		else
 		{
 			write.descriptorType = convert_descriptor_type(update.type, false);
-
-			static_assert(sizeof(*descriptors) == sizeof(VkBufferView));
 			write.pTexelBufferView = reinterpret_cast<const VkBufferView *>(descriptors);
 		}
 		break;
 	case api::descriptor_type::constant_buffer:
 	case api::descriptor_type::shader_storage_buffer:
-		static_assert(sizeof(api::buffer_range) == sizeof(VkDescriptorBufferInfo));
-		write.pBufferInfo = static_cast<const VkDescriptorBufferInfo *>(update.descriptors);
+		write.pBufferInfo = reinterpret_cast<const VkDescriptorBufferInfo *>(update.descriptors);
 		break;
 	default:
 		assert(false);
@@ -574,21 +574,21 @@ void reshade::vulkan::command_list_impl::push_descriptors(api::shader_stage stag
 		layout_param, 1, &write.dstSet,
 		0, nullptr);
 }
-void reshade::vulkan::command_list_impl::bind_descriptor_sets(api::shader_stage stages, api::pipeline_layout layout, uint32_t first, uint32_t count, const api::descriptor_set *sets)
+void reshade::vulkan::command_list_impl::bind_descriptor_tables(api::shader_stage stages, api::pipeline_layout layout, uint32_t first, uint32_t count, const api::descriptor_table *tables)
 {
-	if ((stages & api::shader_stage::all_compute) == api::shader_stage::all_compute)
+	if ((stages & api::shader_stage::all_compute) != 0)
 	{
 		vk.CmdBindDescriptorSets(_orig,
 			VK_PIPELINE_BIND_POINT_COMPUTE,
 			(VkPipelineLayout)layout.handle,
-			first, count, reinterpret_cast<const VkDescriptorSet *>(sets), 0, nullptr);
+			first, count, reinterpret_cast<const VkDescriptorSet *>(tables), 0, nullptr);
 	}
-	if ((stages & api::shader_stage::all_graphics) == api::shader_stage::all_graphics)
+	if ((stages & api::shader_stage::all_graphics) != 0)
 	{
 		vk.CmdBindDescriptorSets(_orig,
 			VK_PIPELINE_BIND_POINT_GRAPHICS,
 			(VkPipelineLayout)layout.handle,
-			first, count, reinterpret_cast<const VkDescriptorSet *>(sets), 0, nullptr);
+			first, count, reinterpret_cast<const VkDescriptorSet *>(tables), 0, nullptr);
 	}
 }
 
@@ -909,7 +909,7 @@ void reshade::vulkan::command_list_impl::clear_depth_stencil_view(api::resource_
 
 	assert(rect_count == 0);
 
-	const auto dsv_data = _device_impl->get_private_data_for_object<VK_OBJECT_TYPE_IMAGE_VIEW>((VkImageView)dsv.handle);
+	const auto view_data = _device_impl->get_private_data_for_object<VK_OBJECT_TYPE_IMAGE_VIEW>((VkImageView)dsv.handle);
 
 	VkImageAspectFlags clear_flags = 0;
 	VkClearDepthStencilValue clear_value = {};
@@ -926,12 +926,12 @@ void reshade::vulkan::command_list_impl::clear_depth_stencil_view(api::resource_
 	barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.image = dsv_data->create_info.image;
-	barrier.subresourceRange = dsv_data->create_info.subresourceRange;
+	barrier.image = view_data->create_info.image;
+	barrier.subresourceRange = view_data->create_info.subresourceRange;
 	barrier.subresourceRange.aspectMask &= clear_flags;
 	vk.CmdPipelineBarrier(_orig, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 
-	vk.CmdClearDepthStencilImage(_orig, dsv_data->create_info.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear_value, 1, &barrier.subresourceRange);
+	vk.CmdClearDepthStencilImage(_orig, view_data->create_info.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear_value, 1, &barrier.subresourceRange);
 
 	std::swap(barrier.oldLayout, barrier.newLayout);
 	vk.CmdPipelineBarrier(_orig, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
@@ -942,7 +942,7 @@ void reshade::vulkan::command_list_impl::clear_render_target_view(api::resource_
 
 	assert(rect_count == 0);
 
-	const auto rtv_data = _device_impl->get_private_data_for_object<VK_OBJECT_TYPE_IMAGE_VIEW>((VkImageView)rtv.handle);
+	const auto view_data = _device_impl->get_private_data_for_object<VK_OBJECT_TYPE_IMAGE_VIEW>((VkImageView)rtv.handle);
 
 	// Transition state to VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL (since it will be in 'resource_usage::render_target' at this point)
 	VkImageMemoryBarrier barrier { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
@@ -950,14 +950,14 @@ void reshade::vulkan::command_list_impl::clear_render_target_view(api::resource_
 	barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.image = rtv_data->create_info.image;
-	barrier.subresourceRange = rtv_data->create_info.subresourceRange;
+	barrier.image = view_data->create_info.image;
+	barrier.subresourceRange = view_data->create_info.subresourceRange;
 	vk.CmdPipelineBarrier(_orig, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 
 	VkClearColorValue clear_value;
 	std::memcpy(clear_value.float32, color, 4 * sizeof(float));
 
-	vk.CmdClearColorImage(_orig, rtv_data->create_info.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear_value, 1, &barrier.subresourceRange);
+	vk.CmdClearColorImage(_orig, view_data->create_info.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clear_value, 1, &barrier.subresourceRange);
 
 	std::swap(barrier.oldLayout, barrier.newLayout);
 	vk.CmdPipelineBarrier(_orig, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
@@ -968,12 +968,12 @@ void reshade::vulkan::command_list_impl::clear_unordered_access_view_uint(api::r
 
 	assert(rect_count == 0);
 
-	const auto uav_data = _device_impl->get_private_data_for_object<VK_OBJECT_TYPE_IMAGE_VIEW>((VkImageView)uav.handle);
+	const auto view_data = _device_impl->get_private_data_for_object<VK_OBJECT_TYPE_IMAGE_VIEW>((VkImageView)uav.handle);
 
 	VkClearColorValue clear_value;
 	std::memcpy(clear_value.uint32, values, 4 * sizeof(uint32_t));
 
-	vk.CmdClearColorImage(_orig, uav_data->create_info.image, VK_IMAGE_LAYOUT_GENERAL, &clear_value, 1, &uav_data->create_info.subresourceRange);
+	vk.CmdClearColorImage(_orig, view_data->create_info.image, VK_IMAGE_LAYOUT_GENERAL, &clear_value, 1, &view_data->create_info.subresourceRange);
 }
 void reshade::vulkan::command_list_impl::clear_unordered_access_view_float(api::resource_view uav, const float values[4], uint32_t rect_count, const api::rect *)
 {
@@ -981,18 +981,19 @@ void reshade::vulkan::command_list_impl::clear_unordered_access_view_float(api::
 
 	assert(rect_count == 0);
 
-	const auto uav_data = _device_impl->get_private_data_for_object<VK_OBJECT_TYPE_IMAGE_VIEW>((VkImageView)uav.handle);
+	const auto view_data = _device_impl->get_private_data_for_object<VK_OBJECT_TYPE_IMAGE_VIEW>((VkImageView)uav.handle);
 
 	VkClearColorValue clear_value;
 	std::memcpy(clear_value.float32, values, 4 * sizeof(float));
 
-	vk.CmdClearColorImage(_orig, uav_data->create_info.image, VK_IMAGE_LAYOUT_GENERAL, &clear_value, 1, &uav_data->create_info.subresourceRange);
+	vk.CmdClearColorImage(_orig, view_data->create_info.image, VK_IMAGE_LAYOUT_GENERAL, &clear_value, 1, &view_data->create_info.subresourceRange);
 }
 
 void reshade::vulkan::command_list_impl::generate_mipmaps(api::resource_view srv)
 {
+	_has_commands = true;
+
 	const auto view_data = _device_impl->get_private_data_for_object<VK_OBJECT_TYPE_IMAGE_VIEW>((VkImageView)srv.handle);
-	const auto image_data = _device_impl->get_private_data_for_object<VK_OBJECT_TYPE_IMAGE>(view_data->create_info.image);
 
 	VkImageMemoryBarrier barrier = { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
 	barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
@@ -1005,10 +1006,12 @@ void reshade::vulkan::command_list_impl::generate_mipmaps(api::resource_view srv
 	barrier.subresourceRange = view_data->create_info.subresourceRange;
 	vk.CmdPipelineBarrier(_orig, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 
-	int32_t width = image_data->create_info.extent.width >> view_data->create_info.subresourceRange.baseMipLevel;
-	int32_t height = image_data->create_info.extent.height >> view_data->create_info.subresourceRange.baseMipLevel;
+	int32_t width = view_data->image_extent.width >> view_data->create_info.subresourceRange.baseMipLevel;
+	int32_t height = view_data->image_extent.height >> view_data->create_info.subresourceRange.baseMipLevel;
 
-	for (uint32_t level = view_data->create_info.subresourceRange.baseMipLevel + 1; level < image_data->create_info.mipLevels; ++level, width /= 2, height /= 2)
+	barrier.subresourceRange.layerCount = std::min(barrier.subresourceRange.layerCount, view_data->create_info.subresourceRange.layerCount - barrier.subresourceRange.baseArrayLayer);
+
+	for (uint32_t level = view_data->create_info.subresourceRange.baseMipLevel + 1; level < view_data->create_info.subresourceRange.levelCount; ++level, width /= 2, height /= 2)
 	{
 		barrier.subresourceRange.baseMipLevel = level;
 		barrier.subresourceRange.levelCount = 1;
@@ -1043,62 +1046,62 @@ void reshade::vulkan::command_list_impl::generate_mipmaps(api::resource_view srv
 	vk.CmdPipelineBarrier(_orig, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 
-void reshade::vulkan::command_list_impl::begin_query(api::query_pool pool, api::query_type type, uint32_t index)
+void reshade::vulkan::command_list_impl::begin_query(api::query_heap heap, api::query_type type, uint32_t index)
 {
 	_has_commands = true;
 
-	assert(pool.handle != 0);
-	assert(_device_impl->get_private_data_for_object<VK_OBJECT_TYPE_QUERY_POOL>((VkQueryPool)pool.handle)->type == convert_query_type(type));
+	assert(heap.handle != 0);
+	assert(_device_impl->get_private_data_for_object<VK_OBJECT_TYPE_QUERY_POOL>((VkQueryPool)heap.handle)->type == convert_query_type(type));
 
-	vk.CmdResetQueryPool(_orig, (VkQueryPool)pool.handle, index, 1);
+	vk.CmdResetQueryPool(_orig, (VkQueryPool)heap.handle, index, 1);
 
 	switch (type)
 	{
 	default:
-		vk.CmdBeginQuery(_orig, (VkQueryPool)pool.handle, index, 0);
+		vk.CmdBeginQuery(_orig, (VkQueryPool)heap.handle, index, 0);
 		break;
 	case api::query_type::stream_output_statistics_0:
 	case api::query_type::stream_output_statistics_1:
 	case api::query_type::stream_output_statistics_2:
 	case api::query_type::stream_output_statistics_3:
 		if (vk.CmdBeginQueryIndexedEXT != nullptr)
-			vk.CmdBeginQueryIndexedEXT(_orig, (VkQueryPool)pool.handle, index, 0, static_cast<uint32_t>(type) - static_cast<uint32_t>(api::query_type::stream_output_statistics_0));
+			vk.CmdBeginQueryIndexedEXT(_orig, (VkQueryPool)heap.handle, index, 0, static_cast<uint32_t>(type) - static_cast<uint32_t>(api::query_type::stream_output_statistics_0));
 		break;
 	}
 }
-void reshade::vulkan::command_list_impl::end_query(api::query_pool pool, api::query_type type, uint32_t index)
+void reshade::vulkan::command_list_impl::end_query(api::query_heap heap, api::query_type type, uint32_t index)
 {
 	_has_commands = true;
 
-	assert(pool.handle != 0);
-	assert(_device_impl->get_private_data_for_object<VK_OBJECT_TYPE_QUERY_POOL>((VkQueryPool)pool.handle)->type == convert_query_type(type));
+	assert(heap.handle != 0);
+	assert(_device_impl->get_private_data_for_object<VK_OBJECT_TYPE_QUERY_POOL>((VkQueryPool)heap.handle)->type == convert_query_type(type));
 
 	switch (type)
 	{
 	default:
-		vk.CmdEndQuery(_orig, (VkQueryPool)pool.handle, index);
+		vk.CmdEndQuery(_orig, (VkQueryPool)heap.handle, index);
 		break;
 	case api::query_type::timestamp:
-		vk.CmdResetQueryPool(_orig, (VkQueryPool)pool.handle, index, 1);
-		vk.CmdWriteTimestamp(_orig, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, (VkQueryPool)pool.handle, index);
+		vk.CmdResetQueryPool(_orig, (VkQueryPool)heap.handle, index, 1);
+		vk.CmdWriteTimestamp(_orig, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, (VkQueryPool)heap.handle, index);
 		break;
 	case api::query_type::stream_output_statistics_0:
 	case api::query_type::stream_output_statistics_1:
 	case api::query_type::stream_output_statistics_2:
 	case api::query_type::stream_output_statistics_3:
 		if (vk.CmdEndQueryIndexedEXT != nullptr)
-			vk.CmdEndQueryIndexedEXT(_orig, (VkQueryPool)pool.handle, index, static_cast<uint32_t>(type) - static_cast<uint32_t>(api::query_type::stream_output_statistics_0));
+			vk.CmdEndQueryIndexedEXT(_orig, (VkQueryPool)heap.handle, index, static_cast<uint32_t>(type) - static_cast<uint32_t>(api::query_type::stream_output_statistics_0));
 		break;
 	}
 }
-void reshade::vulkan::command_list_impl::copy_query_pool_results(api::query_pool pool, api::query_type type, uint32_t first, uint32_t count, api::resource dst, uint64_t dst_offset, uint32_t stride)
+void reshade::vulkan::command_list_impl::copy_query_heap_results(api::query_heap heap, api::query_type type, uint32_t first, uint32_t count, api::resource dst, uint64_t dst_offset, uint32_t stride)
 {
 	_has_commands = true;
 
-	assert(pool.handle != 0);
-	assert(_device_impl->get_private_data_for_object<VK_OBJECT_TYPE_QUERY_POOL>((VkQueryPool)pool.handle)->type == convert_query_type(type));
+	assert(heap.handle != 0);
+	assert(_device_impl->get_private_data_for_object<VK_OBJECT_TYPE_QUERY_POOL>((VkQueryPool)heap.handle)->type == convert_query_type(type));
 
-	vk.CmdCopyQueryPoolResults(_orig, (VkQueryPool)pool.handle, first, count, (VkBuffer)dst.handle, dst_offset, stride, VK_QUERY_RESULT_64_BIT);
+	vk.CmdCopyQueryPoolResults(_orig, (VkQueryPool)heap.handle, first, count, (VkBuffer)dst.handle, dst_offset, stride, VK_QUERY_RESULT_64_BIT);
 }
 
 void reshade::vulkan::command_list_impl::begin_debug_event(const char *label, const float color[4])

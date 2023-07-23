@@ -7,6 +7,7 @@
 #include "d3d9_impl_type_convert.hpp"
 #include "d3d9_resource_call_vtable.inl"
 #include "dll_log.hpp"
+#include "hook_manager.hpp"
 #include <algorithm>
 
 const RECT *convert_box_to_rect(const reshade::api::subresource_box *box, RECT &rect)
@@ -213,7 +214,7 @@ bool reshade::d3d9::device_impl::check_capability(api::device_caps capability) c
 	case api::device_caps::blit:
 	case api::device_caps::resolve_region:
 		return true;
-	case api::device_caps::copy_query_pool_results:
+	case api::device_caps::copy_query_heap_results:
 	case api::device_caps::sampler_compare:
 		return false;
 	case api::device_caps::sampler_anisotropic:
@@ -258,7 +259,7 @@ bool reshade::d3d9::device_impl::create_sampler(const api::sampler_desc &desc, a
 	impl->state[D3DSAMP_MAXMIPLEVEL] = desc.min_lod > 0 ? static_cast<DWORD>(desc.min_lod) : 0;
 	impl->state[D3DSAMP_MAXANISOTROPY] = static_cast<DWORD>(desc.max_anisotropy);
 
-	if (desc.filter == api::filter_mode::anisotropic)
+	if (desc.filter == api::filter_mode::anisotropic || desc.filter == api::filter_mode::min_mag_anisotropic_mip_point)
 	{
 		impl->state[D3DSAMP_MINFILTER] = D3DTEXF_ANISOTROPIC;
 		impl->state[D3DSAMP_MAGFILTER] = D3DTEXF_ANISOTROPIC;
@@ -399,7 +400,7 @@ bool reshade::d3d9::device_impl::create_resource(const api::resource_desc &desc,
 
 				if (initial_data != nullptr)
 				{
-					for (uint32_t subresource = 0; subresource < static_cast<uint32_t>(desc.texture.depth_or_layers) * desc.texture.levels; ++subresource)
+					for (uint32_t subresource = 0; subresource < std::max(levels, 1u); ++subresource)
 						update_texture_region(initial_data[subresource], *out_handle, subresource, nullptr);
 				}
 				return true;
@@ -1165,15 +1166,195 @@ void reshade::d3d9::device_impl::update_texture_region(const api::subresource_da
 		}
 		case D3DRTYPE_VOLUMETEXTURE:
 		{
-			// TODO: Implement texture upload for 3D textures
-			LOG(ERROR) << "Texture upload is not implemented for 3D textures in D3D9!";
-			break;
+			// Get D3D texture format
+			D3DVOLUME_DESC desc;
+			if (FAILED(IDirect3DVolumeTexture9_GetLevelDesc(static_cast<IDirect3DVolumeTexture9 *>(object), subresource, &desc)))
+				return;
+
+			const UINT width = (box != nullptr) ? box->width() : desc.Width;
+			const UINT height = (box != nullptr) ? box->height() : desc.Height;
+			const UINT depth = (box != nullptr) ? box->depth() : desc.Depth;
+			const bool use_systemmem_texture = IDirect3DVolumeTexture9_GetLevelCount(static_cast<IDirect3DVolumeTexture9 *>(object)) == 1 && box == nullptr;
+
+			com_ptr<IDirect3DVolumeTexture9> intermediate;
+			if (use_systemmem_texture)
+			{
+				if (FAILED(_orig->CreateVolumeTexture(width, height, depth, 1, 0, desc.Format, D3DPOOL_SYSTEMMEM, &intermediate, nullptr)))
+				{
+					LOG(ERROR) << "Failed to create upload buffer (width = " << width << ", height = " << height << ", depth = " << depth << ", levels = " << "1" << ", usage = " << (use_systemmem_texture ? "0" : "D3DUSAGE_DYNAMIC") << ", format = " << desc.Format << ")!";
+					return;
+				}
+			}
+			else
+			{
+				intermediate = static_cast<IDirect3DVolumeTexture9 *>(object);
+			}
+
+			D3DLOCKED_BOX locked_box;
+			if (FAILED(IDirect3DVolumeTexture9_LockBox(intermediate.get(), 0, &locked_box, static_cast<const D3DBOX *>(nullptr), 0)))
+				return;
+			auto mapped_data = static_cast<uint8_t *>(locked_box.pBits);
+			auto upload_data = static_cast<const uint8_t *>(data.data);
+
+			// If format is one of these two, assume they were overwritten by 'convert_format_internal', so handle them accordingly
+			// TODO: Maybe store the original format as user data in the resource to avoid this hack?
+			if (desc.Format == D3DFMT_A8R8G8B8 || desc.Format == D3DFMT_X8R8G8B8)
+			{
+				for (uint32_t z = 0; z < depth; ++z, mapped_data += locked_box.SlicePitch, upload_data += data.slice_pitch)
+				{
+					auto mapped_data_slice = mapped_data;
+					auto upload_data_slice = upload_data;
+
+					for (uint32_t y = 0; y < height; ++y, mapped_data_slice += locked_box.RowPitch, upload_data_slice += data.row_pitch)
+					{
+						switch (data.row_pitch / width)
+						{
+						case 1: // This is likely actually a r8 texture
+							for (uint32_t x = 0, i = 0; x < width * 4; x += 4, i += 1)
+								mapped_data_slice[x + 0] = 0, // Set green and blue channel to zero
+								mapped_data_slice[x + 1] = 0,
+								mapped_data_slice[x + 2] = upload_data_slice[i],
+								mapped_data_slice[x + 3] = 0xFF;
+							break;
+						case 2: // This is likely actually a r8g8 texture
+							for (uint32_t x = 0, i = 0; x < width * 4; x += 4, i += 2)
+								mapped_data_slice[x + 0] = 0, // Set blue channel to zero
+								mapped_data_slice[x + 1] = upload_data_slice[i + 1],
+								mapped_data_slice[x + 2] = upload_data_slice[i + 0],
+								mapped_data_slice[x + 3] = 0xFF;
+							break;
+						case 4: // This is likely actually a r8g8b8a8 texture
+						default:
+							for (uint32_t x = 0, i = 0; x < width * 4; x += 4, i += 4)
+								mapped_data_slice[x + 0] = upload_data_slice[i + 2], // Flip RGBA input to BGRA
+								mapped_data_slice[x + 1] = upload_data_slice[i + 1],
+								mapped_data_slice[x + 2] = upload_data_slice[i + 0],
+								mapped_data_slice[x + 3] = upload_data_slice[i + 3];
+							break;
+						}
+					}
+				}
+			}
+			else
+			{
+				for (uint32_t z = 0; z < depth; ++z, mapped_data += locked_box.SlicePitch, upload_data += data.slice_pitch)
+				{
+					auto mapped_data_slice = mapped_data;
+					auto upload_data_slice = upload_data;
+
+					for (uint32_t y = 0; y < height; ++y, mapped_data_slice += locked_box.RowPitch, upload_data_slice += data.slice_pitch)
+					{
+						std::memcpy(mapped_data_slice, upload_data_slice, std::min(data.row_pitch, static_cast<uint32_t>(locked_box.RowPitch)));
+					}
+				}
+			}
+
+			IDirect3DVolumeTexture9_UnlockBox(intermediate.get(), 0);
+
+			if (use_systemmem_texture)
+			{
+				assert(subresource == 0);
+
+				_orig->UpdateTexture(intermediate.get(), static_cast<IDirect3DVolumeTexture9 *>(object));
+			}
+			return;
 		}
 		case D3DRTYPE_CUBETEXTURE:
 		{
-			// TODO: Implement texture upload for cube textures
-			LOG(ERROR) << "Texture upload is not implemented for cube textures in D3D9!";
-			break;
+			// Get D3D texture format
+			// Note: This fails for any mipmap level but the first one for textures with D3DUSAGE_AUTOGENMIPMAP, since in that case the D3D runtime does not have surfaces for those
+			D3DSURFACE_DESC desc;
+			if (FAILED(IDirect3DCubeTexture9_GetLevelDesc(static_cast<IDirect3DCubeTexture9 *>(object), subresource, &desc)))
+				return;
+
+			const UINT width = (box != nullptr) ? box->width() : desc.Width;
+			const UINT height = (box != nullptr) ? box->height() : desc.Height;
+			if (width != height)
+				return;
+
+			const bool use_systemmem_texture = IDirect3DCubeTexture9_GetLevelCount(static_cast<IDirect3DCubeTexture9 *>(object)) == 1 && box == nullptr;
+
+			com_ptr<IDirect3DCubeTexture9> intermediate;
+			if (FAILED(_orig->CreateCubeTexture(width, 1, use_systemmem_texture ? 0 : D3DUSAGE_DYNAMIC, desc.Format, use_systemmem_texture ? D3DPOOL_SYSTEMMEM : D3DPOOL_DEFAULT, &intermediate, nullptr)))
+			{
+				LOG(ERROR) << "Failed to create upload buffer (width = " << width << ", height = " << height << ", levels = " << "1" << ", usage = " << (use_systemmem_texture ? "0" : "D3DUSAGE_DYNAMIC") << ", format = " << desc.Format << ")!";
+				return;
+			}
+
+			D3DLOCKED_RECT locked_rect;
+
+			for (D3DCUBEMAP_FACES face = D3DCUBEMAP_FACE_POSITIVE_X; face <= D3DCUBEMAP_FACE_NEGATIVE_Z; face = static_cast<D3DCUBEMAP_FACES>(face + 1))
+			{
+				if (FAILED(IDirect3DCubeTexture9_LockRect(intermediate.get(), face, 0, &locked_rect, static_cast<const RECT *>(nullptr), 0)))
+					return;
+				auto mapped_data = static_cast<uint8_t *>(locked_rect.pBits);
+				auto upload_data = static_cast<const uint8_t *>(data.data);
+
+				// If format is one of these two, assume they were overwritten by 'convert_format_internal', so handle them accordingly
+				// TODO: Maybe store the original format as user data in the resource to avoid this hack?
+				if (desc.Format == D3DFMT_A8R8G8B8 || desc.Format == D3DFMT_X8R8G8B8)
+				{
+					for (uint32_t y = 0; y < height; ++y, mapped_data += locked_rect.Pitch, upload_data += data.row_pitch)
+					{
+						switch (data.row_pitch / width)
+						{
+						case 1: // This is likely actually a r8 texture
+							for (uint32_t x = 0, i = 0; x < width * 4; x += 4, i += 1)
+								mapped_data[x + 0] = 0, // Set green and blue channel to zero
+								mapped_data[x + 1] = 0,
+								mapped_data[x + 2] = upload_data[i],
+								mapped_data[x + 3] = 0xFF;
+							break;
+						case 2: // This is likely actually a r8g8 texture
+							for (uint32_t x = 0, i = 0; x < width * 4; x += 4, i += 2)
+								mapped_data[x + 0] = 0, // Set blue channel to zero
+								mapped_data[x + 1] = upload_data[i + 1],
+								mapped_data[x + 2] = upload_data[i + 0],
+								mapped_data[x + 3] = 0xFF;
+							break;
+						case 4: // This is likely actually a r8g8b8a8 texture
+						default:
+							for (uint32_t x = 0, i = 0; x < width * 4; x += 4, i += 4)
+								mapped_data[x + 0] = upload_data[i + 2], // Flip RGBA input to BGRA
+								mapped_data[x + 1] = upload_data[i + 1],
+								mapped_data[x + 2] = upload_data[i + 0],
+								mapped_data[x + 3] = upload_data[i + 3];
+							break;
+						}
+					}
+				}
+				else
+				{
+					for (uint32_t y = 0; y < height; ++y, mapped_data += locked_rect.Pitch, upload_data += data.row_pitch)
+					{
+						std::memcpy(mapped_data, upload_data, std::min(data.row_pitch, static_cast<uint32_t>(locked_rect.Pitch)));
+					}
+				}
+
+				IDirect3DCubeTexture9_UnlockRect(intermediate.get(), face, 0);
+			}
+
+			if (use_systemmem_texture)
+			{
+				assert(subresource == 0);
+
+				_orig->UpdateTexture(intermediate.get(), static_cast<IDirect3DCubeTexture9 *>(object));
+			}
+			else
+			{
+				RECT dst_rect;
+
+				for (D3DCUBEMAP_FACES face = D3DCUBEMAP_FACE_POSITIVE_X; face <= D3DCUBEMAP_FACE_NEGATIVE_Z; face = static_cast<D3DCUBEMAP_FACES>(face + 1))
+				{
+					com_ptr<IDirect3DSurface9> src_surface;
+					IDirect3DCubeTexture9_GetCubeMapSurface(intermediate.get(), face, 0, &src_surface);
+					com_ptr<IDirect3DSurface9> dst_surface;
+					IDirect3DCubeTexture9_GetCubeMapSurface(static_cast<IDirect3DCubeTexture9 *>(object), face, subresource, &dst_surface);
+					
+					_orig->StretchRect(src_surface.get(), nullptr, dst_surface.get(), convert_box_to_rect(box, dst_rect), D3DTEXF_NONE);
+				}
+			}
+			return;
 		}
 	}
 
@@ -1385,9 +1566,12 @@ bool reshade::d3d9::device_impl::create_pipeline(api::pipeline_layout, uint32_t 
 		convert_stencil_op(rasterizer_state.front_counter_clockwise ? depth_stencil_state.back_stencil_pass_op : depth_stencil_state.front_stencil_pass_op));
 	_orig->SetRenderState(D3DRS_STENCILFUNC,
 		convert_compare_op(rasterizer_state.front_counter_clockwise ? depth_stencil_state.back_stencil_func : depth_stencil_state.front_stencil_func));
-	_orig->SetRenderState(D3DRS_STENCILREF, depth_stencil_state.stencil_reference_value);
-	_orig->SetRenderState(D3DRS_STENCILMASK, depth_stencil_state.stencil_read_mask);
-	_orig->SetRenderState(D3DRS_STENCILWRITEMASK, depth_stencil_state.stencil_write_mask);
+	_orig->SetRenderState(D3DRS_STENCILREF,
+		rasterizer_state.front_counter_clockwise ? depth_stencil_state.back_stencil_reference_value : depth_stencil_state.front_stencil_reference_value);
+	_orig->SetRenderState(D3DRS_STENCILMASK,
+		rasterizer_state.front_counter_clockwise ? depth_stencil_state.back_stencil_read_mask : depth_stencil_state.front_stencil_read_mask);
+	_orig->SetRenderState(D3DRS_STENCILWRITEMASK,
+		rasterizer_state.front_counter_clockwise ? depth_stencil_state.back_stencil_write_mask : depth_stencil_state.front_stencil_write_mask);
 	_orig->SetRenderState(D3DRS_CLIPPING, rasterizer_state.depth_clip_enable);
 	_orig->SetRenderState(D3DRS_LIGHTING, FALSE);
 	_orig->SetRenderState(D3DRS_VERTEXBLEND, D3DVBF_DISABLE);
@@ -1518,20 +1702,20 @@ bool reshade::d3d9::device_impl::create_pipeline_layout(uint32_t param_count, co
 
 		switch (params[i].type)
 		{
-		case api::pipeline_layout_param_type::descriptor_set:
-		case api::pipeline_layout_param_type::push_descriptors_ranges:
-			if (params[i].descriptor_set.count == 0)
+		case api::pipeline_layout_param_type::descriptor_table:
+		case api::pipeline_layout_param_type::push_descriptors_with_ranges:
+			if (params[i].descriptor_table.count == 0)
 				return false;
 
-			merged_range = params[i].descriptor_set.ranges[0];
-			if (merged_range.array_size > 1 || merged_range.dx_register_space != 0)
+			merged_range = params[i].descriptor_table.ranges[0];
+			if (merged_range.count == UINT32_MAX || merged_range.array_size > 1 || merged_range.dx_register_space != 0)
 				return false;
 
-			for (uint32_t k = 1; k < params[i].descriptor_set.count; ++k)
+			for (uint32_t k = 1; k < params[i].descriptor_table.count; ++k)
 			{
-				const api::descriptor_range &range = params[i].descriptor_set.ranges[k];
+				const api::descriptor_range &range = params[i].descriptor_table.ranges[k];
 
-				if (range.type != merged_range.type || range.array_size > 1 || range.dx_register_space != merged_range.dx_register_space)
+				if (range.type != merged_range.type || range.count == UINT32_MAX || range.array_size > 1 || range.dx_register_space != merged_range.dx_register_space)
 					return false;
 
 				if (range.binding >= merged_range.binding)
@@ -1540,8 +1724,9 @@ bool reshade::d3d9::device_impl::create_pipeline_layout(uint32_t param_count, co
 
 					if ((range.dx_register_index - merged_range.dx_register_index) != distance)
 						return false;
+					assert(merged_range.count <= distance);
 
-					merged_range.count += distance;
+					merged_range.count = distance + range.count;
 					merged_range.visibility |= range.visibility;
 				}
 				else
@@ -1550,6 +1735,7 @@ bool reshade::d3d9::device_impl::create_pipeline_layout(uint32_t param_count, co
 
 					if ((merged_range.dx_register_index - range.dx_register_index) != distance)
 						return false;
+					assert(range.count <= distance);
 
 					merged_range.binding = range.binding;
 					merged_range.dx_register_index = range.dx_register_index;
@@ -1585,7 +1771,7 @@ void reshade::d3d9::device_impl::destroy_pipeline_layout(api::pipeline_layout ha
 	delete reinterpret_cast<pipeline_layout_impl *>(handle.handle);
 }
 
-bool reshade::d3d9::device_impl::allocate_descriptor_sets(uint32_t count, api::pipeline_layout layout, uint32_t layout_param, api::descriptor_set *out_sets)
+bool reshade::d3d9::device_impl::allocate_descriptor_tables(uint32_t count, api::pipeline_layout layout, uint32_t layout_param, api::descriptor_table *out_tables)
 {
 	const auto layout_impl = reinterpret_cast<const pipeline_layout_impl *>(layout.handle);
 
@@ -1593,26 +1779,26 @@ bool reshade::d3d9::device_impl::allocate_descriptor_sets(uint32_t count, api::p
 	{
 		for (uint32_t i = 0; i < count; ++i)
 		{
-			const auto set_impl = new descriptor_set_impl();
-			set_impl->type = layout_impl->ranges[layout_param].type;
-			set_impl->count = layout_impl->ranges[layout_param].count;
-			set_impl->base_binding = layout_impl->ranges[layout_param].binding;
+			const auto table_impl = new descriptor_table_impl();
+			table_impl->type = layout_impl->ranges[layout_param].type;
+			table_impl->count = layout_impl->ranges[layout_param].count;
+			table_impl->base_binding = layout_impl->ranges[layout_param].binding;
 
-			switch (set_impl->type)
+			switch (table_impl->type)
 			{
 			case api::descriptor_type::sampler:
 			case api::descriptor_type::shader_resource_view:
-				set_impl->descriptors.resize(set_impl->count * 1);
+				table_impl->descriptors.resize(table_impl->count * 1);
 				break;
 			case api::descriptor_type::sampler_with_resource_view:
-				set_impl->descriptors.resize(set_impl->count * 2);
+				table_impl->descriptors.resize(table_impl->count * 2);
 				break;
 			default:
 				assert(false);
 				break;
 			}
 
-			out_sets[i] = { reinterpret_cast<uintptr_t>(set_impl) };
+			out_tables[i] = { reinterpret_cast<uintptr_t>(table_impl) };
 		}
 
 		return true;
@@ -1620,52 +1806,50 @@ bool reshade::d3d9::device_impl::allocate_descriptor_sets(uint32_t count, api::p
 	else
 	{
 		for (uint32_t i = 0; i < count; ++i)
-		{
-			out_sets[i] = { 0 };
-		}
+			out_tables[i] = { 0 };
 
 		return false;
 	}
 }
-void reshade::d3d9::device_impl::free_descriptor_sets(uint32_t count, const api::descriptor_set *sets)
+void reshade::d3d9::device_impl::free_descriptor_tables(uint32_t count, const api::descriptor_table *tables)
 {
 	for (uint32_t i = 0; i < count; ++i)
-		delete reinterpret_cast<descriptor_set_impl *>(sets[i].handle);
+		delete reinterpret_cast<descriptor_table_impl *>(tables[i].handle);
 }
 
-void reshade::d3d9::device_impl::get_descriptor_pool_offset(api::descriptor_set set, uint32_t binding, uint32_t array_offset, api::descriptor_pool *pool, uint32_t *offset) const
+void reshade::d3d9::device_impl::get_descriptor_heap_offset(api::descriptor_table table, uint32_t binding, uint32_t array_offset, api::descriptor_heap *heap, uint32_t *offset) const
 {
-	assert(set.handle != 0 && array_offset == 0);
+	assert(table.handle != 0 && array_offset == 0 && heap != nullptr && offset != nullptr);
 
-	*pool = { 0 }; // Not implemented
+	*heap = { 0 }; // Not implemented
 	*offset = binding;
 }
 
-void reshade::d3d9::device_impl::copy_descriptor_sets(uint32_t count, const api::descriptor_set_copy *copies)
+void reshade::d3d9::device_impl::copy_descriptor_tables(uint32_t count, const api::descriptor_table_copy *copies)
 {
 	for (uint32_t i = 0; i < count; ++i)
 	{
-		const api::descriptor_set_copy &copy = copies[i];
+		const api::descriptor_table_copy &copy = copies[i];
 
-		const auto src_set_impl = reinterpret_cast<descriptor_set_impl *>(copy.source_set.handle);
-		const auto dst_set_impl = reinterpret_cast<descriptor_set_impl *>(copy.dest_set.handle);
-		assert(src_set_impl != nullptr && dst_set_impl != nullptr && src_set_impl->type == dst_set_impl->type);
+		const auto src_table_impl = reinterpret_cast<descriptor_table_impl *>(copy.source_table.handle);
+		const auto dst_table_impl = reinterpret_cast<descriptor_table_impl *>(copy.dest_table.handle);
+		assert(src_table_impl != nullptr && dst_table_impl != nullptr && src_table_impl->type == dst_table_impl->type);
 
-		const uint32_t dst_binding = copy.dest_binding - dst_set_impl->base_binding;
-		assert(dst_binding < dst_set_impl->count && copy.count <= (dst_set_impl->count - dst_binding));
-		const uint32_t src_binding = copy.source_binding - src_set_impl->base_binding;
-		assert(src_binding < src_set_impl->count && copy.count <= (src_set_impl->count - src_binding));
+		const uint32_t dst_binding = copy.dest_binding - dst_table_impl->base_binding;
+		assert(dst_binding < dst_table_impl->count && copy.count <= (dst_table_impl->count - dst_binding));
+		const uint32_t src_binding = copy.source_binding - src_table_impl->base_binding;
+		assert(src_binding < src_table_impl->count && copy.count <= (src_table_impl->count - src_binding));
 
 		assert(copy.dest_array_offset == 0 && copy.source_array_offset == 0);
 
-		switch (src_set_impl->type)
+		switch (src_table_impl->type)
 		{
 		case api::descriptor_type::sampler:
 		case api::descriptor_type::shader_resource_view:
-			std::memcpy(&dst_set_impl->descriptors[dst_binding * 1], &src_set_impl->descriptors[src_binding * 1], copy.count * sizeof(uint64_t) * 1);
+			std::memcpy(&dst_table_impl->descriptors[dst_binding * 1], &src_table_impl->descriptors[src_binding * 1], copy.count * sizeof(uint64_t) * 1);
 			break;
 		case api::descriptor_type::sampler_with_resource_view:
-			std::memcpy(&dst_set_impl->descriptors[dst_binding * 2], &src_set_impl->descriptors[src_binding * 2], copy.count * sizeof(uint64_t) * 2);
+			std::memcpy(&dst_table_impl->descriptors[dst_binding * 2], &src_table_impl->descriptors[src_binding * 2], copy.count * sizeof(uint64_t) * 2);
 			break;
 		default:
 			assert(false);
@@ -1673,17 +1857,17 @@ void reshade::d3d9::device_impl::copy_descriptor_sets(uint32_t count, const api:
 		}
 	}
 }
-void reshade::d3d9::device_impl::update_descriptor_sets(uint32_t count, const api::descriptor_set_update *updates)
+void reshade::d3d9::device_impl::update_descriptor_tables(uint32_t count, const api::descriptor_table_update *updates)
 {
 	for (uint32_t i = 0; i < count; ++i)
 	{
-		const api::descriptor_set_update &update = updates[i];
+		const api::descriptor_table_update &update = updates[i];
 
-		const auto set_impl = reinterpret_cast<descriptor_set_impl *>(update.set.handle);
-		assert(set_impl != nullptr && set_impl->type == update.type);
+		const auto table_impl = reinterpret_cast<descriptor_table_impl *>(update.table.handle);
+		assert(table_impl != nullptr && table_impl->type == update.type);
 
-		const uint32_t update_binding = update.binding - set_impl->base_binding;
-		assert(update_binding < set_impl->count && update.count <= (set_impl->count - update_binding));
+		const uint32_t update_binding = update.binding - table_impl->base_binding;
+		assert(update_binding < table_impl->count && update.count <= (table_impl->count - update_binding));
 
 		assert(update.array_offset == 0);
 
@@ -1691,10 +1875,10 @@ void reshade::d3d9::device_impl::update_descriptor_sets(uint32_t count, const ap
 		{
 		case api::descriptor_type::sampler:
 		case api::descriptor_type::shader_resource_view:
-			std::memcpy(&set_impl->descriptors[update_binding * 1], update.descriptors, update.count * sizeof(uint64_t) * 1);
+			std::memcpy(&table_impl->descriptors[update_binding * 1], update.descriptors, update.count * sizeof(uint64_t) * 1);
 			break;
 		case api::descriptor_type::sampler_with_resource_view:
-			std::memcpy(&set_impl->descriptors[update_binding * 2], update.descriptors, update.count * sizeof(uint64_t) * 2);
+			std::memcpy(&table_impl->descriptors[update_binding * 2], update.descriptors, update.count * sizeof(uint64_t) * 2);
 			break;
 		default:
 			assert(false);
@@ -1703,9 +1887,9 @@ void reshade::d3d9::device_impl::update_descriptor_sets(uint32_t count, const ap
 	}
 }
 
-bool reshade::d3d9::device_impl::create_query_pool(api::query_type type, uint32_t size, api::query_pool *out_handle)
+bool reshade::d3d9::device_impl::create_query_heap(api::query_type type, uint32_t size, api::query_heap *out_handle)
 {
-	const auto impl = new query_pool_impl();
+	const auto impl = new query_heap_impl();
 	impl->type = type;
 	impl->queries.resize(size);
 
@@ -1725,16 +1909,16 @@ bool reshade::d3d9::device_impl::create_query_pool(api::query_type type, uint32_
 	*out_handle = { reinterpret_cast<uintptr_t>(impl) };
 	return true;
 }
-void reshade::d3d9::device_impl::destroy_query_pool(api::query_pool handle)
+void reshade::d3d9::device_impl::destroy_query_heap(api::query_heap handle)
 {
-	delete reinterpret_cast<query_pool_impl *>(handle.handle);
+	delete reinterpret_cast<query_heap_impl *>(handle.handle);
 }
 
-bool reshade::d3d9::device_impl::get_query_pool_results(api::query_pool pool, uint32_t first, uint32_t count, void *results, uint32_t stride)
+bool reshade::d3d9::device_impl::get_query_heap_results(api::query_heap heap, uint32_t first, uint32_t count, void *results, uint32_t stride)
 {
-	assert(pool.handle != 0);
+	assert(heap.handle != 0);
 
-	const auto impl = reinterpret_cast<query_pool_impl *>(pool.handle);
+	const auto impl = reinterpret_cast<query_heap_impl *>(heap.handle);
 
 	for (size_t i = 0; i < count; ++i)
 	{

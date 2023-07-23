@@ -3,14 +3,14 @@
  * SPDX-License-Identifier: BSD-3-Clause OR MIT
  */
 
-#include "dll_log.hpp"
-#include "hook_manager.hpp"
-#include "lockfree_linear_map.hpp"
 #include "vulkan_hooks.hpp"
 #include "vulkan_impl_device.hpp"
 #include "vulkan_impl_command_queue.hpp"
 #include "vulkan_impl_swapchain.hpp"
 #include "vulkan_impl_type_convert.hpp"
+#include "dll_log.hpp"
+#include "hook_manager.hpp"
+#include "lockfree_linear_map.hpp"
 
 // Set during Vulkan device creation and presentation, to avoid hooking internal D3D devices created e.g. by NVIDIA Ansel and Optimus
 extern thread_local bool g_in_dxgi_runtime;
@@ -326,6 +326,7 @@ VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDevi
 	}
 
 	// Continue calling down the chain
+	assert(!g_in_dxgi_runtime);
 	g_in_dxgi_runtime = true;
 	const VkResult result = trampoline(physicalDevice, &create_info, pAllocator, pDevice);
 	g_in_dxgi_runtime = false;
@@ -748,11 +749,37 @@ VkResult VKAPI_CALL vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreat
 	case VK_FORMAT_B8G8R8A8_SRGB:
 		format_string = "VK_FORMAT_B8G8R8A8_SRGB";
 		break;
+	case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
+		format_string = "VK_FORMAT_A2B10G10R10_UNORM_PACK32";
+		break;
 	case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
 		format_string = "VK_FORMAT_A2R10G10B10_UNORM_PACK32";
 		break;
+	case VK_FORMAT_R16G16B16A16_UNORM:
+		format_string = "VK_FORMAT_R16G16B16A16_UNORM";
+		break;
 	case VK_FORMAT_R16G16B16A16_SFLOAT:
 		format_string = "VK_FORMAT_R16G16B16A16_SFLOAT";
+		break;
+	}
+
+	const char *color_space_string = nullptr;
+	switch (create_info.imageColorSpace)
+	{
+	case VK_COLOR_SPACE_SRGB_NONLINEAR_KHR:
+		color_space_string = "VK_COLOR_SPACE_SRGB_NONLINEAR_KHR";
+		break;
+	case VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT:
+		color_space_string = "VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT";
+		break;
+	case VK_COLOR_SPACE_BT2020_LINEAR_EXT:
+		color_space_string = "VK_COLOR_SPACE_BT2020_LINEAR_EXT";
+		break;
+	case VK_COLOR_SPACE_HDR10_ST2084_EXT:
+		color_space_string = "VK_COLOR_SPACE_HDR10_ST2084_EXT";
+		break;
+	case VK_COLOR_SPACE_HDR10_HLG_EXT:
+		color_space_string = "VK_COLOR_SPACE_HDR10_HLG_EXT";
 		break;
 	}
 
@@ -761,7 +788,11 @@ VkResult VKAPI_CALL vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreat
 	else
 		LOG(INFO) << "  | imageFormat                             | " << std::setw(39) << create_info.imageFormat << " |";
 
-	LOG(INFO) << "  | imageColorSpace                         | " << std::setw(39) << create_info.imageColorSpace << " |";
+	if (color_space_string != nullptr)
+		LOG(INFO) << "  | imageColorSpace                         | " << std::setw(39) << color_space_string << " |";
+	else
+		LOG(INFO) << "  | imageColorSpace                         | " << std::setw(39) << create_info.imageColorSpace << " |";
+
 	LOG(INFO) << "  | imageExtent                             | " << std::setw(19) << create_info.imageExtent.width << ' ' << std::setw(19) << create_info.imageExtent.height << " |";
 	LOG(INFO) << "  | imageArrayLayers                        | " << std::setw(39) << create_info.imageArrayLayers << " |";
 	LOG(INFO) << "  | imageUsage                              | " << std::setw(39) << std::hex << create_info.imageUsage << std::dec << " |";
@@ -824,7 +855,10 @@ VkResult VKAPI_CALL vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreat
 		device_impl->unregister_object(VK_OBJECT_TYPE_SWAPCHAIN_KHR, (uint64_t)create_info.oldSwapchain);
 	}
 
+	assert(!g_in_dxgi_runtime);
+	g_in_dxgi_runtime = true;
 	const VkResult result = trampoline(device, &create_info, pAllocator, pSwapchain);
+	g_in_dxgi_runtime = false;
 	if (result < VK_SUCCESS)
 	{
 		LOG(WARN) << "vkCreateSwapchainKHR" << " failed with error code " << result << '.';
@@ -1082,6 +1116,7 @@ VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPr
 	}
 
 	GET_DISPATCH_PTR(QueuePresentKHR, queue);
+	assert(!g_in_dxgi_runtime);
 	g_in_dxgi_runtime = true;
 	const VkResult result = trampoline(queue, &present_info);
 	g_in_dxgi_runtime = false;
@@ -1226,7 +1261,7 @@ VkResult VKAPI_CALL vkCreateQueryPool(VkDevice device, const VkQueryPoolCreateIn
 #if RESHADE_ADDON
 	VkQueryPoolCreateInfo create_info = *pCreateInfo;
 
-	if (reshade::invoke_addon_event<reshade::addon_event::create_query_pool>(device_impl, reshade::vulkan::convert_query_type(create_info.queryType), create_info.queryCount))
+	if (reshade::invoke_addon_event<reshade::addon_event::create_query_heap>(device_impl, reshade::vulkan::convert_query_type(create_info.queryType), create_info.queryCount))
 	{
 		pCreateInfo = &create_info;
 	}
@@ -1247,8 +1282,8 @@ VkResult VKAPI_CALL vkCreateQueryPool(VkDevice device, const VkQueryPoolCreateIn
 
 	device_impl->register_object<VK_OBJECT_TYPE_QUERY_POOL>(*pQueryPool, std::move(data));
 
-	reshade::invoke_addon_event<reshade::addon_event::init_query_pool>(
-		device_impl, reshade::vulkan::convert_query_type(create_info.queryType), create_info.queryCount, reshade::api::query_pool { (uint64_t)*pQueryPool });
+	reshade::invoke_addon_event<reshade::addon_event::init_query_heap>(
+		device_impl, reshade::vulkan::convert_query_type(create_info.queryType), create_info.queryCount, reshade::api::query_heap { (uint64_t)*pQueryPool });
 #endif
 
 	return result;
@@ -1262,7 +1297,7 @@ void     VKAPI_CALL vkDestroyQueryPool(VkDevice device, VkQueryPool queryPool, c
 	GET_DISPATCH_PTR_FROM(DestroyQueryPool, device_impl);
 
 #if RESHADE_ADDON
-	reshade::invoke_addon_event<reshade::addon_event::destroy_query_pool>(device_impl, reshade::api::query_pool{ (uint64_t)queryPool });
+	reshade::invoke_addon_event<reshade::addon_event::destroy_query_heap>(device_impl, reshade::api::query_heap{ (uint64_t)queryPool });
 
 	device_impl->unregister_object<VK_OBJECT_TYPE_QUERY_POOL>(queryPool);
 #endif
@@ -1278,7 +1313,7 @@ VkResult VKAPI_CALL vkGetQueryPoolResults(VkDevice device, VkQueryPool queryPool
 #if RESHADE_ADDON && !RESHADE_ADDON_LITE
 	assert(stride <= std::numeric_limits<uint32_t>::max());
 
-	if (reshade::invoke_addon_event<reshade::addon_event::get_query_pool_results>(device_impl, reshade::api::query_pool { (uint64_t)queryPool }, firstQuery, queryCount, pData, static_cast<uint32_t>(stride)))
+	if (reshade::invoke_addon_event<reshade::addon_event::get_query_heap_results>(device_impl, reshade::api::query_heap { (uint64_t)queryPool }, firstQuery, queryCount, pData, static_cast<uint32_t>(stride)))
 		return VK_SUCCESS;
 #endif
 
@@ -1487,6 +1522,13 @@ VkResult VKAPI_CALL vkCreateImageView(VkDevice device, const VkImageViewCreateIn
 	reshade::vulkan::object_data<VK_OBJECT_TYPE_IMAGE_VIEW> data;
 	data.create_info = create_info;
 	data.create_info.pNext = nullptr; // Clear out structure chain pointer, since it becomes invalid once leaving the current scope
+
+	const auto resource_data = device_impl->get_private_data_for_object<VK_OBJECT_TYPE_IMAGE>(create_info.image);
+	data.image_extent = resource_data->create_info.extent;
+	if (VK_REMAINING_MIP_LEVELS == data.create_info.subresourceRange.levelCount)
+		data.create_info.subresourceRange.levelCount = resource_data->create_info.mipLevels;
+	if (VK_REMAINING_ARRAY_LAYERS == data.create_info.subresourceRange.layerCount)
+		data.create_info.subresourceRange.layerCount = resource_data->create_info.arrayLayers;
 
 	device_impl->register_object<VK_OBJECT_TYPE_IMAGE_VIEW>(*pView, std::move(data));
 
@@ -1843,9 +1885,9 @@ VkResult VKAPI_CALL vkCreatePipelineLayout(VkDevice device, const VkPipelineLayo
 
 		if (!set_layout_impl->push_descriptors)
 		{
-			params[i].type = reshade::api::pipeline_layout_param_type::descriptor_set;
-			params[i].descriptor_set.count = static_cast<uint32_t>(set_layout_impl->ranges.size());
-			params[i].descriptor_set.ranges = set_layout_impl->ranges.data();
+			params[i].type = reshade::api::pipeline_layout_param_type::descriptor_table;
+			params[i].descriptor_table.count = static_cast<uint32_t>(set_layout_impl->ranges.size());
+			params[i].descriptor_table.ranges = set_layout_impl->ranges.data();
 		}
 		else if (set_layout_impl->ranges.size() == 1)
 		{
@@ -1854,9 +1896,9 @@ VkResult VKAPI_CALL vkCreatePipelineLayout(VkDevice device, const VkPipelineLayo
 		}
 		else
 		{
-			params[i].type = reshade::api::pipeline_layout_param_type::push_descriptors_ranges;
-			params[i].descriptor_set.count = static_cast<uint32_t>(set_layout_impl->ranges.size());
-			params[i].descriptor_set.ranges = set_layout_impl->ranges.data();
+			params[i].type = reshade::api::pipeline_layout_param_type::push_descriptors_with_ranges;
+			params[i].descriptor_table.count = static_cast<uint32_t>(set_layout_impl->ranges.size());
+			params[i].descriptor_table.ranges = set_layout_impl->ranges.data();
 		}
 	}
 
@@ -2146,9 +2188,9 @@ void     VKAPI_CALL vkUpdateDescriptorSets(VkDevice device, uint32_t descriptorW
 	GET_DISPATCH_PTR_FROM(UpdateDescriptorSets, device_impl);
 
 #if RESHADE_ADDON && !RESHADE_ADDON_LITE
-	if (descriptorWriteCount != 0 && reshade::has_addon_event<reshade::addon_event::update_descriptor_sets>())
+	if (descriptorWriteCount != 0 && reshade::has_addon_event<reshade::addon_event::update_descriptor_tables>())
 	{
-		temp_mem<reshade::api::descriptor_set_update> updates(descriptorWriteCount);
+		temp_mem<reshade::api::descriptor_table_update> updates(descriptorWriteCount);
 
 		uint32_t max_descriptors = 0;
 		for (uint32_t i = 0; i < descriptorWriteCount; ++i)
@@ -2159,8 +2201,8 @@ void     VKAPI_CALL vkUpdateDescriptorSets(VkDevice device, uint32_t descriptorW
 		{
 			const VkWriteDescriptorSet &write = pDescriptorWrites[i];
 
-			reshade::api::descriptor_set_update &update = updates[i];
-			update.set = { (uint64_t)write.dstSet };
+			reshade::api::descriptor_table_update &update = updates[i];
+			update.table = { (uint64_t)write.dstSet };
 			update.binding = write.dstBinding;
 			update.array_offset = write.dstArrayElement;
 			update.count = write.descriptorCount;
@@ -2191,29 +2233,29 @@ void     VKAPI_CALL vkUpdateDescriptorSets(VkDevice device, uint32_t descriptorW
 			}
 		}
 
-		if (reshade::invoke_addon_event<reshade::addon_event::update_descriptor_sets>(device_impl, descriptorWriteCount, updates.p))
+		if (reshade::invoke_addon_event<reshade::addon_event::update_descriptor_tables>(device_impl, descriptorWriteCount, updates.p))
 			descriptorWriteCount = 0;
 	}
 
-	if (descriptorCopyCount != 0 && reshade::has_addon_event<reshade::addon_event::copy_descriptor_sets>())
+	if (descriptorCopyCount != 0 && reshade::has_addon_event<reshade::addon_event::copy_descriptor_tables>())
 	{
-		temp_mem<reshade::api::descriptor_set_copy> copies(descriptorCopyCount);
+		temp_mem<reshade::api::descriptor_table_copy> copies(descriptorCopyCount);
 
 		for (uint32_t i = 0; i < descriptorCopyCount; ++i)
 		{
 			const VkCopyDescriptorSet &internal_copy = pDescriptorCopies[i];
 
-			reshade::api::descriptor_set_copy &copy = copies[i];
-			copy.source_set = { (uint64_t)internal_copy.srcSet };
+			reshade::api::descriptor_table_copy &copy = copies[i];
+			copy.source_table = { (uint64_t)internal_copy.srcSet };
 			copy.source_binding = internal_copy.srcBinding;
 			copy.source_array_offset = internal_copy.srcArrayElement;
-			copy.dest_set = { (uint64_t)internal_copy.dstSet };
+			copy.dest_table = { (uint64_t)internal_copy.dstSet };
 			copy.dest_binding = internal_copy.dstBinding;
 			copy.dest_array_offset = internal_copy.dstArrayElement;
 			copy.count = internal_copy.descriptorCount;
 		}
 
-		if (reshade::invoke_addon_event<reshade::addon_event::copy_descriptor_sets>(device_impl, descriptorCopyCount, copies.p))
+		if (reshade::invoke_addon_event<reshade::addon_event::copy_descriptor_tables>(device_impl, descriptorCopyCount, copies.p))
 			descriptorCopyCount = 0;
 	}
 #endif

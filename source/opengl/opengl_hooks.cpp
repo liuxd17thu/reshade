@@ -438,8 +438,9 @@ static void update_framebuffer_object(GLenum target, GLuint framebuffer = 0)
 	}
 }
 
-#  if !RESHADE_ADDON_LITE
+#endif
 
+#if RESHADE_ADDON && !RESHADE_ADDON_LITE
 static bool copy_buffer_region(GLenum src_target, GLuint src_object, GLintptr src_offset, GLenum dst_target, GLuint dst_object, GLintptr dst_offset, GLsizeiptr size)
 {
 	if (!g_current_context || !reshade::has_addon_event<reshade::addon_event::copy_buffer_region>())
@@ -599,9 +600,9 @@ static bool update_texture_region(GLenum target, GLuint object, GLint level, GLi
 		return reshade::invoke_addon_event<reshade::addon_event::copy_buffer_to_texture>(g_current_context, src, reinterpret_cast<uintptr_t>(pixels), row_length, slice_height, dst, subresource, &dst_box);
 	}
 }
+#endif
 
-#  endif
-
+#if RESHADE_ADDON
 static void update_current_primitive_topology(GLenum mode, GLenum type)
 {
 	assert(g_current_context != nullptr);
@@ -611,7 +612,7 @@ static void update_current_primitive_topology(GLenum mode, GLenum type)
 	{
 		g_current_context->_current_prim_mode = mode;
 
-#  if !RESHADE_ADDON_LITE
+#if RESHADE_ADDON && !RESHADE_ADDON_LITE
 		const reshade::api::dynamic_state state = reshade::api::dynamic_state::primitive_topology;
 		uint32_t value = static_cast<uint32_t>(reshade::opengl::convert_primitive_topology(mode));
 
@@ -625,16 +626,15 @@ static void update_current_primitive_topology(GLenum mode, GLenum type)
 		}
 
 		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, 1, &state, &value);
-#  endif
+#endif
 	}
 }
+#endif
 
 static __forceinline GLuint get_index_buffer_offset(const GLvoid *indices)
 {
 	return g_current_context->_current_ibo != 0 ? static_cast<uint32_t>(reinterpret_cast<uintptr_t>(indices) / reshade::opengl::get_index_type_size(g_current_context->_current_index_type)) : 0;
 }
-
-#endif
 
 #ifdef GL_VERSION_1_0
 extern "C" void APIENTRY glTexImage1D(GLenum target, GLint level, GLint internalformat, GLsizei width, GLint border, GLenum format, GLenum type, const GLvoid *pixels)
@@ -677,9 +677,11 @@ extern "C" void APIENTRY glTexImage2D(GLenum target, GLint level, GLint internal
 			trampoline(target, level, internalformat, width, height, border, format, type, pixels);
 			if (target == GL_TEXTURE_CUBE_MAP_POSITIVE_X)
 				resource.invoke_initialize_event(0); // Initialize resource with the first cubemap face
-#  if !RESHADE_ADDON_LITE
+#endif
+#if RESHADE_ADDON && !RESHADE_ADDON_LITE
 			update_texture_region(target, 0, level, 0, 0, 0, width, height, 1, format, type, pixels);
-#  endif
+#endif
+#if RESHADE_ADDON
 		}
 		else
 		{
@@ -873,7 +875,7 @@ extern "C" void APIENTRY glCullFace(GLenum mode)
 		const reshade::api::dynamic_state states[1] = { reshade::api::dynamic_state::cull_mode };
 		const uint32_t values[1] = { static_cast<uint32_t>(reshade::opengl::convert_cull_mode(mode)) };
 
-		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, 1, states, values);
+		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, static_cast<uint32_t>(std::size(states)), states, values);
 	}
 #endif
 }
@@ -889,7 +891,7 @@ extern "C" void APIENTRY glFrontFace(GLenum mode)
 		const reshade::api::dynamic_state states[1] = { reshade::api::dynamic_state::front_counter_clockwise };
 		const uint32_t values[1] = { mode == GL_CCW };
 
-		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, 1, states, values);
+		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, static_cast<uint32_t>(std::size(states)), states, values);
 	}
 #endif
 }
@@ -920,7 +922,7 @@ extern "C" void APIENTRY glPolygonMode(GLenum face, GLenum mode)
 		const reshade::api::dynamic_state states[1] = { reshade::api::dynamic_state::fill_mode };
 		const uint32_t values[1] = { static_cast<uint32_t>(reshade::opengl::convert_fill_mode(mode)) };
 
-		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, 1, states, values);
+		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, static_cast<uint32_t>(std::size(states)), states, values);
 	}
 #endif
 }
@@ -937,7 +939,7 @@ extern "C" void APIENTRY glAlphaFunc(GLenum func, GLclampf ref)
 		const reshade::api::dynamic_state states[2] = { reshade::api::dynamic_state::alpha_func, reshade::api::dynamic_state::alpha_reference_value };
 		const uint32_t values[2] = { static_cast<uint32_t>(reshade::opengl::convert_compare_op(func)), *reinterpret_cast<const uint32_t *>(&ref) };
 
-		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, 2, states, values);
+		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, static_cast<uint32_t>(std::size(states)), states, values);
 	}
 #endif
 }
@@ -953,7 +955,7 @@ extern "C" void APIENTRY glBlendFunc(GLenum sfactor, GLenum dfactor)
 		const reshade::api::dynamic_state states[4] = { reshade::api::dynamic_state::source_color_blend_factor, reshade::api::dynamic_state::dest_color_blend_factor, reshade::api::dynamic_state::source_alpha_blend_factor, reshade::api::dynamic_state::dest_alpha_blend_factor };
 		const uint32_t values[4] = { static_cast<uint32_t>(reshade::opengl::convert_blend_factor(sfactor)), static_cast<uint32_t>(reshade::opengl::convert_blend_factor(dfactor)), static_cast<uint32_t>(reshade::opengl::convert_blend_factor(sfactor)), static_cast<uint32_t>(reshade::opengl::convert_blend_factor(dfactor)) };
 
-		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, 4, states, values);
+		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, static_cast<uint32_t>(std::size(states)), states, values);
 	}
 #endif
 }
@@ -969,7 +971,7 @@ extern "C" void APIENTRY glLogicOp(GLenum opcode)
 		const reshade::api::dynamic_state states[1] = { reshade::api::dynamic_state::logic_op };
 		const uint32_t values[1] = { static_cast<uint32_t>(reshade::opengl::convert_logic_op(opcode)) };
 
-		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, 1, states, values);
+		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, static_cast<uint32_t>(std::size(states)), states, values);
 	}
 #endif
 }
@@ -985,7 +987,7 @@ extern "C" void APIENTRY glColorMask(GLboolean red, GLboolean green, GLboolean b
 		const reshade::api::dynamic_state states[1] = { reshade::api::dynamic_state::render_target_write_mask };
 		const uint32_t values[1] = { static_cast<uint32_t>((red) | (green << 1) | (blue << 2) | (alpha << 3)) };
 
-		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, 1, states, values);
+		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, static_cast<uint32_t>(std::size(states)), states, values);
 	}
 #endif
 }
@@ -1002,7 +1004,7 @@ extern "C" void APIENTRY glDepthFunc(GLenum func)
 		const reshade::api::dynamic_state states[1] = { reshade::api::dynamic_state::depth_func };
 		const uint32_t values[1] = { static_cast<uint32_t>(reshade::opengl::convert_compare_op(func)) };
 
-		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, 1, states, values);
+		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, static_cast<uint32_t>(std::size(states)), states, values);
 	}
 #endif
 }
@@ -1018,7 +1020,7 @@ extern "C" void APIENTRY glDepthMask(GLboolean flag)
 		const reshade::api::dynamic_state states[1] = { reshade::api::dynamic_state::depth_write_mask };
 		const uint32_t values[1] = { flag };
 
-		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, 1, states, values);
+		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, static_cast<uint32_t>(std::size(states)), states, values);
 	}
 #endif
 }
@@ -1032,10 +1034,12 @@ extern "C" void APIENTRY glStencilFunc(GLenum func, GLint ref, GLuint mask)
 	if (g_current_context &&
 		reshade::has_addon_event<reshade::addon_event::bind_pipeline_states>())
 	{
-		const reshade::api::dynamic_state states[4] = { reshade::api::dynamic_state::front_stencil_func, reshade::api::dynamic_state::back_stencil_func, reshade::api::dynamic_state::stencil_reference_value, reshade::api::dynamic_state::stencil_read_mask };
-		const uint32_t values[4] = { static_cast<uint32_t>(reshade::opengl::convert_compare_op(func)), static_cast<uint32_t>(reshade::opengl::convert_compare_op(func)), static_cast<uint32_t>(ref), mask };
+		const auto stencil_func = reshade::opengl::convert_compare_op(func);
 
-		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, 4, states, values);
+		const reshade::api::dynamic_state states[6] = { reshade::api::dynamic_state::front_stencil_func, reshade::api::dynamic_state::front_stencil_reference_value, reshade::api::dynamic_state::front_stencil_read_mask, reshade::api::dynamic_state::back_stencil_func, reshade::api::dynamic_state::back_stencil_reference_value, reshade::api::dynamic_state::back_stencil_read_mask };
+		const uint32_t values[6] = { static_cast<uint32_t>(stencil_func), static_cast<uint32_t>(ref), mask, static_cast<uint32_t>(stencil_func), static_cast<uint32_t>(ref), mask };
+
+		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, static_cast<uint32_t>(std::size(states)), states, values);
 	}
 #endif
 }
@@ -1048,10 +1052,14 @@ extern "C" void APIENTRY glStencilOp(GLenum fail, GLenum zfail, GLenum zpass)
 	if (g_current_context &&
 		reshade::has_addon_event<reshade::addon_event::bind_pipeline_states>())
 	{
-		const reshade::api::dynamic_state states[6] = { reshade::api::dynamic_state::front_stencil_fail_op, reshade::api::dynamic_state::back_stencil_fail_op, reshade::api::dynamic_state::front_stencil_depth_fail_op, reshade::api::dynamic_state::back_stencil_depth_fail_op, reshade::api::dynamic_state::front_stencil_pass_op, reshade::api::dynamic_state::back_stencil_pass_op };
-		const uint32_t values[6] = { static_cast<uint32_t>(reshade::opengl::convert_stencil_op(fail)), static_cast<uint32_t>(reshade::opengl::convert_stencil_op(fail)), static_cast<uint32_t>(reshade::opengl::convert_stencil_op(zfail)), static_cast<uint32_t>(reshade::opengl::convert_stencil_op(zfail)), static_cast<uint32_t>(reshade::opengl::convert_stencil_op(zpass)), static_cast<uint32_t>(reshade::opengl::convert_stencil_op(zpass)) };
+		const auto stencil_fail_op = reshade::opengl::convert_stencil_op(fail);
+		const auto stencil_depth_fail_op = reshade::opengl::convert_stencil_op(zfail);
+		const auto stencil_pass_op = reshade::opengl::convert_stencil_op(zpass);
 
-		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, 6, states, values);
+		const reshade::api::dynamic_state states[6] = { reshade::api::dynamic_state::front_stencil_fail_op, reshade::api::dynamic_state::front_stencil_depth_fail_op, reshade::api::dynamic_state::front_stencil_pass_op, reshade::api::dynamic_state::back_stencil_fail_op, reshade::api::dynamic_state::back_stencil_depth_fail_op, reshade::api::dynamic_state::back_stencil_pass_op };
+		const uint32_t values[6] = { static_cast<uint32_t>(stencil_fail_op), static_cast<uint32_t>(stencil_depth_fail_op), static_cast<uint32_t>(stencil_pass_op), static_cast<uint32_t>(stencil_fail_op), static_cast<uint32_t>(stencil_depth_fail_op), static_cast<uint32_t>(stencil_pass_op) };
+
+		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, static_cast<uint32_t>(std::size(states)), states, values);
 	}
 #endif
 }
@@ -1064,10 +1072,10 @@ extern "C" void APIENTRY glStencilMask(GLuint mask)
 	if (g_current_context &&
 		reshade::has_addon_event<reshade::addon_event::bind_pipeline_states>())
 	{
-		const reshade::api::dynamic_state states[1] = { reshade::api::dynamic_state::stencil_write_mask };
-		const uint32_t values[1] = { mask };
+		const reshade::api::dynamic_state states[2] = { reshade::api::dynamic_state::front_stencil_write_mask, reshade::api::dynamic_state::back_stencil_write_mask };
+		const uint32_t values[2] = { mask, mask };
 
-		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, 1, states, values);
+		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, static_cast<uint32_t>(std::size(states)), states, values);
 	}
 #endif
 }
@@ -1228,7 +1236,7 @@ extern "C" void APIENTRY glBindTexture(GLenum target, GLuint texture)
 			reshade::api::shader_stage::all,
 			// See global pipeline layout specified in 'device_impl::device_impl'
 			reshade::opengl::global_pipeline_layout, 0,
-			reshade::api::descriptor_set_update { {}, static_cast<GLuint>(texunit), 0, 1, reshade::api::descriptor_type::sampler_with_resource_view, &descriptor_data });
+			reshade::api::descriptor_table_update { {}, static_cast<GLuint>(texunit), 0, 1, reshade::api::descriptor_type::sampler_with_resource_view, &descriptor_data });
 	}
 #endif
 }
@@ -1245,7 +1253,7 @@ extern "C" void APIENTRY glPolygonOffset(GLfloat factor, GLfloat units)
 		const reshade::api::dynamic_state states[2] = { reshade::api::dynamic_state::depth_bias_slope_scaled, reshade::api::dynamic_state::depth_bias };
 		const uint32_t values[2] = { *reinterpret_cast<const uint32_t *>(&factor), *reinterpret_cast<const uint32_t *>(&units) };
 
-		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, 2, states, values);
+		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, static_cast<uint32_t>(std::size(states)), states, values);
 	}
 #endif
 }
@@ -1379,9 +1387,11 @@ void APIENTRY glCompressedTexImage2D(GLenum target, GLint level, GLenum internal
 			trampoline(target, level, internalformat, width, height, border, imageSize, data);
 			if (target == GL_TEXTURE_CUBE_MAP_POSITIVE_X)
 				resource.invoke_initialize_event(0); // Initialize resource with the first cubemap face
-#  if !RESHADE_ADDON_LITE
+#endif
+#if RESHADE_ADDON && !RESHADE_ADDON_LITE
 			update_texture_region(target, 0, level, 0, 0, 0, width, height, 1, internalformat, GL_UNSIGNED_BYTE, data);
-#  endif
+#endif
+#if RESHADE_ADDON
 		}
 		else
 		{
@@ -1459,7 +1469,7 @@ void APIENTRY glBlendFuncSeparate(GLenum sfactorRGB, GLenum dfactorRGB, GLenum s
 		const reshade::api::dynamic_state states[4] = { reshade::api::dynamic_state::source_color_blend_factor, reshade::api::dynamic_state::dest_color_blend_factor, reshade::api::dynamic_state::source_alpha_blend_factor, reshade::api::dynamic_state::dest_alpha_blend_factor };
 		const uint32_t values[4] = { static_cast<uint32_t>(reshade::opengl::convert_blend_factor(sfactorRGB)), static_cast<uint32_t>(reshade::opengl::convert_blend_factor(dfactorRGB)), static_cast<uint32_t>(reshade::opengl::convert_blend_factor(sfactorAlpha)), static_cast<uint32_t>(reshade::opengl::convert_blend_factor(dfactorAlpha)) };
 
-		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, 4, states, values);
+		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, static_cast<uint32_t>(std::size(states)), states, values);
 	}
 #endif
 }
@@ -1479,7 +1489,7 @@ void APIENTRY glBlendColor(GLfloat red, GLfloat green, GLfloat blue, GLfloat alp
 			((static_cast<uint32_t>(blue  * 255.f) & 0xFF) << 16) |
 			((static_cast<uint32_t>(alpha * 255.f) & 0xFF) << 24) };
 
-		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, 1, states, values);
+		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, static_cast<uint32_t>(std::size(states)), states, values);
 	}
 #endif
 }
@@ -1495,7 +1505,7 @@ void APIENTRY glBlendEquation(GLenum mode)
 		const reshade::api::dynamic_state states[2] = { reshade::api::dynamic_state::color_blend_op, reshade::api::dynamic_state::alpha_blend_op };
 		const uint32_t values[2] = { static_cast<uint32_t>(reshade::opengl::convert_blend_op(mode)), static_cast<uint32_t>(reshade::opengl::convert_blend_op(mode)) };
 
-		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, 2, states, values);
+		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, static_cast<uint32_t>(std::size(states)), states, values);
 	}
 #endif
 }
@@ -1843,7 +1853,9 @@ void APIENTRY glUseProgram(GLuint program)
 #if RESHADE_ADDON && !RESHADE_ADDON_LITE
 	if (g_current_context)
 	{
-		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline>(g_current_context, reshade::api::pipeline_stage::all_shader_stages, program != 0 ? reshade::api::pipeline { (static_cast<uint64_t>(GL_PROGRAM) << 40) | program } : reshade::api::pipeline {});
+		const auto pipeline = (program != 0) ? reshade::api::pipeline { (static_cast<uint64_t>(GL_PROGRAM) << 40) | program } : reshade::api::pipeline {};
+
+		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline>(g_current_context, reshade::api::pipeline_stage::all_shader_stages, pipeline);
 	}
 #endif
 }
@@ -1860,7 +1872,7 @@ void APIENTRY glBlendEquationSeparate(GLenum modeRGB, GLenum modeAlpha)
 		const reshade::api::dynamic_state states[2] = { reshade::api::dynamic_state::color_blend_op, reshade::api::dynamic_state::alpha_blend_op };
 		const uint32_t values[2] = { static_cast<uint32_t>(reshade::opengl::convert_blend_op(modeRGB)), static_cast<uint32_t>(reshade::opengl::convert_blend_op(modeAlpha)) };
 
-		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, 2, states, values);
+		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, static_cast<uint32_t>(std::size(states)), states, values);
 	}
 #endif
 }
@@ -1874,13 +1886,12 @@ void APIENTRY glStencilFuncSeparate(GLenum face, GLenum func, GLint ref, GLuint 
 	if (g_current_context &&
 		reshade::has_addon_event<reshade::addon_event::bind_pipeline_states>())
 	{
-		const auto front_state = (face == GL_FRONT || face == GL_FRONT_AND_BACK) ? reshade::api::dynamic_state::front_stencil_func : reshade::api::dynamic_state::back_stencil_func;
-		const auto back_state = (face == GL_BACK || face == GL_FRONT_AND_BACK) ? reshade::api::dynamic_state::back_stencil_func : reshade::api::dynamic_state::front_stencil_func;
+		const auto stencil_func = reshade::opengl::convert_compare_op(func);
 
-		const reshade::api::dynamic_state states[4] = { front_state, back_state, reshade::api::dynamic_state::stencil_reference_value, reshade::api::dynamic_state::stencil_read_mask };
-		const uint32_t values[4] = { static_cast<uint32_t>(reshade::opengl::convert_compare_op(func)), static_cast<uint32_t>(reshade::opengl::convert_compare_op(func)), static_cast<uint32_t>(ref), mask };
+		const reshade::api::dynamic_state states[6] = { reshade::api::dynamic_state::front_stencil_func, reshade::api::dynamic_state::front_stencil_reference_value, reshade::api::dynamic_state::front_stencil_read_mask, reshade::api::dynamic_state::back_stencil_func, reshade::api::dynamic_state::back_stencil_reference_value, reshade::api::dynamic_state::back_stencil_read_mask };
+		const uint32_t values[6] = { static_cast<uint32_t>(stencil_func), static_cast<uint32_t>(ref), mask, static_cast<uint32_t>(stencil_func), static_cast<uint32_t>(ref), mask };
 
-		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, 4, states, values);
+		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, face == GL_FRONT_AND_BACK ? 6 : 3, &states[face == GL_BACK ? 3 : 0], values);
 	}
 #endif
 }
@@ -1893,17 +1904,14 @@ void APIENTRY glStencilOpSeparate(GLenum face, GLenum fail, GLenum zfail, GLenum
 	if (g_current_context &&
 		reshade::has_addon_event<reshade::addon_event::bind_pipeline_states>())
 	{
-		const auto front_fail_state = (face == GL_FRONT || face == GL_FRONT_AND_BACK) ? reshade::api::dynamic_state::front_stencil_fail_op : reshade::api::dynamic_state::back_stencil_fail_op;
-		const auto back_fail_state = (face == GL_BACK || face == GL_FRONT_AND_BACK) ? reshade::api::dynamic_state::back_stencil_fail_op : reshade::api::dynamic_state::front_stencil_fail_op;
-		const auto front_depth_fail_state = (face == GL_FRONT || face == GL_FRONT_AND_BACK) ? reshade::api::dynamic_state::front_stencil_depth_fail_op : reshade::api::dynamic_state::back_stencil_depth_fail_op;
-		const auto back_depth_fail_state = (face == GL_BACK || face == GL_FRONT_AND_BACK) ? reshade::api::dynamic_state::back_stencil_depth_fail_op : reshade::api::dynamic_state::front_stencil_depth_fail_op;
-		const auto front_pass_state = (face == GL_FRONT || face == GL_FRONT_AND_BACK) ? reshade::api::dynamic_state::front_stencil_pass_op : reshade::api::dynamic_state::back_stencil_pass_op;
-		const auto back_passs_state = (face == GL_BACK || face == GL_FRONT_AND_BACK) ? reshade::api::dynamic_state::back_stencil_pass_op : reshade::api::dynamic_state::front_stencil_pass_op;
+		const auto stencil_fail_op = reshade::opengl::convert_stencil_op(fail);
+		const auto stencil_depth_fail_op = reshade::opengl::convert_stencil_op(zfail);
+		const auto stencil_pass_op = reshade::opengl::convert_stencil_op(zpass);
 
-		const reshade::api::dynamic_state states[6] = { front_fail_state, back_fail_state, front_depth_fail_state, back_depth_fail_state, front_pass_state, back_passs_state };
-		const uint32_t values[6] = { static_cast<uint32_t>(reshade::opengl::convert_stencil_op(fail)), static_cast<uint32_t>(reshade::opengl::convert_stencil_op(fail)), static_cast<uint32_t>(reshade::opengl::convert_stencil_op(zfail)), static_cast<uint32_t>(reshade::opengl::convert_stencil_op(zfail)), static_cast<uint32_t>(reshade::opengl::convert_stencil_op(zpass)), static_cast<uint32_t>(reshade::opengl::convert_stencil_op(zpass)) };
+		const reshade::api::dynamic_state states[6] = { reshade::api::dynamic_state::front_stencil_fail_op, reshade::api::dynamic_state::front_stencil_depth_fail_op, reshade::api::dynamic_state::front_stencil_pass_op, reshade::api::dynamic_state::back_stencil_fail_op, reshade::api::dynamic_state::back_stencil_depth_fail_op, reshade::api::dynamic_state::back_stencil_pass_op };
+		const uint32_t values[6] = { static_cast<uint32_t>(stencil_fail_op), static_cast<uint32_t>(stencil_depth_fail_op), static_cast<uint32_t>(stencil_pass_op), static_cast<uint32_t>(stencil_fail_op), static_cast<uint32_t>(stencil_depth_fail_op), static_cast<uint32_t>(stencil_pass_op) };
 
-		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, 6, states, values);
+		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, face == GL_FRONT_AND_BACK ? 6 : 3, &states[face == GL_BACK ? 3 : 0], values);
 	}
 #endif
 }
@@ -1916,10 +1924,10 @@ void APIENTRY glStencilMaskSeparate(GLenum face, GLuint mask)
 	if (g_current_context &&
 		reshade::has_addon_event<reshade::addon_event::bind_pipeline_states>())
 	{
-		const reshade::api::dynamic_state states[1] = { reshade::api::dynamic_state::stencil_write_mask };
-		const uint32_t values[1] = { mask };
+		const reshade::api::dynamic_state states[2] = { reshade::api::dynamic_state::front_stencil_write_mask, reshade::api::dynamic_state::back_stencil_write_mask };
+		const uint32_t values[2] = { mask, mask };
 
-		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, 1, states, values);
+		reshade::invoke_addon_event<reshade::addon_event::bind_pipeline_states>(g_current_context, face == GL_FRONT_AND_BACK ? 2 : 1, &states[face == GL_BACK ? 1 : 0], values);
 	}
 #endif
 }
@@ -2458,7 +2466,7 @@ void APIENTRY glBindBufferBase(GLenum target, GLuint index, GLuint buffer)
 				reshade::api::shader_stage::all,
 				// See global pipeline layout specified in 'device_impl::device_impl'
 				reshade::opengl::global_pipeline_layout, layout_param,
-				reshade::api::descriptor_set_update { {}, index, 0, 1, type, &descriptor_data });
+				reshade::api::descriptor_table_update { {}, index, 0, 1, type, &descriptor_data });
 		}
 		else if ((target == GL_TRANSFORM_FEEDBACK_BUFFER) && reshade::has_addon_event<reshade::addon_event::bind_stream_output_buffers>())
 		{
@@ -2495,7 +2503,7 @@ void APIENTRY glBindBufferRange(GLenum target, GLuint index, GLuint buffer, GLin
 				reshade::api::shader_stage::all,
 				// See global pipeline layout specified in 'device_impl::device_impl'
 				reshade::opengl::global_pipeline_layout, layout_param,
-				reshade::api::descriptor_set_update { {}, index, 0, 1, type, &descriptor_data });
+				reshade::api::descriptor_table_update { {}, index, 0, 1, type, &descriptor_data });
 		}
 		else if ((target == GL_TRANSFORM_FEEDBACK_BUFFER) && reshade::has_addon_event<reshade::addon_event::bind_stream_output_buffers>())
 		{
@@ -3141,7 +3149,7 @@ void APIENTRY glBindImageTexture(GLuint unit, GLuint texture, GLint level, GLboo
 			reshade::api::shader_stage::all,
 			// See global pipeline layout specified in 'device_impl::device_impl'
 			reshade::opengl::global_pipeline_layout, 3,
-			reshade::api::descriptor_set_update { {}, unit, 0, 1, reshade::api::descriptor_type::unordered_access_view, &descriptor_data });
+			reshade::api::descriptor_table_update { {}, unit, 0, 1, reshade::api::descriptor_type::unordered_access_view, &descriptor_data });
 	}
 #endif
 }
@@ -3468,7 +3476,7 @@ void APIENTRY glBindBuffersBase(GLenum target, GLuint first, GLsizei count, cons
 				reshade::api::shader_stage::all,
 				// See global pipeline layout specified in 'device_impl::device_impl'
 				reshade::opengl::global_pipeline_layout, layout_param,
-				reshade::api::descriptor_set_update { {}, first, 0, static_cast<uint32_t>(count), type, descriptor_data.p });
+				reshade::api::descriptor_table_update { {}, first, 0, static_cast<uint32_t>(count), type, descriptor_data.p });
 		}
 		else if ((target == GL_TRANSFORM_FEEDBACK_BUFFER) && reshade::has_addon_event<reshade::addon_event::bind_stream_output_buffers>())
 		{
@@ -3531,7 +3539,7 @@ void APIENTRY glBindBuffersRange(GLenum target, GLuint first, GLsizei count, con
 				reshade::api::shader_stage::all,
 				// See global pipeline layout specified in 'device_impl::device_impl'
 				reshade::opengl::global_pipeline_layout, layout_param,
-				reshade::api::descriptor_set_update { {}, first, 0, static_cast<uint32_t>(count), type, descriptor_data.p });
+				reshade::api::descriptor_table_update { {}, first, 0, static_cast<uint32_t>(count), type, descriptor_data.p });
 		}
 		else if ((target == GL_TRANSFORM_FEEDBACK_BUFFER) && reshade::has_addon_event<reshade::addon_event::bind_stream_output_buffers>())
 		{
@@ -3592,7 +3600,7 @@ void APIENTRY glBindTextures(GLuint first, GLsizei count, const GLuint *textures
 			reshade::api::shader_stage::all,
 			// See global pipeline layout specified in 'device_impl::device_impl'
 			reshade::opengl::global_pipeline_layout, 0,
-			reshade::api::descriptor_set_update { {}, first, 0, static_cast<uint32_t>(count), reshade::api::descriptor_type::sampler_with_resource_view, descriptor_data.p });
+			reshade::api::descriptor_table_update { {}, first, 0, static_cast<uint32_t>(count), reshade::api::descriptor_type::sampler_with_resource_view, descriptor_data.p });
 	}
 #endif
 }
@@ -3628,7 +3636,7 @@ void APIENTRY glBindImageTextures(GLuint first, GLsizei count, const GLuint *tex
 			reshade::api::shader_stage::all,
 			// See global pipeline layout specified in 'device_impl::device_impl'
 			reshade::opengl::global_pipeline_layout, 3,
-			reshade::api::descriptor_set_update { {}, first, 0, static_cast<uint32_t>(count), reshade::api::descriptor_type::unordered_access_view, descriptor_data.p });
+			reshade::api::descriptor_table_update { {}, first, 0, static_cast<uint32_t>(count), reshade::api::descriptor_type::unordered_access_view, descriptor_data.p });
 	}
 #endif
 }
@@ -4207,7 +4215,7 @@ void APIENTRY glBindTextureUnit(GLuint unit, GLuint texture)
 			reshade::api::shader_stage::all,
 			// See global pipeline layout specified in 'device_impl::device_impl'
 			reshade::opengl::global_pipeline_layout, 0,
-			reshade::api::descriptor_set_update { {}, unit, 0, 1, reshade::api::descriptor_type::sampler_with_resource_view, &descriptor_data });
+			reshade::api::descriptor_table_update { {}, unit, 0, 1, reshade::api::descriptor_type::sampler_with_resource_view, &descriptor_data });
 	}
 #endif
 }
@@ -4314,7 +4322,7 @@ void APIENTRY glBindMultiTextureEXT(GLenum texunit, GLenum target, GLuint textur
 			reshade::api::shader_stage::all,
 			// See global pipeline layout specified in 'device_impl::device_impl'
 			reshade::opengl::global_pipeline_layout, 0,
-			reshade::api::descriptor_set_update { {}, texunit, 0, 1, reshade::api::descriptor_type::sampler_with_resource_view, &descriptor_data });
+			reshade::api::descriptor_table_update { {}, texunit, 0, 1, reshade::api::descriptor_type::sampler_with_resource_view, &descriptor_data });
 	}
 #endif
 }
