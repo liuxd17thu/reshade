@@ -2013,10 +2013,10 @@ void reshade::runtime::draw_gui_settings()
 
 #if RESHADE_FX
 		ImGui::BeginDisabled(_preset_transition_duration == 0);
-		modified |= ImGui::Checkbox("Show preset transition message", &_show_preset_transition_message);
+		modified |= ImGui::Checkbox("显示预设过渡消息", &_show_preset_transition_message);
 		ImGui::EndDisabled();
 		if (_preset_transition_duration == 0 && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_ForTooltip))
-			ImGui::SetTooltip("Preset transition duration has to be non-zero for the preset transition message to show up.");
+			ImGui::SetTooltip("预设过渡时间设置为非零值时，该消息才会显示。");
 
 		if (_effect_load_skipping)
 			modified |= ImGui::Checkbox("显示“加载所有效果”按钮", &_show_force_load_effects_button);
@@ -2709,10 +2709,10 @@ void reshade::runtime::draw_gui_log()
 }
 void reshade::runtime::draw_gui_about()
 {
-	ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT " CN2-v0.62e");
+	ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT " CN2-v0.70a");
 
 	ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 7.8f * _font_size);
-	if (ImGui::SmallButton(" 打开官网 "))
+	if (ImGui::SmallButton(" 原版官网 "))
 		utils::execute_command("https://reshade.me");
 	ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 3.5f * _font_size);
 	if (ImGui::SmallButton(" 汉化源码 "))
@@ -2723,9 +2723,9 @@ void reshade::runtime::draw_gui_about()
 	ImGui::PushTextWrapPos();
 
 	ImGui::TextUnformatted("Developed and maintained by crosire.");
-	ImGui::TextUnformatted("汉化：路障MKXX");
+	ImGui::TextUnformatted("汉化 + 魔改：路障MKXX");
 	ImGui::TextUnformatted("联系方式：[微博同名] | 路障MKXX @FF14-宇宙和音 | wujingluren @NGA | liuxd17thu @github");
-	ImGui::TextUnformatted("感谢【激战2玩家 印度神油君 id维爵爷.7046】提供的5.6.0汉化！");
+	ImGui::TextUnformatted("感谢【印度神油君】【粒粒梦想】【白玉為何物】【夜莺不语】等人提供的帮助，以及各位用户的支持！");
 	ImGui::TextUnformatted("This project makes use of several open source libraries, licenses of which are listed below:");
 
 	if (ImGui::CollapsingHeader("ReShade", ImGuiTreeNodeFlags_DefaultOpen))
@@ -3125,7 +3125,7 @@ void reshade::runtime::draw_variable_editor()
 					if (_ui_bind_support && _auto_save_preset && !ui_bind_definition.empty()) {
 						//reset_uniform_value(variable_it);
 						//_uniform_binding_updated = effect_index;
-						//force_reload_effect = true;
+						force_reload_effect = true;
 						reset_uniform_value(variable_it, effect.definition_bindings[ui_bind_definition]);
 					}
 					else
