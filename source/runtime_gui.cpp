@@ -3120,8 +3120,17 @@ void reshade::runtime::draw_variable_editor()
 		{
 			// Reset all uniform variables
 			for (uniform &variable_it : effect.uniforms)
-				if (variable_it.special == special_uniform::none)
-					reset_uniform_value(variable_it);
+				if (variable_it.special == special_uniform::none) {
+					std::string ui_bind_definition { variable_it.annotation_as_string("ui_bind") };
+					if (_ui_bind_support && _auto_save_preset && !ui_bind_definition.empty()) {
+						//reset_uniform_value(variable_it);
+						//_uniform_binding_updated = effect_index;
+						//force_reload_effect = true;
+						reset_uniform_value(variable_it, effect.definition_bindings[ui_bind_definition]);
+					}
+					else
+						reset_uniform_value(variable_it);
+				}
 
 			// Reset all preprocessor definitions
 			if (const auto preset_it = _preset_preprocessor_definitions.find({});
@@ -3146,8 +3155,12 @@ void reshade::runtime::draw_variable_editor()
 				force_reload_effect = true;
 			}
 
-			if (_auto_save_preset)
+			if (_auto_save_preset) {
 				save_current_preset();
+				if (_ui_bind_support) {
+					ini_file::flush_cache(_current_preset_path);
+				}
+			}
 			else
 				_preset_is_modified = true;
 		}
@@ -3207,7 +3220,17 @@ void reshade::runtime::draw_variable_editor()
 							for (uniform &variable_it : effect.uniforms)
 								if (variable_it.special == special_uniform::none &&
 									variable_it.annotation_as_string("ui_category") == category)
-									reset_uniform_value(variable_it);
+								{
+									std::string ui_bind_definition { variable_it.annotation_as_string("ui_bind") };
+									if (_ui_bind_support && _auto_save_preset && !ui_bind_definition.empty())
+									{
+										reset_uniform_value(variable, effect.definition_bindings[ui_bind_definition]);
+										_uniform_binding_updated = effect_index;
+										force_reload_effect = true;
+									}
+									else
+										reset_uniform_value(variable_it);
+								}
 
 							if (_auto_save_preset)
 								save_current_preset();
@@ -3263,19 +3286,18 @@ void reshade::runtime::draw_variable_editor()
 
 					is_default_value = (data == (variable.initializer_value.as_uint[0] != 0));
 
-				if (ui_type == "combo")
-					modified = imgui::combo_with_buttons(label.data(), data);
-				else
-					modified = ImGui::Checkbox(label.data(), &data);
+					if (ui_type == "combo")
+						modified = imgui::combo_with_buttons(label.data(), data);
+					else
+						modified = ImGui::Checkbox(label.data(), &data);
 
 					if (modified) {
 						set_uniform_value(variable, &data);
-					if (_auto_save_preset && _ui_bind_support && uniform_binded) {
-						effect.definition_bindings[ui_bind_definition] = data ? "1" : "0";
-						_uniform_binding_updated = effect_index;
+						if (_auto_save_preset && _ui_bind_support && uniform_binded) {
+							effect.definition_bindings[ui_bind_definition] = data ? "1" : "0";
+							_uniform_binding_updated = effect_index;
+						}
 					}
-				}
-
 					break;
 				}
 				case reshadefx::type::t_int:
@@ -3315,11 +3337,11 @@ void reshade::runtime::draw_variable_editor()
 
 					if (modified) {
 						set_uniform_value(variable, data, 16);
-					if (_auto_save_preset && _ui_bind_support && uniform_binded) {
-						effect.definition_bindings[ui_bind_definition] = std::to_string(data[0]);
-						_uniform_binding_updated = effect_index;
+						if (_auto_save_preset && _ui_bind_support && uniform_binded) {
+							effect.definition_bindings[ui_bind_definition] = std::to_string(data[0]);
+							_uniform_binding_updated = effect_index;
+						}
 					}
-				}
 					break;
 				}
 				case reshadefx::type::t_float:
@@ -3360,19 +3382,19 @@ void reshade::runtime::draw_variable_editor()
 					else
 						modified = ImGui::InputScalarN(label.data(), ImGuiDataType_Float, data, variable.type.rows);
 
-				if (modified) {
-					set_uniform_value(variable, data, 16);
-					if (_auto_save_preset && _ui_bind_support && uniform_binded) {
-						std::stringstream tmp;
-						tmp.precision(precision_format[2] - '0');
-						tmp << data[0];
-						effect.definition_bindings[ui_bind_definition] = tmp.str();
-						_uniform_binding_updated = effect_index;
-						force_reload_effect = true;
+					if (modified) {
+						set_uniform_value(variable, data, 16);
+						if (_auto_save_preset && _ui_bind_support && uniform_binded) {
+							std::stringstream tmp;
+							tmp.precision(precision_format[2] - '0');
+							tmp << data[0];
+							effect.definition_bindings[ui_bind_definition] = tmp.str();
+							_uniform_binding_updated = effect_index;
+							force_reload_effect = true;
+						}
 					}
+					break;
 				}
-				break;
-			}
 			}
 
 			if (ImGui::IsItemActive())
@@ -3403,7 +3425,14 @@ void reshade::runtime::draw_variable_editor()
 				if (ImGui::Button(ICON_FK_UNDO " 重设为默认值", ImVec2(18.0f * _font_size, 0)))
 				{
 					modified = true;
-					reset_uniform_value(variable);
+					if (_ui_bind_support && _auto_save_preset && uniform_binded)
+					{
+						reset_uniform_value(variable, effect.definition_bindings[ui_bind_definition]);
+						_uniform_binding_updated = effect_index;
+						force_reload_effect = true;
+					}
+					else
+						reset_uniform_value(variable);
 					ImGui::CloseCurrentPopup();
 				}
 
@@ -3416,7 +3445,14 @@ void reshade::runtime::draw_variable_editor()
 				if (ImGui::SmallButton(ICON_FK_UNDO))
 				{
 					modified = true;
-					reset_uniform_value(variable);
+					if(_ui_bind_support && _auto_save_preset && uniform_binded)
+					{
+						reset_uniform_value(variable, effect.definition_bindings[ui_bind_definition]);
+						_uniform_binding_updated = effect_index;
+						force_reload_effect = true;
+					}
+					else
+						reset_uniform_value(variable);
 				}
 			}
 

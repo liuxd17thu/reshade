@@ -238,6 +238,7 @@ namespace reshade
 		void update_texture(texture &texture, uint32_t width, uint32_t height, uint32_t depth, const uint8_t *pixels);
 
 		void reset_uniform_value(uniform &variable);
+		void reset_uniform_value(uniform &variable, std::string &ui_bind);
 
 		void get_uniform_value_data(const uniform &variable, uint8_t *data, size_t size, size_t base_index) const;
 		template <typename T>
