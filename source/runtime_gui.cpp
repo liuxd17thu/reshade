@@ -875,7 +875,7 @@ void reshade::runtime::draw_gui()
 			ImGuiWindowFlags_NoDocking |
 			ImGuiWindowFlags_NoFocusOnAppearing);
 
-		ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT);
+		ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT VERSION_CN2);
 
 		if (s_needs_update)
 		{
@@ -2709,7 +2709,7 @@ void reshade::runtime::draw_gui_log()
 }
 void reshade::runtime::draw_gui_about()
 {
-	ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT " CN2-v0.70a");
+	ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT VERSION_CN2);
 
 	ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 7.8f * _font_size);
 	if (ImGui::SmallButton(" 原版官网 "))
