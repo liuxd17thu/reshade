@@ -43,6 +43,7 @@ private:
 	unsigned int _shader_model = 0;
 	bool _debug_info = false;
 	bool _uniforms_to_spec_constants = false;
+	std::unordered_map<std::string, std::string> _remapped_semantics;
 
 	// Only write compatibility intrinsics to result if they are actually in use
 	bool _uses_bitwise_cast = false;
@@ -62,6 +63,9 @@ private:
 				"struct __sampler1D_uint { Texture1D<uint> t; SamplerState s; };\n"
 				"struct __sampler2D_uint { Texture2D<uint> t; SamplerState s; };\n"
 				"struct __sampler3D_uint { Texture3D<uint> t; SamplerState s; };\n"
+				"struct __sampler1D_float { Texture1D<float> t; SamplerState s; };\n"
+				"struct __sampler2D_float { Texture2D<float> t; SamplerState s; };\n"
+				"struct __sampler3D_float { Texture3D<float> t; SamplerState s; };\n"
 				"struct __sampler1D_float4 { Texture1D<float4> t; SamplerState s; };\n"
 				"struct __sampler2D_float4 { Texture2D<float4> t; SamplerState s; };\n"
 				"struct __sampler3D_float4 { Texture3D<float4> t; SamplerState s; };\n";
@@ -391,14 +395,16 @@ private:
 		case texture_format::r32u:
 			s += "uint";
 			break;
-		default:
-			assert(false);
-			[[fallthrough]];
-		case texture_format::unknown:
 		case texture_format::r8:
 		case texture_format::r16:
 		case texture_format::r16f:
 		case texture_format::r32f:
+			s += "float";
+			break;
+		default:
+			assert(false);
+			[[fallthrough]];
+		case texture_format::unknown:
 		case texture_format::rg8:
 		case texture_format::rg16:
 		case texture_format::rg16f:
@@ -436,7 +442,7 @@ private:
 		_names[id] = std::move(name);
 	}
 
-	std::string convert_semantic(const std::string &semantic) const
+	std::string convert_semantic(const std::string &semantic)
 	{
 		if (_shader_model < 40)
 		{
@@ -452,6 +458,25 @@ private:
 				return "TEXCOORD0 /* VERTEXID */";
 			if (semantic == "SV_ISFRONTFACE")
 				return "VFACE";
+
+			if (semantic != "VPOS" &&
+				semantic.compare(0, 5, "COLOR") != 0 &&
+				semantic.compare(0, 6, "NORMAL") != 0 &&
+				semantic.compare(0, 7, "TANGENT") != 0)
+			{
+				// Shader model 3 only supports a selected list of semantic names, so need to remap custom ones to that
+				if (const auto it = _remapped_semantics.find(semantic);
+					it != _remapped_semantics.end())
+					return it->second;
+
+				// Legal semantic indices are between 0 and 15
+				if (_remapped_semantics.size() < 15)
+				{
+					const std::string remapped_semantic = "TEXCOORD" + std::to_string(_remapped_semantics.size()) + " /* " + semantic + " */";
+					_remapped_semantics.emplace(semantic, remapped_semantic);
+					return remapped_semantic;
+				}
+			}
 		}
 		else
 		{

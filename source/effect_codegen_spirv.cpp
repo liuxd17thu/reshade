@@ -354,6 +354,9 @@ private:
 		else
 			assert(format == spv::ImageFormatUnknown);
 
+		if (info.is_sampler() || info.is_storage())
+			info.rows = info.cols = 1;
+
 		// Fall back to 32-bit types and use relaxed precision decoration instead if 16-bit types are not enabled
 		if (!_enable_16bit_types && info.is_numeric() && info.precision() < 32)
 			info.base = static_cast<type::datatype>(info.base + 1); // min16int -> int, min16uint -> uint, min16float -> float
@@ -487,11 +490,10 @@ private:
 				[[fallthrough]];
 			case type::t_sampler2d_int:
 			case type::t_sampler2d_uint:
-			case type::t_sampler3d_int:
 			case type::t_sampler2d_float:
+			case type::t_sampler3d_int:
 			case type::t_sampler3d_uint:
 			case type::t_sampler3d_float:
-				assert(info.cols == 1);
 				elem_type = convert_image_type(info, format);
 				add_instruction(spv::OpTypeSampledImage, 0, _types_and_constants, type)
 					.add(elem_type);
@@ -503,11 +505,10 @@ private:
 				[[fallthrough]];
 			case type::t_storage2d_int:
 			case type::t_storage2d_uint:
-			case type::t_storage3d_int:
 			case type::t_storage2d_float:
+			case type::t_storage3d_int:
 			case type::t_storage3d_uint:
 			case type::t_storage3d_float:
-				assert(info.cols == 1);
 				// No format specified for the storage image
 				if (format == spv::ImageFormatUnknown)
 					add_capability(spv::CapabilityStorageImageWriteWithoutFormat);
@@ -564,12 +565,13 @@ private:
 
 		if (!info.is_storage())
 		{
+			lookup.type = elem_info;
 			lookup.type.base = static_cast<type::datatype>(type::t_texture1d + info.texture_dimension() - 1);
 			lookup.type.definition = static_cast<uint32_t>(elem_info.base);
 		}
 
 		if (const auto it = std::find_if(_type_lookup.begin(), _type_lookup.end(),
-			[&lookup](const auto &lookup_it) { return lookup_it.first == lookup; });
+				[&lookup](const auto &lookup_it) { return lookup_it.first == lookup; });
 			it != _type_lookup.end())
 			return it->second;
 
@@ -606,15 +608,25 @@ private:
 			digit_index--;
 		digit_index++;
 
-		const uint32_t base_index = std::strtoul(semantic.c_str() + digit_index, nullptr, 10);
-		const std::string base_semantic = semantic.substr(0, digit_index);
+		const uint32_t semantic_digit = std::strtoul(semantic.c_str() + digit_index, nullptr, 10);
+		const std::string semantic_base = semantic.substr(0, digit_index);
+
+		uint32_t location = static_cast<uint32_t>(_semantic_to_location.size());
 
 		// Now create adjoining location indices for all possible semantic indices belonging to this semantic name
-		uint32_t location = static_cast<uint32_t>(_semantic_to_location.size());
-		for (uint32_t a = 0; a < max_array_length + base_index; ++a)
-			_semantic_to_location.emplace(base_semantic + std::to_string(a), location + a);
+		for (uint32_t a = 0; a < semantic_digit + max_array_length; ++a)
+		{
+			const auto insert = _semantic_to_location.emplace(semantic_base + std::to_string(a), location + a);
+			if (!insert.second)
+			{
+				assert(a == 0 || (insert.first->second - a) == location);
 
-		return location + base_index;
+				// Semantic was already created with a different location index, so need to remap to that
+				location = insert.first->second - a;
+			}
+		}
+
+		return location + semantic_digit;
 	}
 
 	const spv::BuiltIn semantic_to_builtin(const std::string &semantic, shader_type stype) const
