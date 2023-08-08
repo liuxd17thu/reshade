@@ -42,6 +42,6 @@ $official = Test-Path ($path + "\..\sign.pfx")
 
 #define VERSION_STRING_FILE "$([string]::Join('.', $version))"
 #define VERSION_STRING_PRODUCT "$($version[0]).$($version[1]).$($version[2])"
-#define VERSION_CN2 " CN2-v0.70b"
+#define VERSION_CN2 " CN2-v0.70c"
 "@ | Out-File -FilePath $path -Encoding ASCII
 # #define VERSION_STRING_PRODUCT "$($version[0]).$($version[1]).$($version[2])$(if (-not $official) { " UNOFFICIAL" })"

@@ -150,9 +150,16 @@ void reshade::runtime::build_font_atlas()
 			LOG(ERROR) << "Failed to load font from " << _font_path << " with error code " << ec.value() << '!';
 			_font_path.clear();
 		}
+		// try msyh.ttc
+		if (_font_path.empty()) {
+			resolved_font_path = L"C:\\Windows\\Fonts\\msyh.ttc";
+			if (!resolved_font_path.empty() && (!resolve_path(resolved_font_path, ec) || atlas->AddFontFromFileTTF(resolved_font_path.u8string().c_str(), cfg.SizePixels, &cfg, atlas->GetGlyphRangesChineseFull()) == nullptr)) {
+				resolved_font_path.clear();
+			}
+		}
 
 		// Use default font if custom font failed to load
-		if (_font_path.empty())
+		if (_font_path.empty() && resolved_font_path.empty())
 			atlas->AddFontDefault(&cfg);
 
 		// Merge icons into main font
@@ -173,13 +180,20 @@ void reshade::runtime::build_font_atlas()
 
 		std::error_code ec;
 		std::filesystem::path resolved_font_path = _editor_font_path;
-		if (!resolved_font_path.empty() && (!resolve_path(resolved_font_path, ec) || atlas->AddFontFromFileTTF(resolved_font_path.u8string().c_str(), cfg.SizePixels) == nullptr))
+		if (!resolved_font_path.empty() && (!resolve_path(resolved_font_path, ec) || atlas->AddFontFromFileTTF(resolved_font_path.u8string().c_str(), cfg.SizePixels, &cfg, atlas->GetGlyphRangesChineseFull()) == nullptr))
 		{
 			LOG(ERROR) << "Failed to load editor font from " << _editor_font_path << " with error code " << ec.value() << '!';
 			_editor_font_path.clear();
 		}
+		// try msyh.ttc
+		if (_editor_font_path.empty()) {
+			resolved_font_path = L"C:\\Windows\\Fonts\\msyh.ttc";
+			if (!resolved_font_path.empty() && (!resolve_path(resolved_font_path, ec) || atlas->AddFontFromFileTTF(resolved_font_path.u8string().c_str(), cfg.SizePixels, &cfg, atlas->GetGlyphRangesChineseFull()) == nullptr)) {
+				resolved_font_path.clear();
+			}
+		}
 
-		if (_editor_font_path.empty())
+		if (_editor_font_path.empty() && resolved_font_path.empty())
 			atlas->AddFontDefault(&cfg);
 	}
 
@@ -2711,11 +2725,11 @@ void reshade::runtime::draw_gui_about()
 {
 	ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT VERSION_CN2);
 
-	ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 7.8f * _font_size);
-	if (ImGui::SmallButton(" 原版官网 "))
+	ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 10.0f * _font_size);
+	if (ImGui::Button("原版官网", ImVec2(5.0 * _font_size, 0)))
 		utils::execute_command("https://reshade.me");
-	ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 3.5f * _font_size);
-	if (ImGui::SmallButton(" 汉化源码 "))
+	ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 4.5f * _font_size);
+	if (ImGui::Button("汉化源码", ImVec2(5.0 * _font_size, 0)))
 		utils::execute_command("https://github.com/liuxd17thu/reshade.git");
 
 	ImGui::Separator();
@@ -2725,7 +2739,7 @@ void reshade::runtime::draw_gui_about()
 	ImGui::TextUnformatted("Developed and maintained by crosire.");
 	ImGui::TextUnformatted("汉化 + 魔改：路障MKXX");
 	ImGui::TextUnformatted("联系方式：[微博同名] | 路障MKXX @FF14-宇宙和音 | wujingluren @NGA | liuxd17thu @github");
-	ImGui::TextUnformatted("感谢【印度神油君】【粒粒梦想】【白玉為何物】【夜莺不语】等人提供的帮助，以及各位用户的支持！");
+	ImGui::TextUnformatted("感谢【印度神油君】【粒粒梦想】【白玉为何物】【夜莺不语】等人提供的帮助，以及各位用户的支持！");
 	ImGui::TextUnformatted("This project makes use of several open source libraries, licenses of which are listed below:");
 
 	if (ImGui::CollapsingHeader("ReShade", ImGuiTreeNodeFlags_DefaultOpen))
