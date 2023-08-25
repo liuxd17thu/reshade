@@ -21,11 +21,11 @@ void STDMETHODCALLTYPE ID3D10Resource_GetDevice(ID3D10Resource *pResource, ID3D1
 		assert(device != device_proxy);
 
 		*ppDevice = device_proxy;
-		device_proxy->_ref++;
+		InterlockedIncrement(&device_proxy->_ref);
 	}
 }
 
-#if RESHADE_ADDON && !RESHADE_ADDON_LITE
+#if RESHADE_ADDON >= 2
 
 #include "d3d10_impl_type_convert.hpp"
 

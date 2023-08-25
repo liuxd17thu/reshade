@@ -814,7 +814,7 @@ void reshade::runtime::on_present()
 	if (!ini_file::flush_cache())
 		_preset_save_successfull = false;
 
-#if RESHADE_ADDON_LITE
+#if RESHADE_ADDON == 1
 	// Detect high network traffic
 	extern volatile long g_network_traffic;
 
@@ -2181,9 +2181,9 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 				if (std::find(existing_texture->shared.begin(), existing_texture->shared.end(), effect_index) == existing_texture->shared.end())
 					existing_texture->shared.push_back(effect_index);
 
-				// Always make shared textures render targets, since they may be used as such in a different effect
-				existing_texture->render_target = true;
-				existing_texture->storage_access = true;
+				// Update render target and storage access flags of the existing shared texture, in case they are used as such in this effect
+				existing_texture->render_target |= new_texture.render_target;
+				existing_texture->storage_access |= new_texture.storage_access;
 				continue;
 			}
 

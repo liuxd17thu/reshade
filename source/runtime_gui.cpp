@@ -67,6 +67,7 @@ void reshade::runtime::init_gui()
 	_overlay_key_data[2] = false;
 	_overlay_key_data[3] = false;
 
+	ImGuiContext *const backup_context = ImGui::GetCurrentContext();
 	_imgui_context = ImGui::CreateContext();
 
 	ImGuiIO &imgui_io = _imgui_context->IO;
@@ -119,7 +120,8 @@ void reshade::runtime::init_gui()
 	imgui_style.WindowRounding = 0.0f;
 	imgui_style.WindowBorderSize = 0.0f;
 
-	ImGui::SetCurrentContext(nullptr);
+	// Restore previous context in case this was called from a new runtime being created from an add-on event triggered by an existing runtime
+	ImGui::SetCurrentContext(backup_context);
 }
 void reshade::runtime::deinit_gui()
 {
@@ -972,9 +974,6 @@ void reshade::runtime::draw_gui()
 	{
 		ImGui::SetNextWindowPos(_imgui_context->Style.WindowPadding + viewport_offset);
 		ImGui::SetNextWindowSize(ImVec2(imgui_io.DisplaySize.x - 20.0f, 0.0f));
-		ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 1.0f);
-		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.862745f, 0.862745f, 0.862745f, 1.0f));
-		ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.117647f, 0.117647f, 0.117647f, 0.7f));
 		ImGui::Begin("Message Window", nullptr,
 			ImGuiWindowFlags_NoDecoration |
 			ImGuiWindowFlags_NoNav |
@@ -1012,8 +1011,6 @@ void reshade::runtime::draw_gui()
 		viewport_offset.y += ImGui::GetWindowHeight() + _imgui_context->Style.WindowPadding.x; // Add small space between windows
 
 		ImGui::End();
-		ImGui::PopStyleColor(2);
-		ImGui::PopStyleVar();
 	}
 
 	if (show_statistics_window && !show_splash_window && !show_message_window)
@@ -1211,10 +1208,10 @@ void reshade::runtime::draw_gui()
 #endif
 	}
 
-#if RESHADE_ADDON
-#if RESHADE_ADDON_LITE
+#if RESHADE_ADDON == 1
 	if (addon_enabled)
 #endif
+#if RESHADE_ADDON
 	{
 		for (const addon_info &info : addon_loaded_info)
 		{
@@ -2251,11 +2248,11 @@ void reshade::runtime::draw_gui_statistics()
 
 		ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
 		ImGui::PlotLines("##framerate",
-			_imgui_context->FramerateSecPerFrame, 120,
+			_imgui_context->FramerateSecPerFrame, static_cast<int>(std::size(_imgui_context->FramerateSecPerFrame)),
 			_imgui_context->FramerateSecPerFrameIdx,
 			nullptr,
-			_imgui_context->FramerateSecPerFrameAccum / 120 * 0.5f,
-			_imgui_context->FramerateSecPerFrameAccum / 120 * 1.5f,
+			_imgui_context->FramerateSecPerFrameAccum / static_cast<int>(std::size(_imgui_context->FramerateSecPerFrame)) * 0.5f,
+			_imgui_context->FramerateSecPerFrameAccum / static_cast<int>(std::size(_imgui_context->FramerateSecPerFrame)) * 1.5f,
 			ImVec2(0, 50));
 
 		const std::time_t t = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
@@ -2829,7 +2826,7 @@ void reshade::runtime::draw_gui_addons()
 {
 	ini_file &config = global_config();
 
-#if RESHADE_ADDON_LITE
+#if RESHADE_ADDON == 1
 	if (!addon_enabled)
 	{
 		ImGui::TextColored(COLOR_YELLOW, "High network activity discovered.\nAll add-ons are disabled to prevent exploitation.");
@@ -2860,7 +2857,7 @@ void reshade::runtime::draw_gui_addons()
 	if (!addon_all_loaded)
 	{
 		ImGui::PushTextWrapPos();
-#if RESHADE_ADDON_LITE
+#if RESHADE_ADDON == 1
 		ImGui::TextColored(COLOR_YELLOW, "由于该ReShade构建限制了插件功能，一些插件没有被加载。");
 #else
 		ImGui::TextColored(COLOR_RED, "加载一些插件时出现了错误，请查看日志以获得详细信息。");
@@ -2892,7 +2889,7 @@ void reshade::runtime::draw_gui_addons()
 
 		ImGui::SameLine();
 
-		ImGui::PushStyleColor(ImGuiCol_Text, _imgui_context->Style.Colors[info.handle != nullptr ? ImGuiCol_Text : ImGuiCol_TextDisabled]);
+		ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(info.handle != nullptr ? ImGuiCol_Text : ImGuiCol_TextDisabled));
 
 		const auto disabled_it = std::find_if(disabled_addons.begin(), disabled_addons.end(),
 			[&info](const std::string_view &addon_name) {
@@ -3508,7 +3505,7 @@ void reshade::runtime::draw_variable_editor()
 					category_label.insert(0, " ");
 
 			if (ImGui::TreeNodeEx(category_label.c_str(), ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_DefaultOpen))
-			{	
+			{
 				for (const std::pair<std::string, std::string> &definition : effect.definitions)
 				{
 					std::vector<std::pair<std::string, std::string>> *definition_scope = nullptr;
@@ -3805,7 +3802,7 @@ void reshade::runtime::draw_technique_editor()
 			const bool force_enabled = tech.annotation_as_int("enabled");
 
 			// Gray out disabled techniques
-			ImGui::PushStyleColor(ImGuiCol_Text, _imgui_context->Style.Colors[tech.enabled ? ImGuiCol_Text : ImGuiCol_TextDisabled]);
+			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(tech.enabled ? ImGuiCol_Text : ImGuiCol_TextDisabled));
 
 			std::string label(tech.annotation_as_string("ui_label"));
 			if (label.empty())
