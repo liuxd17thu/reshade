@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (C) 2014 Patrick Mours
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -25,6 +25,14 @@ using ReShade.Setup.Utilities;
 
 namespace ReShade.Setup
 {
+	public static class SetupConfig
+	{
+		public static string CN2PackDir = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), @"CN2-v0.71");
+		public static string SCFontName = @"sarasa-mono-sc-gb2312.ttf";
+		public static string ShutterSEName = @"350d-shutter.wav";
+		public static string SCFontPath = Path.Combine(CN2PackDir, SCFontName);
+		public static string ShutterSEPath = Path.Combine(CN2PackDir, ShutterSEName);
+	}
 	public partial class MainWindow
 	{
 		readonly bool isHeadless = false;
@@ -64,7 +72,7 @@ namespace ReShade.Setup
 
 			var assembly = Assembly.GetExecutingAssembly();
 			var productVersion = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>().InformationalVersion;
-			Title = "ReShade Setup v" + productVersion;
+			Title = "ReShade-CN2 安装程序 v" + productVersion;
 
 			if (productVersion.Contains(" "))
 			{
@@ -204,7 +212,7 @@ namespace ReShade.Setup
 				ResetStatus();
 
 #if RESHADE_ADDON
-				MessageBox.Show(this, "This build of ReShade is intended for singleplayer games only and may cause bans in multiplayer games.", "Warning", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+				MessageBox.Show(this, "此ReShade构建版本旨在用于单人游戏，在某些多人在线游戏中可能导致账号封禁。\n*此外，ReShade-CN2改动内容虽然不多，但仅针对《最终幻想14》进行了测试，不保证在其他游戏中的可用性。", "Warning", MessageBoxButton.OK, MessageBoxImage.Exclamation);
 #endif
 			}
 		}
@@ -278,7 +286,7 @@ namespace ReShade.Setup
 
 		static void RunTaskWithExceptionHandling(Action action)
 		{
-			Task.Run(action).ContinueWith(c => Environment.FailFast("Unhandled exception during installation", c.Exception), TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+			Task.Run(action).ContinueWith(c => Environment.FailFast("安装过程中发生了未经处理的异常", c.Exception), TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
 		}
 
 		void AddSearchPath(List<string> searchPaths, string newPath)
@@ -368,7 +376,7 @@ namespace ReShade.Setup
 			{
 				CurrentPage.Navigate(appPage);
 
-				int statusTitleIndex = Title.IndexOf(" was");
+				int statusTitleIndex = Math.Max(Title.IndexOf("已经"), Title.IndexOf("未能"));
 				if (statusTitleIndex > 0)
 				{
 					Title = Title.Remove(statusTitleIndex);
@@ -404,9 +412,9 @@ namespace ReShade.Setup
 
 				CurrentPage.Navigate(status);
 
-				if (!Title.Contains("successfull"))
+				if (!Title.Contains("成功"))
 				{
-					Title += success ? " was successful!" : " was not successful!";
+					Title += success ? "已经成功！" : "未能成功！";
 				}
 
 				AeroGlass.HideSystemMenu(this, false);
@@ -561,7 +569,7 @@ namespace ReShade.Setup
 					{
 						Dispatcher.Invoke(() =>
 						{
-							MessageBox.Show("Failed to download list of available effect packages:\n" + ex.Message + "\n\nTry using a proxy or VPN and verify that you can access https://raw.githubusercontent.com.\n\nProceeding without effect installation ...", "Warning", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+							MessageBox.Show("未能成功下载可用着色器包的列表：\n" + ex.Message + "\n\n请尝试使用代理或VPN，确保你能成功访问 https://raw.githubusercontent.com。\n\n接下来将会尝试检测随附的CN2整合包是否可用……", "Warning", MessageBoxButton.OK, MessageBoxImage.Exclamation);
 						});
 					}
 				}
@@ -581,7 +589,7 @@ namespace ReShade.Setup
 		}
 		void InstallStep_AnalyzeExecutable()
 		{
-			UpdateStatus("Analyzing executable ...");
+			UpdateStatus("分析可执行文件…");
 
 			// In case this is the bootstrap executable of an Unreal Engine game, try and find the actual game executable for it
 			string targetPathUnrealEngine = PEInfo.ReadResourceString(targetPath, 201); // IDI_EXEC_FILE (see BootstrapPackagedGame.cpp in Unreal Engine source code)
@@ -648,11 +656,11 @@ namespace ReShade.Setup
 				}
 				if (isApiD3D8 && !isHeadless)
 				{
-					UpdateStatus("Waiting for user confirmation ...");
+					UpdateStatus("等待用户确认…");
 
 					Dispatcher.Invoke(() =>
 					{
-						MessageBox.Show(this, "It looks like the target application uses Direct3D 8.\nIn order to use ReShade you'll have to download an additional wrapper from 'https://github.com/crosire/d3d8to9/releases' which converts all API calls to Direct3D 9.", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+						MessageBox.Show(this, "目标程序似乎使用的是Direct3D 8 API。\n为了使用ReShade，你还需要前往 https://github.com/crosire/d3d8to9/releases 下载兼容层，将所有API调用转换为Direct3D 9。", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
 					});
 				}
 				if (isApiDXGI && isApiVulkan)
@@ -701,7 +709,7 @@ namespace ReShade.Setup
 		}
 		void InstallStep_CheckExistingInstallation()
 		{
-			UpdateStatus("Checking installation status ...");
+			UpdateStatus("检查安装状态…");
 
 			var basePath = Path.GetDirectoryName(targetPath);
 			var executableName = Path.GetFileName(targetPath);
@@ -765,7 +773,7 @@ namespace ReShade.Setup
 				{
 					if (isHeadless)
 					{
-						UpdateStatusAndFinish(false, "Existing ReShade installation found. Please uninstall it first.");
+						UpdateStatusAndFinish(false, "发现已有ReShade安装，请先卸载。");
 					}
 					else
 					{
@@ -802,7 +810,7 @@ namespace ReShade.Setup
 						modulePath = "opengl32.dll";
 						break;
 					default: // No API selected, abort immediately
-						UpdateStatusAndFinish(false, "Could not detect the rendering API used by the application.");
+						UpdateStatusAndFinish(false, "无法探测该应用程序使用的渲染API。");
 						return;
 				}
 
@@ -820,7 +828,7 @@ namespace ReShade.Setup
 					{
 						if (isHeadless)
 						{
-							UpdateStatusAndFinish(false, "Existing ReShade installation found. Please uninstall it first.");
+							UpdateStatusAndFinish(false, "发现已有ReShade安装，请先卸载。");
 							return;
 						}
 
@@ -833,7 +841,7 @@ namespace ReShade.Setup
 					}
 					else
 					{
-						UpdateStatusAndFinish(false, Path.GetFileName(modulePath) + " already exists, but does not belong to ReShade.\nPlease make sure this is not a system file required by the game.");
+						UpdateStatusAndFinish(false, Path.GetFileName(modulePath) + "已经存在，但并非来自ReShade。\n请确认它不是游戏所需的系统文件。");
 					}
 					return;
 				}
@@ -847,7 +855,7 @@ namespace ReShade.Setup
 				{
 					if (isHeadless)
 					{
-						UpdateStatusAndFinish(false, "Existing ReShade installation for another API found.\nMultiple simultaneous ReShade installations are not supported. Please uninstall the existing one first.");
+						UpdateStatusAndFinish(false, "已有用于其他API的ReShade安装。\n不支持同时安装多个ReShade，请先卸载已有的安装。");
 					}
 					else
 					{
@@ -866,7 +874,7 @@ namespace ReShade.Setup
 		}
 		void InstallStep_InstallReShadeModule()
 		{
-			UpdateStatus("Installing ReShade ...");
+			UpdateStatus("安装ReShade…");
 
 			ZipArchive zip;
 
@@ -904,7 +912,7 @@ namespace ReShade.Setup
 			}
 			catch (Exception)
 			{
-				UpdateStatusAndFinish(false, "This setup archive is corrupted! Please download from https://reshade.me again.");
+				UpdateStatusAndFinish(false, "此安装包文件已损坏！请前往 https://reshade.me 下载官方版，或重新下载CN2整合版！");
 				return;
 			}
 
@@ -937,7 +945,7 @@ namespace ReShade.Setup
 					{
 						if (!RestartWithElevatedPrivileges())
 						{
-							UpdateStatusAndFinish(false, "Failed to acquire elevated privileges to install Vulkan layer.");
+							UpdateStatusAndFinish(false, "提升权限失败，因此无法安装Vulkan层。");
 						}
 					});
 					return;
@@ -952,7 +960,7 @@ namespace ReShade.Setup
 				}
 				catch (Exception ex)
 				{
-					UpdateStatusAndFinish(false, "Failed to create installation directory:\n" + ex.Message);
+					UpdateStatusAndFinish(false, "创建安装目录失败：\n" + ex.Message);
 					return;
 				}
 
@@ -1008,14 +1016,14 @@ namespace ReShade.Setup
 						var module = zip.GetEntry(Path.GetFileName(layerModulePath));
 						if (module == null)
 						{
-							throw new FileFormatException("Setup archive is missing ReShade DLL file.");
+							throw new FileFormatException("安装包缺少ReShade DLL主程序。");
 						}
 
 						module.ExtractToFile(layerModulePath, true);
 					}
 					catch (Exception ex)
 					{
-						UpdateStatusAndFinish(false, "Failed to install " + Path.GetFileName(layerModulePath) + ":\n" + ex.Message);
+						UpdateStatusAndFinish(false, "安装" + Path.GetFileName(layerModulePath) + "失败：\n" + ex.Message);
 						return;
 					}
 
@@ -1024,7 +1032,7 @@ namespace ReShade.Setup
 						var manifest = zip.GetEntry(Path.GetFileName(layerManifestPath));
 						if (manifest == null)
 						{
-							throw new FileFormatException("Setup archive is missing Vulkan layer manifest file.");
+							throw new FileFormatException("安装包缺少Vulkan层清单文件。");
 						}
 
 						manifest.ExtractToFile(layerManifestPath, true);
@@ -1037,7 +1045,7 @@ namespace ReShade.Setup
 					}
 					catch (Exception ex)
 					{
-						UpdateStatusAndFinish(false, "Failed to install Vulkan layer manifest:\n" + ex.Message);
+						UpdateStatusAndFinish(false, "安装Vulkan层清单文件失败：\n" + ex.Message);
 						return;
 					}
 				}
@@ -1060,35 +1068,53 @@ namespace ReShade.Setup
 					var module = zip.GetEntry(is64Bit ? "ReShade64.dll" : "ReShade32.dll");
 					if (module == null)
 					{
-						throw new FileFormatException("Setup archive is missing ReShade DLL file.");
+						throw new FileFormatException("安装包缺少ReShade DLL主程序。");
 					}
 
 					module.ExtractToFile(modulePath, true);
 				}
 				catch (Exception ex)
 				{
-					UpdateStatusAndFinish(false, "Failed to install " + Path.GetFileName(modulePath) + ":\n" + ex.Message +
-							(operation != InstallOperation.Default ? "\n\nMake sure the target application is not still running!" : string.Empty));
+					UpdateStatusAndFinish(false, "安装" + Path.GetFileName(modulePath) + "失败：\n" + ex.Message +
+							(operation != InstallOperation.Default ? "\n\n请确保目标程序已经停止运行。" : string.Empty));
 					return;
 				}
 
 				// Create a default log file for troubleshooting
 				File.WriteAllText(Path.Combine(basePath, "ReShade.log"), @"
-If you are reading this after launching the game at least once, it likely means ReShade was not loaded by the game.
+如果你装完ReShade并至少启动过一次游戏后，打开本日志文件读到了这些内容，那么很可能你的ReShade没有装好。
 
-In that event here are some steps you can try to resolve this:
+可以尝试以下这些解决方法：
 
-1) Make sure this file and the related DLL are really in the same directory as the game executable.
-   If that is the case and it does not work regardless, check if there is a 'bin' directory, move them there and try again.
+1) 确保本文件以及相关的ReShade DLL文件与游戏的主程序都在同一文件夹下。
+   如果仍然无法正常工作，检查是否有一个“bin”文件夹，将本文件和ReShade DLL文件移动过去，再试一次。
 
-2) Try running the game with elevated user permissions by doing a right click on its executable and choosing 'Run as administrator'.
+2) 尝试以管理员权限运行游戏。
 
-3) If the game crashes, try disabling all game overlays (like Origin), recording software (like Fraps), FPS displaying software,
-   GPU overclocking and tweaking software and other proxy DLLs (like ENB, Helix or Umod).
+3) 如果游戏崩溃，尝试关闭所有游戏内覆盖层（如Origin）、录制软件（如Fraps）、帧数显示软件（如MSI Afterburner/微星小飞机）、
+   显卡超频软件，或者其他的代理DLL（如ENB、Helix或Umod）。
 
-4) If none of the above helps, you can get support on the forums at https://reshade.me/forum. But search for your problem before
-   creating a new topic, as somebody else may have already found a solution.
+4) [CN2] 对于FF14，尝试将安装出的dxgi.dll更名为d3d11.dll。
+
+5) 如果以上所有都没有作用，可以前往ReShade官方论坛https://reshade.me/forum获取帮助。但请在发帖前搜索你遇到的问题，可能别人已经解决了。
+   [CN2] 你也可以参考随附的PDF教程，联系汉化整合包作者 路障MKXX 获得帮助。
 ");
+			}
+
+			// [CN2] Font & Sound Effects
+			if (SetupConfig.SCFontPath != null)
+			{
+				var destFontPath = Path.Combine(basePath, SetupConfig.SCFontName);
+				if (File.Exists(destFontPath))
+					File.Delete(destFontPath);
+				File.Copy(SetupConfig.SCFontPath, Path.Combine(basePath, SetupConfig.SCFontName));
+			}
+			if (SetupConfig.ShutterSEPath != null)
+			{
+				var destSEPath = Path.Combine(basePath, SetupConfig.ShutterSEName);
+				if (File.Exists(destSEPath))
+					File.Delete(destSEPath);
+				File.Copy(SetupConfig.ShutterSEPath, Path.Combine(basePath, SetupConfig.ShutterSEName));
 			}
 
 			// Copy potential pre-made configuration file to target
@@ -1100,7 +1126,7 @@ In that event here are some steps you can try to resolve this:
 				}
 				catch (Exception ex)
 				{
-					UpdateStatusAndFinish(false, "Failed to install " + Path.GetFileName(configPath) + ":\n" + ex.Message);
+					UpdateStatusAndFinish(false, "安装" + Path.GetFileName(configPath) + "失败：\n" + ex.Message);
 					return;
 				}
 			}
@@ -1109,6 +1135,21 @@ In that event here are some steps you can try to resolve this:
 
 			// Add default configuration
 			var config = new IniFile(configPath);
+
+			// offline compatibilityIni
+			if (compatibilityIni == null)
+			{
+				var tmp = Path.Combine(SetupConfig.CN2PackDir, "Compatibility.ini");
+				compatibilityIni = File.Exists(tmp) ? new IniFile(tmp) : null;
+				if (targetName == "ffxiv_dx11.exe")
+				{
+					config.SetValue("GENERAL", "PreprocessorDefinitions",
+						"RESHADE_DEPTH_LINEARIZATION_FAR_PLANE=1000.0",
+						"RESHADE_DEPTH_INPUT_IS_UPSIDE_DOWN=" + "0",
+						"RESHADE_DEPTH_INPUT_IS_REVERSED=" + "0",
+						"RESHADE_DEPTH_INPUT_IS_LOGARITHMIC=" + "0");
+				}
+			}
 			if (compatibilityIni != null && !config.HasValue("GENERAL", "PreprocessorDefinitions"))
 			{
 				string depthReversed = compatibilityIni.GetString(targetName, "DepthReversed", "0");
@@ -1303,7 +1344,7 @@ In that event here are some steps you can try to resolve this:
 			// Always add input section
 			if (!config.HasValue("INPUT"))
 			{
-				config.SetValue("INPUT", "KeyOverlay", "36,0,0,0");
+				config.SetValue("INPUT", "KeyOverlay", "48,1,0,0");
 				config.SetValue("INPUT", "GamepadNavigation", "1");
 			}
 
@@ -1317,7 +1358,7 @@ In that event here are some steps you can try to resolve this:
 			if (!isHeadless && operation != InstallOperation.Update)
 			{
 				// Only show the selection dialog if there are actually packages to choose
-				DownloadEffectPackagesIni();
+				//DownloadEffectPackagesIni();
 
 				if (packagesIni != null && packagesIni.GetSections().Length != 0)
 				{
@@ -1332,12 +1373,22 @@ In that event here are some steps you can try to resolve this:
 					});
 					return;
 				}
+				else if (Directory.Exists(SetupConfig.CN2PackDir))
+				{
+					presetPath = config.GetString("GENERAL", "PresetPath", string.Empty);
+					Dispatcher.Invoke(() =>
+					{
+						var page = new SelectPackagesPage(packagesIni, new List<string>());
+						CurrentPage.Navigate(page);
+					});
+					return;
+				}
 			}
 
 			// Add default search paths if no config exists
 			if (!config.HasValue("GENERAL", "EffectSearchPaths") && !config.HasValue("GENERAL", "TextureSearchPaths"))
 			{
-				WriteSearchPaths(".\\reshade-shaders\\Shaders", ".\\reshade-shaders\\Textures");
+				WriteSearchPaths(".\\reshade-shaders\\Shaders\\**", ".\\reshade-shaders\\Textures\\**");
 			}
 
 			InstallStep_Finish();
@@ -1394,7 +1445,7 @@ In that event here are some steps you can try to resolve this:
 			package = packages.Dequeue();
 			downloadPath = Path.GetTempFileName();
 
-			UpdateStatus("Downloading " + package.PackageName + " from " + package.DownloadUrl + " ...");
+			UpdateStatus("从" + package.DownloadUrl + "下载" + package.PackageName + "…");
 
 			var client = new WebClient();
 
@@ -1402,7 +1453,7 @@ In that event here are some steps you can try to resolve this:
 			{
 				if (e.Error != null)
 				{
-					UpdateStatusAndFinish(false, "Failed to download from " + package.DownloadUrl + ":\n" + e.Error.Message);
+					UpdateStatusAndFinish(false, "从" + package.DownloadUrl + "下载失败：\n" + e.Error.Message);
 				}
 				else
 				{
@@ -1415,7 +1466,7 @@ In that event here are some steps you can try to resolve this:
 				// Avoid negative percentage values
 				if (e.TotalBytesToReceive > 0)
 				{
-					UpdateStatus("Downloading " + package.PackageName + " ... (" + ((100 * e.BytesReceived) / e.TotalBytesToReceive) + "%)");
+					UpdateStatus("下载" + package.PackageName + "… (" + ((100 * e.BytesReceived) / e.TotalBytesToReceive) + "%)");
 				}
 			};
 
@@ -1425,12 +1476,12 @@ In that event here are some steps you can try to resolve this:
 			}
 			catch (Exception ex)
 			{
-				UpdateStatusAndFinish(false, "Failed to download from " + package.DownloadUrl + ":\n" + ex.Message);
+				UpdateStatusAndFinish(false, "从" + package.DownloadUrl + "下载失败：\n" + ex.Message);
 			}
 		}
 		void InstallStep_ExtractEffectPackage()
 		{
-			UpdateStatus("Extracting " + package.PackageName + " ...");
+			UpdateStatus("提取" + package.PackageName + "…");
 
 			tempPath = Path.Combine(Path.GetTempPath(), "reshade-shaders");
 
@@ -1491,7 +1542,7 @@ In that event here are some steps you can try to resolve this:
 			}
 			catch (Exception ex)
 			{
-				UpdateStatusAndFinish(false, "Failed to extract " + package.PackageName + ":\n" + ex.Message);
+				UpdateStatusAndFinish(false, "提取" + package.PackageName + "失败：\n" + ex.Message);
 				return;
 			}
 
@@ -1530,7 +1581,7 @@ In that event here are some steps you can try to resolve this:
 			}
 			catch (Exception ex)
 			{
-				UpdateStatusAndFinish(false, "Failed to install " + package.PackageName + ":\n" + ex.Message);
+				UpdateStatusAndFinish(false, "安装" + package.PackageName + "失败：\n" + ex.Message);
 				return;
 			}
 
@@ -1544,6 +1595,25 @@ In that event here are some steps you can try to resolve this:
 			{
 				InstallStep_CheckAddons();
 			}
+		}
+		void InstallStep_AutoCN2_InstallEffectPackage()
+		{
+			try
+			{
+				tempPathEffects = Path.Combine(SetupConfig.CN2PackDir, @"reshade-shaders\Shaders");
+				tempPathTextures = Path.Combine(SetupConfig.CN2PackDir, @"reshade-shaders\Textures");
+				string basePath = Path.GetDirectoryName(configPath);
+				targetPathEffects = Path.Combine(basePath, @"reshade-shaders\Shaders");
+				targetPathTextures = Path.Combine(basePath, @"reshade-shaders\Textures");
+				MoveFiles(tempPathEffects, targetPathEffects);
+				MoveFiles(tempPathTextures, targetPathTextures);
+			}
+			catch (Exception ex)
+			{
+				UpdateStatusAndFinish(false, "安装CN2整合失败：\n" + ex.Message);
+				return;
+			}
+			InstallStep_CheckAddons();
 		}
 		void InstallStep_CheckAddons()
 		{
@@ -1577,7 +1647,7 @@ In that event here are some steps you can try to resolve this:
 			addon = addons.Dequeue();
 			downloadPath = Path.GetTempFileName();
 
-			UpdateStatus("Downloading " + addon.Name + " from " + addon.DownloadUrl + " ...");
+			UpdateStatus("从" + addon.DownloadUrl + "下载" + addon.Name + "…");
 
 			tempPath = null;
 
@@ -1587,7 +1657,7 @@ In that event here are some steps you can try to resolve this:
 			{
 				if (e.Error != null)
 				{
-					UpdateStatusAndFinish(false, "Failed to download from " + addon.DownloadUrl + ":\n" + e.Error.Message);
+					UpdateStatusAndFinish(false, "从" + addon.DownloadUrl + "下载失败：\n" + e.Error.Message);
 				}
 				else
 				{
@@ -1609,7 +1679,7 @@ In that event here are some steps you can try to resolve this:
 				// Avoid negative percentage values
 				if (e.TotalBytesToReceive > 0)
 				{
-					UpdateStatus("Downloading " + addon.Name + " ... (" + ((100 * e.BytesReceived) / e.TotalBytesToReceive) + "%)");
+					UpdateStatus("下载" + addon.Name + "… (" + ((100 * e.BytesReceived) / e.TotalBytesToReceive) + "%)");
 				}
 			};
 
@@ -1619,12 +1689,12 @@ In that event here are some steps you can try to resolve this:
 			}
 			catch (Exception ex)
 			{
-				UpdateStatusAndFinish(false, "Failed to download from " + addon.DownloadUrl + ":\n" + ex.Message);
+				UpdateStatusAndFinish(false, "从" + addon.DownloadUrl + "下载失败：\n" + ex.Message);
 			}
 		}
 		void InstallStep_ExtractAddon()
 		{
-			UpdateStatus("Extracting " + addon.Name + " ...");
+			UpdateStatus("提取" + addon.Name + "…");
 
 			tempPath = Path.Combine(Path.GetTempPath(), "reshade-addons");
 
@@ -1648,14 +1718,14 @@ In that event here are some steps you can try to resolve this:
 					Directory.Delete(tempPath, true);
 					File.Delete(downloadPath);
 
-					throw new FileFormatException("Add-on archive is missing add-on binary.");
+					throw new FileFormatException("插件安装包内没有找到插件。");
 				}
 
 				downloadPath = addonPath;
 			}
 			catch (Exception ex)
 			{
-				UpdateStatusAndFinish(false, "Failed to extract " + addon.Name + ":\n" + ex.Message);
+				UpdateStatusAndFinish(false, "提取" + addon.Name + "失败：\n" + ex.Message);
 				return;
 			}
 
@@ -1684,7 +1754,7 @@ In that event here are some steps you can try to resolve this:
 			}
 			catch (Exception ex)
 			{
-				UpdateStatusAndFinish(false, "Failed to install " + addon.Name + ":\n" + ex.Message);
+				UpdateStatusAndFinish(false, "安装" + addon.Name + "失败：\n" + ex.Message);
 				return;
 			}
 
@@ -1699,7 +1769,7 @@ In that event here are some steps you can try to resolve this:
 		}
 		void InstallStep_Finish()
 		{
-			UpdateStatusAndFinish(true, "Successfully installed ReShade." + (isHeadless ? string.Empty : "\nClick the \"Finish\" button to exit the setup tool."));
+			UpdateStatusAndFinish(true, "成功安装ReShade。" + (isHeadless ? string.Empty : "\n点击“完成”按钮退出安装程序。"));
 		}
 
 		void UninstallStep_UninstallReShadeModule()
@@ -1712,7 +1782,7 @@ In that event here are some steps you can try to resolve this:
 					{
 						if (!RestartWithElevatedPrivileges())
 						{
-							UpdateStatusAndFinish(false, "Failed to acquire elevated privileges to uninstall Vulkan layer.");
+							UpdateStatusAndFinish(false, "提升权限失败，因此无法安装Vulkan层。");
 						}
 					});
 					return;
@@ -1747,7 +1817,7 @@ In that event here are some steps you can try to resolve this:
 						}
 						catch (Exception ex)
 						{
-							UpdateStatusAndFinish(false, "Failed to delete Vulkan layer manifest:\n" + ex.Message);
+							UpdateStatusAndFinish(false, "删除Vulkan层清单文件失败：\n" + ex.Message);
 							return;
 						}
 					}
@@ -1795,8 +1865,8 @@ In that event here are some steps you can try to resolve this:
 			}
 			catch (Exception ex)
 			{
-				UpdateStatusAndFinish(false, "Failed to delete some ReShade files:\n" + ex.Message +
-					(operation != InstallOperation.Default ? "\n\nMake sure the target application is not still running!" : string.Empty));
+				UpdateStatusAndFinish(false, "删除部分ReShade文件失败：\n" + ex.Message +
+					(operation != InstallOperation.Default ? "\n\n请确保目标程序已经停止运行！" : string.Empty));
 				return;
 			}
 
@@ -1804,7 +1874,7 @@ In that event here are some steps you can try to resolve this:
 		}
 		void UninstallStep_Finish()
 		{
-			UpdateStatusAndFinish(true, "Successfully uninstalled ReShade." + (isHeadless ? string.Empty : "\nClick the \"Finish\" button to exit the setup tool."));
+			UpdateStatusAndFinish(true, "成功卸载ReShade。" + (isHeadless ? string.Empty : "\n点击“完成”按钮退出安装程序。"));
 		}
 
 		void OnWindowInit(object sender, EventArgs e)
@@ -1826,6 +1896,8 @@ In that event here are some steps you can try to resolve this:
 				appPage.Cancel();
 
 				targetPath = appPage.FileName;
+				SetupConfig.SCFontPath = appPage.InstallSCFontCheckBox.IsChecked??false ? SetupConfig.SCFontPath : null;
+				SetupConfig.ShutterSEPath = appPage.InstallSCFontCheckBox.IsChecked ?? false ? SetupConfig.SCFontPath : null;
 
 				InstallStep_CheckPrivileges();
 				return;
@@ -1891,7 +1963,11 @@ In that event here are some steps you can try to resolve this:
 			{
 				packages = new Queue<EffectPackage>(packagesPage.SelectedItems);
 
-				if (packages.Count != 0)
+				if (packagesPage.AutoCN2.IsChecked ?? false)
+				{
+					RunTaskWithExceptionHandling(InstallStep_AutoCN2_InstallEffectPackage);
+				}
+				else if (packages.Count != 0)
 				{
 					RunTaskWithExceptionHandling(InstallStep_DownloadEffectPackage);
 				}
@@ -1987,8 +2063,8 @@ In that event here are some steps you can try to resolve this:
 		{
 			bool isFinished = operation == InstallOperation.Finished;
 
-			NextButton.Content = isFinished ? "_Finish" : "_Next";
-			CancelButton.Content = isFinished ? "_Back" : (e.Content is SelectPresetPage || e.Content is SelectPackagesPage || e.Content is SelectEffectsPage) ? "_Skip" : (e.Content is SelectAppPage) ? "_Close" : "_Cancel";
+			NextButton.Content = isFinished ? "完成(_F)" : "下一步(_N)";
+			CancelButton.Content = isFinished ? "返回(_B)" : (e.Content is SelectPresetPage || e.Content is SelectPackagesPage || e.Content is SelectEffectsPage) ? "跳过(_S)" : (e.Content is SelectAppPage) ? "关闭(_C)" : "取消(_C)";
 
 			CancelButton.IsEnabled = !(e.Content is StatusPage) || isFinished;
 

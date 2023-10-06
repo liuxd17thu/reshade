@@ -10,13 +10,13 @@
   <DockPanel>
     <Label DockPanel.Dock="Top" Margin="10" Padding="0" VerticalAlignment="Top" HorizontalContentAlignment="Stretch" Foreground="#FF003399" FontSize="16">
       <StackPanel Orientation="Horizontal">
-        <TextBlock Text="Select the rendering API " />
-        <TextBlock x:Name="AppName" Text="the game or application" />
-        <TextBlock Text=" uses:" />
+        <TextBlock Text="为"/>
+        <TextBlock x:Name="AppName" Text="游戏或应用程序" />
+        <TextBlock Text="选择图形API：" />
       </StackPanel>
     </Label>
     <TextBlock DockPanel.Dock="Top" Margin="10,5" TextWrapping="Wrap">
-      The preselected option is a guess based on a quick analysis of the executable.<LineBreak />If you do not know which rendering API the game uses, search for the game on <Hyperlink NavigateUri="https://www.pcgamingwiki.com/" RequestNavigate="OnHyperlinkNavigate">PCGamingWiki</Hyperlink> and look for a section with the title "API" on its page.
+      自动选中的选项只是根据对可执行文件的快速分析进行猜测的结果。<LineBreak />如果你不知道游戏使用哪种图形API，请在<Hyperlink NavigateUri="https://www.pcgamingwiki.com/" RequestNavigate="OnHyperlinkNavigate">PCGamingWiki</Hyperlink>上搜索该游戏，并阅读标题为“API”的章节。
     </TextBlock>
     <StackPanel Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Center">
       <RadioButton x:Name="ApiD3D9" VerticalContentAlignment="Center">

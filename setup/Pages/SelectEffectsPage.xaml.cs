@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (C) 2021 Patrick Mours
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -82,8 +82,8 @@ namespace ReShade.Setup.Pages
 
 			if (sender is Button button)
 			{
-				const string CHECK_LABEL = "Check _all";
-				const string UNCHECK_LABEL = "Uncheck _all";
+				const string CHECK_LABEL = "全部勾选(_A)";
+				const string UNCHECK_LABEL = "全部不选(_A)";
 
 				bool check = button.Content as string == CHECK_LABEL;
 				button.Content = check ? UNCHECK_LABEL : CHECK_LABEL;

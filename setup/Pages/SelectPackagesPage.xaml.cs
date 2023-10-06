@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (C) 2021 Patrick Mours
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -8,10 +8,12 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using System.Windows.Navigation;
 
 namespace ReShade.Setup.Pages
@@ -65,6 +67,28 @@ namespace ReShade.Setup.Pages
 			InitializeComponent();
 			DataContext = this;
 
+			if (Directory.Exists("./CN2-v0.71"))
+			{
+				AutoCN2.Foreground = (SolidColorBrush)new BrushConverter().ConvertFrom("#ff00aa33");
+				AutoCN2.Content = "一键CN2：就绪";
+			}
+			else
+			{
+				AutoCN2.Foreground = (SolidColorBrush)new BrushConverter().ConvertFrom("#ffaa0033");
+				AutoCN2.Content = "未找到CN2包";
+				AutoCN2.IsEnabled = false;
+			}
+			if (packagesIni == null)
+			{
+				Items.Add(new EffectPackage
+				{
+					Selected = false,
+					Modifiable = false,
+					PackageName = "CN2-v0.71汉化整合",
+					PackageDescription = "此处选项仅用作占位。"
+				});
+				return;
+			}
 			foreach (var package in packagesIni.GetSections())
 			{
 				bool required = packagesIni.GetString(package, "Required") == "1";
@@ -108,8 +132,8 @@ namespace ReShade.Setup.Pages
 
 			if (sender is Button button)
 			{
-				const string CHECK_LABEL = "Check _all";
-				const string UNCHECK_LABEL = "Uncheck _all";
+				const string CHECK_LABEL = "全部勾选(_A)";
+				const string UNCHECK_LABEL = "全部不选(_A)";
 
 				bool check = button.Content as string == CHECK_LABEL;
 				button.Content = check ? UNCHECK_LABEL : CHECK_LABEL;

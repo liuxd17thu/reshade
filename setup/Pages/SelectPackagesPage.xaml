@@ -10,11 +10,13 @@
       FocusManager.FocusedElement="{Binding ElementName=ItemsListBox}">
   <DockPanel LastChildFill="True">
     <DockPanel DockPanel.Dock="Top">
-      <Label Margin="10" Padding="0" VerticalAlignment="Top" Foreground="#FF003399" FontSize="16" Content="Select effect packages to install:" />
-      <Button DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center" Width="100" Margin="10" Content="Uncheck _all" Click="OnCheckAllClick" KeyboardNavigation.TabIndex="2" />
-    </DockPanel>
+      <Label Margin="10" Padding="0" VerticalAlignment="Top" Foreground="#FF003399" FontSize="16" Content="选择要安装的效果包：" />
+      <Button DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center" Width="100" Margin="10" Content="全部不选(_A)" Click="OnCheckAllClick" KeyboardNavigation.TabIndex="2" />
+            <CheckBox x:Name="AutoCN2" Content="一键CN2：就绪" Width="110" Margin="5" HorizontalAlignment="Right" VerticalContentAlignment="Center" Foreground="#ff00aa33"/>
+        </DockPanel>
     <TextBlock DockPanel.Dock="Top" Margin="10,5" TextWrapping="Wrap">
-      Check all effect packages you want to install/update or click on "Skip" to continue without modifying them (e.g. if you want to only update ReShade, but not the effects).
+      选择所有你想要安装/更新的效果（着色器）包，或者点击“跳过”，不更改它们而继续（例如，仅升级ReShade主程序而不升级效果时）。<LineBreak/>
+      如果你想使用CN2整合包的汉化着色器大全套，而非下面的ReShade原版英文着色器，请勾选右上角的“一键CN2”并进入下一步。
     </TextBlock>
     <Grid DockPanel.Dock="Bottom" Margin="10,5">
       <Grid.ColumnDefinitions>
@@ -22,8 +24,8 @@
         <ColumnDefinition Width="10" /> <!-- Margin -->
         <ColumnDefinition Width="100" />
       </Grid.ColumnDefinitions>
-      <TextBox x:Name="PathBox" Grid.Column="0" Text="Optionally enter download link of a custom repository to add here" GotFocus="OnTextBoxGotFocus" />
-      <Button Grid.Column="2" Content="Add" Click="OnAddPackageButtonClick" />
+      <TextBox x:Name="PathBox" Grid.Column="0" Text="可选：在此处输入下载链接，添加自定义仓库" GotFocus="OnTextBoxGotFocus" />
+      <Button Grid.Column="2" Content="添加" Click="OnAddPackageButtonClick" />
     </Grid>
     <ListBox x:Name="ItemsListBox" Margin="10,5" HorizontalContentAlignment="Stretch" ItemsSource="{Binding Items}">
       <ListBox.ItemTemplate>
@@ -49,7 +51,7 @@
             </Grid.ColumnDefinitions>
             <local:EffectPackageCheckBox Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Center" IsChecked="{Binding Selected}" IsEnabled="{Binding Modifiable}" IsThreeState="True">
               <local:EffectPackageCheckBox.ToolTip>
-                <TextBlock Text="Check to install all effects in the package, fill out to prompt for individual effects to install in the next step." />
+                <TextBlock Text="勾选将安装包内的所有着色器，填写以设定要在下一步安装的独立着色器。" />
               </local:EffectPackageCheckBox.ToolTip>
             </local:EffectPackageCheckBox>
             <TextBlock Grid.Column="1" VerticalAlignment="Center">

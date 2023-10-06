@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (C) 2021 Patrick Mours
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -392,6 +392,9 @@ namespace ReShade.Setup.Pages
 			});
 
 			UpdateThread.Start();
+
+			InstallSCFontCheckBox.IsEnabled = File.Exists(SetupConfig.SCFontPath);
+			InstallShutterSECheckBox.IsEnabled = File.Exists(SetupConfig.ShutterSEPath);
 		}
 
 		public void Cancel()
