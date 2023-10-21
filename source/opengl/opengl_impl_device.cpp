@@ -192,6 +192,9 @@ bool reshade::opengl::device_impl::check_capability(api::device_caps capability)
 	case api::device_caps::shared_resource:
 	case api::device_caps::shared_resource_nt_handle:
 		// TODO: Implement using 'GL_EXT_memory_object' and 'GL_EXT_memory_object_win32' extensions
+		return false;
+	case api::device_caps::resolve_depth_stencil:
+		return true;
 	default:
 		return false;
 	}
@@ -361,15 +364,34 @@ bool reshade::opengl::device_impl::create_resource(const api::resource_desc &des
 		}
 		break;
 	case api::resource_type::texture_1d:
+		if (desc.texture.samples > 1)
+			return false;
 		target = desc.texture.depth_or_layers > 1 ? GL_TEXTURE_1D_ARRAY : GL_TEXTURE_1D;
 		break;
 	case api::resource_type::texture_2d:
 		if ((desc.flags & api::resource_flags::cube_compatible) == 0)
-			target = desc.texture.depth_or_layers > 1 ? GL_TEXTURE_2D_ARRAY : GL_TEXTURE_2D;
+		{
+			if (desc.texture.samples > 1)
+			{
+				if (desc.texture.levels > 1)
+					return false;
+				target = desc.texture.depth_or_layers > 1 ? GL_TEXTURE_2D_MULTISAMPLE_ARRAY : GL_TEXTURE_2D_MULTISAMPLE;
+			}
+			else
+			{
+				target = desc.texture.depth_or_layers > 1 ? GL_TEXTURE_2D_ARRAY : GL_TEXTURE_2D;
+			}
+		}
 		else
+		{
+			if (desc.texture.samples > 1)
+				return false;
 			target = desc.texture.depth_or_layers > 6 ? GL_TEXTURE_CUBE_MAP_ARRAY : GL_TEXTURE_CUBE_MAP;
+		}
 		break;
 	case api::resource_type::texture_3d:
+		if (desc.texture.samples > 1)
+			return false;
 		target = GL_TEXTURE_3D;
 		break;
 	case api::resource_type::surface:
@@ -495,19 +517,16 @@ bool reshade::opengl::device_impl::create_resource(const api::resource_desc &des
 			{
 			case GL_TEXTURE_1D:
 			case GL_TEXTURE_1D_ARRAY:
-				if (desc.texture.samples > 1)
-					gl.TexStorageMem2DMultisampleEXT(target, desc.texture.samples, internal_format, desc.texture.width, depth_or_layers, GL_FALSE, mem, 0);
-				else
-					gl.TexStorageMem2DEXT(target, levels, internal_format, desc.texture.width, depth_or_layers, mem, 0);
+				gl.TexStorageMem2DEXT(target, levels, internal_format, desc.texture.width, depth_or_layers, mem, 0);
 				break;
 			case GL_TEXTURE_CUBE_MAP:
 				assert(depth_or_layers == 6);
 				[[fallthrough]];
 			case GL_TEXTURE_2D:
-				if (desc.texture.samples > 1)
-					gl.TexStorageMem2DMultisampleEXT(target, desc.texture.samples, internal_format, desc.texture.width, desc.texture.height, GL_FALSE, mem, 0);
-				else
-					gl.TexStorageMem2DEXT(target, levels, internal_format, desc.texture.width, desc.texture.height, mem, 0);
+				gl.TexStorageMem2DEXT(target, levels, internal_format, desc.texture.width, desc.texture.height, mem, 0);
+				break;
+			case GL_TEXTURE_2D_MULTISAMPLE:
+				gl.TexStorageMem2DMultisampleEXT(target, desc.texture.samples, internal_format, desc.texture.width, desc.texture.height, GL_FALSE, mem, 0);
 				break;
 			case GL_TEXTURE_CUBE_MAP_ARRAY:
 				assert((depth_or_layers % 6) == 0);
@@ -515,10 +534,10 @@ bool reshade::opengl::device_impl::create_resource(const api::resource_desc &des
 				[[fallthrough]];
 			case GL_TEXTURE_2D_ARRAY:
 			case GL_TEXTURE_3D:
-				if (desc.texture.samples > 1)
-					gl.TexStorageMem3DMultisampleEXT(target, desc.texture.samples, internal_format, desc.texture.width, desc.texture.height, depth_or_layers, GL_FALSE, mem, 0);
-				else
-					gl.TexStorageMem3DEXT(target, levels, internal_format, desc.texture.width, desc.texture.height, depth_or_layers, mem, 0);
+				gl.TexStorageMem3DEXT(target, levels, internal_format, desc.texture.width, desc.texture.height, depth_or_layers, mem, 0);
+				break;
+			case GL_TEXTURE_2D_MULTISAMPLE_ARRAY:
+				gl.TexStorageMem3DMultisampleEXT(target, desc.texture.samples, internal_format, desc.texture.width, desc.texture.height, depth_or_layers, GL_FALSE, mem, 0);
 				break;
 			}
 
@@ -533,19 +552,16 @@ bool reshade::opengl::device_impl::create_resource(const api::resource_desc &des
 				gl.TexStorage1D(target, levels, internal_format, desc.texture.width);
 				break;
 			case GL_TEXTURE_1D_ARRAY:
-				if (desc.texture.samples > 1)
-					gl.TexStorage2DMultisample(target, desc.texture.samples, internal_format, desc.texture.width, depth_or_layers, GL_FALSE);
-				else
-					gl.TexStorage2D(target, levels, internal_format, desc.texture.width, depth_or_layers);
+				gl.TexStorage2D(target, levels, internal_format, desc.texture.width, depth_or_layers);
 				break;
 			case GL_TEXTURE_CUBE_MAP:
 				assert(depth_or_layers == 6);
 				[[fallthrough]];
 			case GL_TEXTURE_2D:
-				if (desc.texture.samples > 1)
-					gl.TexStorage2DMultisample(target, desc.texture.samples, internal_format, desc.texture.width, desc.texture.height, GL_FALSE);
-				else
-					gl.TexStorage2D(target, levels, internal_format, desc.texture.width, desc.texture.height);
+				gl.TexStorage2D(target, levels, internal_format, desc.texture.width, desc.texture.height);
+				break;
+			case GL_TEXTURE_2D_MULTISAMPLE:
+				gl.TexStorage2DMultisample(target, desc.texture.samples, internal_format, desc.texture.width, desc.texture.height, GL_FALSE);
 				break;
 			case GL_TEXTURE_CUBE_MAP_ARRAY:
 				assert((depth_or_layers % 6) == 0);
@@ -553,10 +569,10 @@ bool reshade::opengl::device_impl::create_resource(const api::resource_desc &des
 				[[fallthrough]];
 			case GL_TEXTURE_2D_ARRAY:
 			case GL_TEXTURE_3D:
-				if (desc.texture.samples > 1)
-					gl.TexStorage3DMultisample(target, desc.texture.samples, internal_format, desc.texture.width, desc.texture.height, depth_or_layers, GL_FALSE);
-				else
-					gl.TexStorage3D(target, levels, internal_format, desc.texture.width, desc.texture.height, depth_or_layers);
+				gl.TexStorage3D(target, levels, internal_format, desc.texture.width, desc.texture.height, depth_or_layers);
+				break;
+			case GL_TEXTURE_2D_MULTISAMPLE_ARRAY:
+				gl.TexStorage3DMultisample(target, desc.texture.samples, internal_format, desc.texture.width, desc.texture.height, depth_or_layers, GL_FALSE);
 				break;
 			}
 		}
@@ -708,19 +724,23 @@ reshade::api::resource_desc reshade::opengl::device_impl::get_resource_desc(api:
 				gl.GetTextureLevelParameteriv(object, 0, GL_TEXTURE_INTERNAL_FORMAT, &internal_format);
 				gl.GetTextureLevelParameteriv(object, 0, GL_TEXTURE_SAMPLES, &samples);
 
-				gl.GetTextureParameteriv(object, GL_TEXTURE_IMMUTABLE_LEVELS, &levels);
-				if (levels == 0)
+				// Rectangle and multisample textures do not have mipmaps
+				if (target != GL_TEXTURE_RECTANGLE && target != GL_TEXTURE_2D_MULTISAMPLE && target != GL_TEXTURE_2D_MULTISAMPLE_ARRAY)
 				{
-					// If number of mipmap levels is not immutable, need to walk through the mipmap chain and check how many actually exist
-					gl.GetTextureParameteriv(object, GL_TEXTURE_MAX_LEVEL, &levels);
-					for (GLsizei level = 1, level_w = 0; level < levels; ++level)
+					gl.GetTextureParameteriv(object, GL_TEXTURE_IMMUTABLE_LEVELS, &levels);
+					if (levels == 0)
 					{
-						// Check if this mipmap level does exist
-						gl.GetTextureLevelParameteriv(object, level, GL_TEXTURE_WIDTH, &level_w);
-						if (0 == level_w)
+						// If number of mipmap levels is not immutable, need to walk through the mipmap chain and check how many actually exist
+						gl.GetTextureParameteriv(object, GL_TEXTURE_MAX_LEVEL, &levels);
+						for (GLsizei level = 1, level_w = 0; level < levels; ++level)
 						{
-							levels = level;
-							break;
+							// Check if this mipmap level does exist
+							gl.GetTextureLevelParameteriv(object, level, GL_TEXTURE_WIDTH, &level_w);
+							if (0 == level_w)
+							{
+								levels = level;
+								break;
+							}
 						}
 					}
 				}
@@ -744,17 +764,20 @@ reshade::api::resource_desc reshade::opengl::device_impl::get_resource_desc(api:
 				gl.GetTexLevelParameteriv(level_target, 0, GL_TEXTURE_INTERNAL_FORMAT, &internal_format);
 				gl.GetTexLevelParameteriv(level_target, 0, GL_TEXTURE_SAMPLES, &samples);
 
-				gl.GetTexParameteriv(target, GL_TEXTURE_IMMUTABLE_LEVELS, &levels);
-				if (levels == 0)
+				if (target != GL_TEXTURE_RECTANGLE && target != GL_TEXTURE_2D_MULTISAMPLE && target != GL_TEXTURE_2D_MULTISAMPLE_ARRAY)
 				{
-					gl.GetTexParameteriv(target, GL_TEXTURE_MAX_LEVEL, &levels);
-					for (GLsizei level = 1, level_w = 0; level < levels; ++level)
+					gl.GetTexParameteriv(target, GL_TEXTURE_IMMUTABLE_LEVELS, &levels);
+					if (levels == 0)
 					{
-						gl.GetTexLevelParameteriv(level_target, level, GL_TEXTURE_WIDTH, &level_w);
-						if (0 == level_w)
+						gl.GetTexParameteriv(target, GL_TEXTURE_MAX_LEVEL, &levels);
+						for (GLsizei level = 1, level_w = 0; level < levels; ++level)
 						{
-							levels = level;
-							break;
+							gl.GetTexLevelParameteriv(level_target, level, GL_TEXTURE_WIDTH, &level_w);
+							if (0 == level_w)
+							{
+								levels = level;
+								break;
+							}
 						}
 					}
 				}
@@ -1664,6 +1687,7 @@ void reshade::opengl::device_impl::update_texture_region(const api::subresource_
 		yoffset += layer;
 		[[fallthrough]];
 	case GL_TEXTURE_2D:
+	case GL_TEXTURE_RECTANGLE:
 	case GL_TEXTURE_CUBE_MAP_POSITIVE_X:
 	case GL_TEXTURE_CUBE_MAP_NEGATIVE_X:
 	case GL_TEXTURE_CUBE_MAP_POSITIVE_Y:

@@ -3630,7 +3630,7 @@ void reshade::runtime::draw_technique_editor()
 {
 	if (_reload_count != 0 && _effects.empty())
 	{
-		ImGui::TextColored(COLOR_YELLOW, "在效果搜索路径中没有找到效果文件(.fx)%c", _effect_search_paths.empty() ? '.' : ':');
+		ImGui::TextColored(COLOR_YELLOW, "在以下效果搜索路径中没有找到效果文件(.fx)%c", _effect_search_paths.empty() ? '.' : ':');
 		for (const std::filesystem::path &search_path : _effect_search_paths)
 			ImGui::TextColored(COLOR_YELLOW, "  %s", (g_reshade_base_path / search_path).lexically_normal().u8string().c_str());
 		ImGui::Spacing();
@@ -4320,20 +4320,18 @@ bool reshade::runtime::init_imgui_resources()
 }
 void reshade::runtime::render_imgui_draw_data(api::command_list *cmd_list, ImDrawData *draw_data, api::resource_view rtv)
 {
-#ifndef NDEBUG
-	cmd_list->begin_debug_event("ReShade overlay");
-#endif
-
 	// Need to multi-buffer vertex data so not to modify data below when the previous frame is still in flight
 	const size_t buffer_index = _frame_count % std::size(_imgui_vertices);
 
 	// Create and grow vertex/index buffers if needed
 	if (_imgui_num_indices[buffer_index] < draw_data->TotalIdxCount)
 	{
-		_graphics_queue->wait_idle(); // Be safe and ensure nothing still uses this buffer
-
 		if (_imgui_indices[buffer_index] != 0)
+		{
+			_graphics_queue->wait_idle(); // Be safe and ensure nothing still uses this buffer
+
 			_device->destroy_resource(_imgui_indices[buffer_index]);
+		}
 
 		const int new_size = draw_data->TotalIdxCount + 10000;
 		if (!_device->create_resource(api::resource_desc(new_size * sizeof(ImDrawIdx), api::memory_heap::cpu_to_gpu, api::resource_usage::index_buffer), nullptr, api::resource_usage::cpu_access, &_imgui_indices[buffer_index]))
@@ -4348,10 +4346,12 @@ void reshade::runtime::render_imgui_draw_data(api::command_list *cmd_list, ImDra
 	}
 	if (_imgui_num_vertices[buffer_index] < draw_data->TotalVtxCount)
 	{
-		_graphics_queue->wait_idle();
-
 		if (_imgui_vertices[buffer_index] != 0)
+		{
+			_graphics_queue->wait_idle();
+
 			_device->destroy_resource(_imgui_vertices[buffer_index]);
+		}
 
 		const int new_size = draw_data->TotalVtxCount + 5000;
 		if (!_device->create_resource(api::resource_desc(new_size * sizeof(ImDrawVert), api::memory_heap::cpu_to_gpu, api::resource_usage::vertex_buffer), nullptr, api::resource_usage::cpu_access, &_imgui_vertices[buffer_index]))
@@ -4364,6 +4364,10 @@ void reshade::runtime::render_imgui_draw_data(api::command_list *cmd_list, ImDra
 
 		_imgui_num_vertices[buffer_index] = new_size;
 	}
+
+#ifndef NDEBUG
+	cmd_list->begin_debug_event("ReShade overlay");
+#endif
 
 	if (ImDrawIdx *idx_dst;
 		_device->map_buffer_region(_imgui_indices[buffer_index], 0, UINT64_MAX, api::map_access::write_only, reinterpret_cast<void **>(&idx_dst)))
