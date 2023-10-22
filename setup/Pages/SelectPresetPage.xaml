@@ -7,10 +7,13 @@
       d:DesignWidth="510" d:DesignHeight="638"
       Width="Auto" Height="Auto">
   <DockPanel LastChildFill="False">
-    <Label DockPanel.Dock="Top" Margin="10" Padding="0" VerticalAlignment="Top" Foreground="#FF003399" FontSize="16" Content="选择要安装的预设：" />
+    <DockPanel DockPanel.Dock="Top">
+      <Label Margin="10" Padding="0" VerticalAlignment="Top" Foreground="#FF003399" FontSize="16" Content="选择要安装的预设：" />
+      <CheckBox DockPanel.Dock="Right" x:Name="AutoPresets" Content="预设包：就绪" Width="110" Margin="5" HorizontalAlignment="Right" VerticalContentAlignment="Center" Foreground="#ff00aa33"/>
+    </DockPanel>
     <TextBlock DockPanel.Dock="Top" Margin="10,5" TextWrapping="Wrap">
       选择要使用的预设文件(.ini)并安装所有用到的效果（着色器）包，或点击“跳过”以使用一个空白预设，并手动选择要安装的着色器包。<LineBreak />
-      <Run Foreground="#FFAA0000" FontWeight="Bold">推荐点击“跳过”。</Run>
+      <Run Foreground="#FFAA0000" FontWeight="Bold">如需安装CN2附带预设，则勾选右上角，否则点击“跳过”。</Run>
     </TextBlock>
     <Grid DockPanel.Dock="Bottom" Margin="10,5">
       <Grid.ColumnDefinitions>

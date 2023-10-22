@@ -71,12 +71,13 @@ namespace ReShade.Setup.Pages
 			{
 				AutoCN2.Foreground = (SolidColorBrush)new BrushConverter().ConvertFrom("#ff00aa33");
 				AutoCN2.Content = "一键CN2：就绪";
+				AutoCN2.IsChecked = true;
 			}
 			else
 			{
 				AutoCN2.Foreground = (SolidColorBrush)new BrushConverter().ConvertFrom("#ffaa0033");
 				AutoCN2.Content = "未找到CN2包";
-				AutoCN2.IsEnabled = false;
+				AutoCN2.IsEnabled = false; AutoCN2.IsChecked = false;
 			}
 			if (packagesIni == null)
 			{

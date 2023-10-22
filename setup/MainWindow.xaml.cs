@@ -1398,7 +1398,8 @@ namespace ReShade.Setup
 					presetPath = config.GetString("GENERAL", "PresetPath", string.Empty);
 					Dispatcher.Invoke(() =>
 					{
-						var page = new SelectPackagesPage(packagesIni, new List<string>());
+						var page = new SelectPresetPage();
+						//var page = new SelectPackagesPage(packagesIni, new List<string>());
 						CurrentPage.Navigate(page);
 					});
 					return;
@@ -2067,6 +2068,33 @@ namespace ReShade.Setup
 
 			if (CurrentPage.Content is SelectPresetPage presetPage)
 			{
+				if (presetPage.AutoPresets.IsChecked ?? false)
+				{
+					try
+					{
+						var tempPathPresets = Path.Combine(SetupConfig.CN2PackDir, @"reshade-presets");
+						string basePath = Path.GetDirectoryName(configPath);
+						var targetPathPresets = Path.Combine(basePath, @"reshade-presets");
+						if (Directory.Exists(targetPathPresets))
+						{
+							var AutoCN2Confirm = MessageBox.Show("似乎检测到了先前的预设安装。\n选“是”将完全清理它们，并安装CN2整合版预设；\n选“否”则保持原样，你可能需要自行备份。", "提示", MessageBoxButton.YesNo);
+							if (AutoCN2Confirm == MessageBoxResult.Yes)
+							{
+								Directory.Delete(targetPathPresets, true);
+								MoveFiles(tempPathPresets, targetPathPresets);
+							}
+						}
+						else
+						{
+							MoveFiles(tempPathPresets, targetPathPresets);
+						}
+					}
+					catch (Exception ex)
+					{
+						UpdateStatusAndFinish(false, "安装预设失败：\n" + ex.Message);
+						return;
+					}
+				}
 				presetPath = presetPage.FileName;
 
 				RunTaskWithExceptionHandling(InstallStep_CheckPreset);

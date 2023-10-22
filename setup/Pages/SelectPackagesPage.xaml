@@ -12,8 +12,8 @@
     <DockPanel DockPanel.Dock="Top">
       <Label Margin="10" Padding="0" VerticalAlignment="Top" Foreground="#FF003399" FontSize="16" Content="选择要安装的效果包：" />
       <Button DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center" Width="100" Margin="10" Content="全部不选(_A)" Click="OnCheckAllClick" KeyboardNavigation.TabIndex="2" />
-            <CheckBox x:Name="AutoCN2" Content="一键CN2：就绪" Width="110" Margin="5" HorizontalAlignment="Right" VerticalContentAlignment="Center" Foreground="#ff00aa33"/>
-        </DockPanel>
+      <CheckBox x:Name="AutoCN2" Content="一键CN2：就绪" Width="110" Margin="5" HorizontalAlignment="Right" VerticalContentAlignment="Center" Foreground="#ff00aa33"/>
+    </DockPanel>
     <TextBlock DockPanel.Dock="Top" Margin="10,5" TextWrapping="Wrap">
       选择所有你想要安装/更新的效果（着色器）包，或者点击“跳过”，不更改它们而继续（例如，仅升级ReShade主程序而不升级效果时）。<LineBreak/>
       如果你想使用CN2整合包的汉化着色器大全套，而非下面的ReShade原版英文着色器，请勾选右上角的“一键CN2”并进入下一步。
