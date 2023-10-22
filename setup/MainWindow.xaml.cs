@@ -213,7 +213,7 @@ namespace ReShade.Setup
 				ResetStatus();
 
 #if RESHADE_ADDON
-				MessageBox.Show(this, "此ReShade构建版本旨在用于单人游戏，在某些多人在线游戏中可能导致账号封禁。\n*此外，ReShade-CN2（及改版安装器）的新增功能仅针对《最终幻想14》进行了测试，不保证在其他游戏中的可用性。", "Warning", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+				MessageBox.Show(this, "1. 此ReShade构建版本旨在用于单人游戏，在某些多人在线游戏中可能导致账号封禁。\n2. ReShade-CN2的新增功能仅针对《最终幻想14》(DX11)进行了测试，不保证在其他游戏中的可用性。\n3. 本安装器仍然为测试版，如出现问题，请参考随附文档，或向路障MKXX反馈。", "警告", MessageBoxButton.OK, MessageBoxImage.Exclamation);
 #endif
 			}
 		}
@@ -1349,7 +1349,26 @@ namespace ReShade.Setup
 				config.SetValue("INPUT", "GamepadNavigation", "1");
 			}
 
+			// [CN2] Add default font and sound effects
+			if (SetupConfig.SCFontPath != null && !config.HasValue("STYLE", "Font"))
+			{
+				config.SetValue("STYLE", "Font", ".\\" + SetupConfig.SCFontName);
+				config.SetValue("STYLE", "FontSize", "16");
+				config.SetValue("STYLE", "EditorFont", ".\\" + SetupConfig.SCFontName);
+				config.SetValue("STYLE", "EditorFontSize", "16");
+			}
+			if (SetupConfig.ShutterSEPath != null && !config.HasValue("SCREENSHOT", "SoundPath"))
+			{
+				config.SetValue("SCREENSHOTS", "SoundPath", ".\\" + SetupConfig.ShutterSEName);
+			}
+
 			config.SaveFile();
+
+			// Add default search paths if no config exists
+			if (!config.HasValue("GENERAL", "EffectSearchPaths") && !config.HasValue("GENERAL", "TextureSearchPaths"))
+			{
+				WriteSearchPaths(".\\reshade-shaders\\Shaders", ".\\reshade-shaders\\Textures");
+			}
 
 			// Change file permissions for files ReShade needs write access to
 			MakeWritable(configPath);
@@ -1384,22 +1403,6 @@ namespace ReShade.Setup
 					});
 					return;
 				}
-			}
-
-			// Add default search paths if no config exists
-			if (!config.HasValue("GENERAL", "EffectSearchPaths") && !config.HasValue("GENERAL", "TextureSearchPaths"))
-			{
-				WriteSearchPaths(".\\reshade-shaders\\Shaders\\**", ".\\reshade-shaders\\Textures\\**");
-			}
-
-			// [CN2] Add default font and sound effects
-			if (SetupConfig.SCFontPath != null && !config.HasValue("STYLE", "Font"))
-			{
-				config.SetValue("STYLE", ".\\" + SetupConfig.SCFontName);
-			}
-			if (SetupConfig.ShutterSEPath != null && !config.HasValue("SCREENSHOT", "SoundPath"))
-			{
-				config.SetValue("SCREENSHOTS", ".\\" + SetupConfig.ShutterSEName);
 			}
 
 			InstallStep_Finish();
@@ -1616,8 +1619,36 @@ namespace ReShade.Setup
 				string basePath = Path.GetDirectoryName(configPath);
 				targetPathEffects = Path.Combine(basePath, @"reshade-shaders\Shaders");
 				targetPathTextures = Path.Combine(basePath, @"reshade-shaders\Textures");
-				MoveFiles(tempPathEffects, targetPathEffects);
-				MoveFiles(tempPathTextures, targetPathTextures);
+				var prevInstall = new bool[2]{ Directory.Exists(targetPathEffects), Directory.Exists(targetPathTextures) };
+				if (prevInstall[0] || prevInstall[1])
+				{
+					var AutoCN2Confirm = MessageBox.Show("似乎检测到了先前的着色器安装。\n选“是”将完全清理它们，并安装CN2整合；\n选“否”则保持原样，你可能需要自行备份。", "提示", MessageBoxButton.YesNo);
+					if (AutoCN2Confirm == MessageBoxResult.Yes)
+					{
+						if (prevInstall[0])
+						{
+							Directory.Delete(targetPathEffects, true);
+						}
+						if (prevInstall[1])
+						{
+							Directory.Delete(targetPathTextures, true);
+						}
+						MoveFiles(tempPathEffects, targetPathEffects);
+						MoveFiles(tempPathTextures, targetPathTextures);
+					}
+				}
+				else
+				{
+					MoveFiles(tempPathEffects, targetPathEffects);
+					MoveFiles(tempPathTextures, targetPathTextures);
+				}
+				//var customPathEffects = Path.Combine(basePath, @"reshade-shaders\CustomShaders");
+				//var customPathTextures = Path.Combine(basePath, @"reshade-shaders\CustomTextures");
+
+				//if (!Directory.Exists(customPathEffects))
+				//	Directory.CreateDirectory(customPathEffects);
+				//if (!Directory.Exists(customPathTextures))
+				//	Directory.CreateDirectory(customPathTextures);
 			}
 			catch (Exception ex)
 			{
