@@ -106,6 +106,11 @@ namespace ReShade.Setup.Pages
 		{
 			InitializeComponent();
 
+			InstallSCFontCheckBox.IsEnabled = File.Exists(SetupConfig.SCFontPath);
+			InstallSCFontCheckBox.IsChecked = InstallSCFontCheckBox.IsEnabled;
+			InstallShutterSECheckBox.IsEnabled = File.Exists(SetupConfig.ShutterSEPath);
+			InstallShutterSECheckBox.IsChecked = InstallShutterSECheckBox.IsEnabled;
+
 			ProgramList.ItemsSource = CollectionViewSource.GetDefaultView(ProgramListItems);
 
 			UpdateThread = new Thread(() =>
@@ -392,9 +397,6 @@ namespace ReShade.Setup.Pages
 			});
 
 			UpdateThread.Start();
-
-			InstallSCFontCheckBox.IsEnabled = File.Exists(SetupConfig.SCFontPath);
-			InstallShutterSECheckBox.IsEnabled = File.Exists(SetupConfig.ShutterSEPath);
 		}
 
 		public void Cancel()
@@ -466,7 +468,7 @@ namespace ReShade.Setup.Pages
 		{
 			var view = CollectionViewSource.GetDefaultView(ProgramListItems);
 
-			if (PathBox != null && PathBox.Text != "Search" && !Path.IsPathRooted(PathBox.Text))
+			if (PathBox != null && PathBox.Text != "查找" && !Path.IsPathRooted(PathBox.Text))
 			{
 				view.Filter = item => ((ProgramItem)item).Path.ContainsIgnoreCase(PathBox.Text) || ((ProgramItem)item).Name.ContainsIgnoreCase(PathBox.Text);
 			}

@@ -27,7 +27,8 @@ namespace ReShade.Setup
 {
 	public static class SetupConfig
 	{
-		public static string CN2PackDir = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), @"CN2-v0.71");
+		public static string CN2Version = @"CN2-v0.72";
+		public static string CN2PackDir = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), CN2Version);
 		public static string SCFontName = @"sarasa-mono-sc-gb2312.ttf";
 		public static string ShutterSEName = @"350d-shutter.wav";
 		public static string SCFontPath = Path.Combine(CN2PackDir, SCFontName);
@@ -72,7 +73,7 @@ namespace ReShade.Setup
 
 			var assembly = Assembly.GetExecutingAssembly();
 			var productVersion = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>().InformationalVersion;
-			Title = "ReShade-CN2 安装程序 v" + productVersion;
+			Title = "ReShade-CN2 安装程序 | 版本 " + productVersion + " - " + SetupConfig.CN2Version;
 
 			if (productVersion.Contains(" "))
 			{
@@ -212,7 +213,7 @@ namespace ReShade.Setup
 				ResetStatus();
 
 #if RESHADE_ADDON
-				MessageBox.Show(this, "此ReShade构建版本旨在用于单人游戏，在某些多人在线游戏中可能导致账号封禁。\n*此外，ReShade-CN2改动内容虽然不多，但仅针对《最终幻想14》进行了测试，不保证在其他游戏中的可用性。", "Warning", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+				MessageBox.Show(this, "此ReShade构建版本旨在用于单人游戏，在某些多人在线游戏中可能导致账号封禁。\n*此外，ReShade-CN2（及改版安装器）的新增功能仅针对《最终幻想14》进行了测试，不保证在其他游戏中的可用性。", "Warning", MessageBoxButton.OK, MessageBoxImage.Exclamation);
 #endif
 			}
 		}
@@ -1136,7 +1137,7 @@ namespace ReShade.Setup
 			// Add default configuration
 			var config = new IniFile(configPath);
 
-			// offline compatibilityIni
+			// [CN2] offline compatibilityIni
 			if (compatibilityIni == null)
 			{
 				var tmp = Path.Combine(SetupConfig.CN2PackDir, "Compatibility.ini");
@@ -1358,7 +1359,7 @@ namespace ReShade.Setup
 			if (!isHeadless && operation != InstallOperation.Update)
 			{
 				// Only show the selection dialog if there are actually packages to choose
-				//DownloadEffectPackagesIni();
+				DownloadEffectPackagesIni();
 
 				if (packagesIni != null && packagesIni.GetSections().Length != 0)
 				{
@@ -1389,6 +1390,16 @@ namespace ReShade.Setup
 			if (!config.HasValue("GENERAL", "EffectSearchPaths") && !config.HasValue("GENERAL", "TextureSearchPaths"))
 			{
 				WriteSearchPaths(".\\reshade-shaders\\Shaders\\**", ".\\reshade-shaders\\Textures\\**");
+			}
+
+			// [CN2] Add default font and sound effects
+			if (SetupConfig.SCFontPath != null && !config.HasValue("STYLE", "Font"))
+			{
+				config.SetValue("STYLE", ".\\" + SetupConfig.SCFontName);
+			}
+			if (SetupConfig.ShutterSEPath != null && !config.HasValue("SCREENSHOT", "SoundPath"))
+			{
+				config.SetValue("SCREENSHOTS", ".\\" + SetupConfig.ShutterSEName);
 			}
 
 			InstallStep_Finish();
@@ -1613,7 +1624,57 @@ namespace ReShade.Setup
 				UpdateStatusAndFinish(false, "安装CN2整合失败：\n" + ex.Message);
 				return;
 			}
-			InstallStep_CheckAddons();
+			InstallStep_AutoCN2_CheckAddons();
+		}
+		void InstallStep_AutoCN2_CheckAddons()
+		{
+#if RESHADE_ADDON
+			if (!isHeadless)
+			{
+				DownloadAddonsIni();
+
+				Dispatcher.Invoke(() =>
+				{
+					var page = new SelectAddonsPage(addonsIni);
+
+					CurrentPage.Navigate(page);
+				});
+			}
+			else
+#endif
+			{
+				InstallStep_Finish();
+			}
+		}
+		void InstallStep_AutoCN2_InstallAddon()
+		{
+			string addonPath = Path.GetDirectoryName(targetPath);
+
+			var globalConfigPath = Path.Combine(addonPath, "ReShade.ini");
+			if (File.Exists(globalConfigPath))
+			{
+				var globalConfig = new IniFile(globalConfigPath);
+				addonPath = globalConfig.GetString("ADDON", "AddonPath", addonPath);
+			}
+
+			try
+			{
+				File.Copy(downloadPath, Path.Combine(addonPath, Path.GetFileName(tempPath)), true);
+			}
+			catch (Exception ex)
+			{
+				UpdateStatusAndFinish(false, "安装" + addon.Name + "失败：\n" + ex.Message);
+				return;
+			}
+
+			if (addons.Count != 0)
+			{
+				InstallStep_DownloadAddon();
+			}
+			else
+			{
+				InstallStep_Finish();
+			}
 		}
 		void InstallStep_CheckAddons()
 		{
@@ -1649,7 +1710,14 @@ namespace ReShade.Setup
 
 			UpdateStatus("从" + addon.DownloadUrl + "下载" + addon.Name + "…");
 
-			tempPath = null;
+			tempPath = (MainWindow.is64Bit ? addon.DownloadUrl64 : addon.DownloadUrl32);
+			if (tempPath[0] == '@')
+			{
+				tempPath = tempPath.Trim('@');
+				downloadPath = Path.Combine(SetupConfig.CN2PackDir, tempPath);
+				InstallStep_AutoCN2_InstallAddon();
+				return;
+			}
 
 			var client = new WebClient();
 
@@ -1782,7 +1850,7 @@ namespace ReShade.Setup
 					{
 						if (!RestartWithElevatedPrivileges())
 						{
-							UpdateStatusAndFinish(false, "提升权限失败，因此无法安装Vulkan层。");
+							UpdateStatusAndFinish(false, "提升权限失败，因此无法卸载Vulkan层。");
 						}
 					});
 					return;
@@ -1846,6 +1914,21 @@ namespace ReShade.Setup
 				{
 					File.Delete(Path.Combine(basePath, "ReShade.log"));
 				}
+				// [CN2] Remove Font & Shutter SE
+				if (File.Exists(Path.Combine(basePath, SetupConfig.SCFontName)))
+				{
+					File.Delete(Path.Combine(basePath, SetupConfig.SCFontName));
+				}
+				if (File.Exists(Path.Combine(basePath, SetupConfig.ShutterSEName)))
+				{
+					File.Delete(Path.Combine(basePath, SetupConfig.ShutterSEName));
+				}
+
+				var remove_addons = Directory.GetFiles(basePath, "*.addon*", SearchOption.TopDirectoryOnly);
+				foreach (var ad in remove_addons)
+				{
+					File.Delete(ad);
+				}
 
 				if (Directory.Exists(Path.Combine(basePath, "reshade-shaders")))
 				{
@@ -1897,7 +1980,7 @@ namespace ReShade.Setup
 
 				targetPath = appPage.FileName;
 				SetupConfig.SCFontPath = appPage.InstallSCFontCheckBox.IsChecked??false ? SetupConfig.SCFontPath : null;
-				SetupConfig.ShutterSEPath = appPage.InstallSCFontCheckBox.IsChecked ?? false ? SetupConfig.SCFontPath : null;
+				SetupConfig.ShutterSEPath = appPage.InstallShutterSECheckBox.IsChecked??false ? SetupConfig.ShutterSEPath : null;
 
 				InstallStep_CheckPrivileges();
 				return;

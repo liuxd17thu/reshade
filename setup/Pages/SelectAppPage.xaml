@@ -17,13 +17,13 @@
       </ComboBox>
       <Label DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center" Content="排序：" />
     </DockPanel>
-    <TextBlock DockPanel.Dock="Bottom" Margin="10,5" TextWrapping="Wrap">
-      浏览并选择一个游戏，管理它的ReShade安装。
-    </TextBlock>
     <StackPanel DockPanel.Dock="Bottom" Orientation="Vertical" VerticalAlignment="Bottom" Margin="10,5">
       <CheckBox x:Name="InstallSCFontCheckBox" VerticalAlignment="Bottom" Content="[CN2]安装时使用“等宽更纱黑体SC GB2312”作为默认界面字体"/>
       <CheckBox x:Name="InstallShutterSECheckBox" VerticalAlignment="Bottom" Content="[CN2]安装时添加预置快门音效"/>
     </StackPanel>
+    <TextBlock DockPanel.Dock="Bottom" Margin="10,5" TextWrapping="Wrap">
+      浏览并选择一个游戏，管理它的ReShade安装。
+    </TextBlock>
     <Grid DockPanel.Dock="Bottom" Margin="10,5">
       <TextBlock HorizontalAlignment="Left" VerticalAlignment="Bottom" Text="没有找到想要的游戏？" />
       <Button HorizontalAlignment="Right" VerticalAlignment="Center" Width="100" Content="浏览…(_B)" Click="OnBrowseClick" />

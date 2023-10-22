@@ -67,7 +67,7 @@ namespace ReShade.Setup.Pages
 			InitializeComponent();
 			DataContext = this;
 
-			if (Directory.Exists("./CN2-v0.71"))
+			if (Directory.Exists("./" + SetupConfig.CN2Version + "/reshade-shaders"))
 			{
 				AutoCN2.Foreground = (SolidColorBrush)new BrushConverter().ConvertFrom("#ff00aa33");
 				AutoCN2.Content = "一键CN2：就绪";
@@ -84,7 +84,7 @@ namespace ReShade.Setup.Pages
 				{
 					Selected = false,
 					Modifiable = false,
-					PackageName = "CN2-v0.71汉化整合",
+					PackageName = SetupConfig.CN2Version + "汉化整合",
 					PackageDescription = "此处选项仅用作占位。"
 				});
 				return;

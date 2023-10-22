@@ -7,10 +7,10 @@
       d:DesignWidth="510" d:DesignHeight="638"
       Width="Auto" Height="Auto">
   <DockPanel LastChildFill="False">
-    <Label DockPanel.Dock="Top" Margin="10" Padding="0" VerticalAlignment="Top" Foreground="#FF003399" FontSize="16" Content="Select preset to install:" />
+    <Label DockPanel.Dock="Top" Margin="10" Padding="0" VerticalAlignment="Top" Foreground="#FF003399" FontSize="16" Content="选择要安装的预设：" />
     <TextBlock DockPanel.Dock="Top" Margin="10,5" TextWrapping="Wrap">
       选择要使用的预设文件(.ini)并安装所有用到的效果（着色器）包，或点击“跳过”以使用一个空白预设，并手动选择要安装的着色器包。<LineBreak />
-      推荐点击“跳过”。
+      <Run Foreground="#FFAA0000" FontWeight="Bold">推荐点击“跳过”。</Run>
     </TextBlock>
     <Grid DockPanel.Dock="Bottom" Margin="10,5">
       <Grid.ColumnDefinitions>
