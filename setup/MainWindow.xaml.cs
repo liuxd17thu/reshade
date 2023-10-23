@@ -1142,13 +1142,15 @@ namespace ReShade.Setup
 			{
 				var tmp = Path.Combine(SetupConfig.CN2PackDir, "Compatibility.ini");
 				compatibilityIni = File.Exists(tmp) ? new IniFile(tmp) : null;
-				if (targetName == "ffxiv_dx11.exe")
+				if (targetName == "FINAL FANTASY XIV")
 				{
 					config.SetValue("GENERAL", "PreprocessorDefinitions",
 						"RESHADE_DEPTH_LINEARIZATION_FAR_PLANE=1000.0",
 						"RESHADE_DEPTH_INPUT_IS_UPSIDE_DOWN=" + "0",
 						"RESHADE_DEPTH_INPUT_IS_REVERSED=" + "0",
 						"RESHADE_DEPTH_INPUT_IS_LOGARITHMIC=" + "0");
+					config.SetValue("DEPTH", "UseAspectRatioHeuristics", "1");
+					config.SetValue("DEPTH", "DepthCopyBeforeClears", "1");
 				}
 			}
 			if (compatibilityIni != null && !config.HasValue("GENERAL", "PreprocessorDefinitions"))
