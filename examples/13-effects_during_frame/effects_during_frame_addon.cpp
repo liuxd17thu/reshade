@@ -83,9 +83,11 @@ static void on_end_render_pass(command_list *cmd_list)
 	// This is not perfect, since there may be multiple command lists, so a global index is not conclusive and this may cause effects to be rendered multiple times ...
 	if (data.current_render_pass_index++ == (dev_data.last_render_pass_count - dev_data.offset_from_last_pass))
 	{
-		const auto &current_state = cmd_list->get_private_data<state_block>();
+		const auto &current_state = cmd_list->get_private_data<state_tracking>();
 
-		dev_data.main_runtime->render_effects(cmd_list, data.current_main_rtv);
+		// This does not handle sRGB correctly, since it would need to pass in separate render target views created with a non-sRGB and a sRGB format variant of the target resource
+		// For simplicity and demonstration purposes the same render target view (which can be either non-sRGB or sRGB, depending on what the application created it with) for both cases is passed in here, but this should be fixed in a proper implementation
+		dev_data.main_runtime->render_effects(cmd_list, data.current_main_rtv, data.current_main_rtv);
 
 		// Re-apply state to the command list, as it may have been modified by the call to 'render_effects'
 		current_state.apply(cmd_list);
@@ -184,7 +186,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 			return FALSE;
 
 		// Need to register events for state tracking before the rest, so that the state block of a command list is up-to-date by the time any of the below callback functions are called
-		register_state_tracking();
+		state_tracking::register_events();
 
 		reshade::register_event<reshade::addon_event::init_device>(on_init_device);
 		reshade::register_event<reshade::addon_event::destroy_device>(on_destroy_device);
@@ -203,7 +205,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 		reshade::register_overlay(nullptr, on_draw_settings);
 		break;
 	case DLL_PROCESS_DETACH:
-		unregister_state_tracking();
+		state_tracking::unregister_events();
 
 		reshade::unregister_addon(hModule);
 		break;

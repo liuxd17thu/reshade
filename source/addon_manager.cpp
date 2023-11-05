@@ -55,12 +55,12 @@ static const char *addon_event_to_string(reshade::addon_event ev)
 		CASE(init_pipeline_layout);
 		CASE(create_pipeline_layout);
 		CASE(destroy_pipeline_layout);
-		CASE(copy_descriptor_sets);
-		CASE(update_descriptor_sets);
-		CASE(init_query_pool);
-		CASE(create_query_pool);
-		CASE(destroy_query_pool);
-		CASE(get_query_pool_results);
+		CASE(copy_descriptor_tables);
+		CASE(update_descriptor_tables);
+		CASE(init_query_heap);
+		CASE(create_query_heap);
+		CASE(destroy_query_heap);
+		CASE(get_query_heap_results);
 		CASE(barrier);
 		CASE(begin_render_pass);
 		CASE(end_render_pass);
@@ -71,7 +71,7 @@ static const char *addon_event_to_string(reshade::addon_event ev)
 		CASE(bind_scissor_rects);
 		CASE(push_constants);
 		CASE(push_descriptors);
-		CASE(bind_descriptor_sets);
+		CASE(bind_descriptor_tables);
 		CASE(bind_index_buffer);
 		CASE(bind_vertex_buffers);
 		CASE(bind_stream_output_buffers);
@@ -92,7 +92,7 @@ static const char *addon_event_to_string(reshade::addon_event ev)
 		CASE(generate_mipmaps);
 		CASE(begin_query);
 		CASE(end_query);
-		CASE(copy_query_pool_results);
+		CASE(copy_query_heap_results);
 		CASE(reset_command_list);
 		CASE(close_command_list);
 		CASE(execute_command_list);
@@ -107,13 +107,15 @@ static const char *addon_event_to_string(reshade::addon_event ev)
 		CASE(reshade_overlay);
 		CASE(reshade_screenshot);
 		CASE(reshade_render_technique);
+		CASE(reshade_set_current_preset_path);
+		CASE(reshade_reorder_techniques);
 	}
 #undef  CASE
 	return "unknown";
 }
 #endif
 
-#if RESHADE_ADDON_LITE
+#if RESHADE_ADDON == 1
 bool reshade::addon_enabled = true;
 #endif
 bool reshade::addon_all_loaded = true;
@@ -134,8 +136,6 @@ void reshade::load_addons()
 #endif
 
 	addon_all_loaded = true;
-	internal::get_reshade_module_handle(g_module_handle);
-	internal::get_current_module_handle(g_module_handle);
 
 	std::vector<std::string> disabled_addons;
 	config.get("ADDON", "DisabledAddons", disabled_addons);
@@ -156,7 +156,6 @@ void reshade::load_addons()
 	}
 #endif
 
-#if !RESHADE_ADDON_LITE
 	// Get directory from where to load add-ons from
 	std::filesystem::path addon_search_path = g_reshade_base_path;
 	if (config.get("ADDON", "AddonPath", addon_search_path))
@@ -181,6 +180,12 @@ void reshade::load_addons()
 #endif
 			continue;
 
+#if RESHADE_ADDON == 1
+		// Indicate that add-ons exist that could not be loaded because this build of ReShade has only limited add-on functionality
+		addon_all_loaded = false;
+
+		LOG(WARN) << "Skipped loading add-on from " << path << " because this build of ReShade has only limited add-on functionality.";
+#else
 		// Avoid loading library altogether when it is found in the disabled add-on list
 		if (addon_info info;
 			std::find_if(disabled_addons.cbegin(), disabled_addons.cend(),
@@ -206,12 +211,12 @@ void reshade::load_addons()
 		{
 			const DWORD error_code = GetLastError();
 
-			if (!addon_loaded_info.empty() && path.filename().u8string() == addon_loaded_info.back().file)
+			if (error_code == ERROR_DLL_INIT_FAILED && !addon_loaded_info.empty() && path.filename().u8string() == addon_loaded_info.back().file)
 			{
 				// Avoid logging an error if loading failed because the add-on is disabled
 				assert(addon_loaded_info.back().handle == nullptr);
 
-				LOG(INFO) << "> Add-on is disabled. Skipped.";
+				LOG(WARN) << "> Add-on failed to initialize or is disabled. Skipped.";
 			}
 			else
 			{
@@ -229,7 +234,7 @@ void reshade::load_addons()
 			{
 				assert(addon_loaded_info.back().handle == nullptr);
 
-				LOG(INFO) << "> Add-on is disabled. Skipped.";
+				LOG(WARN) << "> Add-on failed to initialize or is disabled. Skipped.";
 			}
 			else
 			{
@@ -248,11 +253,11 @@ void reshade::load_addons()
 
 			FreeLibrary(module);
 		}
+#endif
 	}
 
 	if (ec)
 		LOG(WARN) << "Failed to iterate all files in " << addon_search_path << " with error code " << ec.value() << '!';
-#endif
 }
 void reshade::unload_addons()
 {
@@ -260,7 +265,9 @@ void reshade::unload_addons()
 	if (InterlockedDecrement(&s_reference_count) != 0)
 		return;
 
-#if !RESHADE_ADDON_LITE
+#if RESHADE_ADDON == 1
+	// There are no add-ons to unload ...
+#else
 	// Create copy of add-on list before unloading, since add-ons call 'ReShadeUnregisterAddon' during 'FreeLibrary', which modifies the list
 	const std::vector<addon_info> loaded_info_copy = addon_loaded_info;
 	for (const addon_info &info : loaded_info_copy)
@@ -317,22 +324,15 @@ reshade::addon_info *reshade::find_addon(void *address)
 	if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, reinterpret_cast<LPCWSTR>(address), &module))
 		return nullptr;
 
+	assert(module != nullptr);
+
 	for (auto it = addon_loaded_info.rbegin(); it != addon_loaded_info.rend(); ++it)
 		if (it->handle == module)
 			return &(*it);
 	return nullptr;
 }
 
-extern "C" __declspec(dllexport) bool ReShadeRegisterAddon(HMODULE module, uint32_t api_version);
-extern "C" __declspec(dllexport) void ReShadeUnregisterAddon(HMODULE module);
-
-extern "C" __declspec(dllexport) void ReShadeRegisterEvent(reshade::addon_event ev, void *callback);
-extern "C" __declspec(dllexport) void ReShadeUnregisterEvent(reshade::addon_event ev, void *callback);
-
-#if RESHADE_GUI
-extern "C" __declspec(dllexport) void ReShadeRegisterOverlay(const char *title, void(*callback)(reshade::api::effect_runtime *runtime));
-extern "C" __declspec(dllexport) void ReShadeUnregisterOverlay(const char *title, void(*callback)(reshade::api::effect_runtime *runtime));
-#endif
+#if defined(RESHADE_API_LIBRARY_EXPORT)
 
 bool ReShadeRegisterAddon(HMODULE module, uint32_t api_version)
 {
@@ -463,7 +463,7 @@ void ReShadeRegisterEvent(reshade::addon_event ev, void *callback)
 		return;
 	}
 
-#if RESHADE_ADDON_LITE
+#if RESHADE_ADDON == 1
 	// Block all application events when building without add-on loading support
 	if (info->handle != g_module_handle && (ev > reshade::addon_event::destroy_effect_runtime && ev < reshade::addon_event::present))
 	{
@@ -490,7 +490,7 @@ void ReShadeUnregisterEvent(reshade::addon_event ev, void *callback)
 	if (info == nullptr)
 		return; // Do not log an error here, since this may be called if an add-on failed to load
 
-#if RESHADE_ADDON_LITE
+#if RESHADE_ADDON == 1
 	if (info->handle != g_module_handle && (ev > reshade::addon_event::destroy_effect_runtime && ev < reshade::addon_event::present))
 		return;
 #endif
@@ -551,6 +551,8 @@ void ReShadeUnregisterOverlay(const char *title, void(*callback)(reshade::api::e
 			return item.title == title && item.callback == callback;
 		}), info->overlay_callbacks.end());
 }
+
+#endif
 
 #endif
 

@@ -1,16 +1,16 @@
 /*
  * Copyright (C) 2021 Patrick Mours
- * Copyright (C) 2014-2022 Omar Cornut
+ * Copyright (C) 2014-2023 Omar Cornut
  * SPDX-License-Identifier: BSD-3-Clause OR MIT
  */
 
-#if RESHADE_ADDON
+#if defined(RESHADE_API_LIBRARY_EXPORT) && RESHADE_ADDON
 
 #include <new>
 #include <imgui.h>
-#include "reshade_overlay.hpp"
+#include "imgui_function_table_18971.hpp"
 
-imgui_function_table g_imgui_function_table = {
+imgui_function_table_18971 g_imgui_function_table_18971 = {
 	ImGui::GetIO,
 	ImGui::GetStyle,
 	ImGui::GetVersion,
@@ -35,6 +35,7 @@ imgui_function_table g_imgui_function_table = {
 	ImGui::SetNextWindowContentSize,
 	ImGui::SetNextWindowCollapsed,
 	ImGui::SetNextWindowFocus,
+	ImGui::SetNextWindowScroll,
 	ImGui::SetNextWindowBgAlpha,
 	ImGui::SetWindowPos,
 	ImGui::SetWindowSize,
@@ -67,8 +68,8 @@ imgui_function_table g_imgui_function_table = {
 	ImGui::PushStyleVar,
 	ImGui::PushStyleVar,
 	ImGui::PopStyleVar,
-	ImGui::PushAllowKeyboardFocus,
-	ImGui::PopAllowKeyboardFocus,
+	ImGui::PushTabStop,
+	ImGui::PopTabStop,
 	ImGui::PushButtonRepeat,
 	ImGui::PopButtonRepeat,
 	ImGui::PushItemWidth,
@@ -122,12 +123,11 @@ imgui_function_table g_imgui_function_table = {
 	ImGui::TextWrappedV,
 	ImGui::LabelTextV,
 	ImGui::BulletTextV,
+	ImGui::SeparatorText,
 	ImGui::Button,
 	ImGui::SmallButton,
 	ImGui::InvisibleButton,
 	ImGui::ArrowButton,
-	ImGui::Image,
-	ImGui::ImageButton,
 	ImGui::Checkbox,
 	ImGui::CheckboxFlags,
 	ImGui::CheckboxFlags,
@@ -135,6 +135,8 @@ imgui_function_table g_imgui_function_table = {
 	ImGui::RadioButton,
 	ImGui::ProgressBar,
 	ImGui::Bullet,
+	ImGui::Image,
+	ImGui::ImageButton,
 	ImGui::BeginCombo,
 	ImGui::EndCombo,
 	ImGui::Combo,
@@ -224,6 +226,8 @@ imgui_function_table g_imgui_function_table = {
 	ImGui::BeginTooltip,
 	ImGui::EndTooltip,
 	ImGui::SetTooltipV,
+	ImGui::BeginItemTooltip,
+	ImGui::SetItemTooltipV,
 	ImGui::BeginPopup,
 	ImGui::BeginPopupModal,
 	ImGui::EndPopup,
@@ -284,6 +288,7 @@ imgui_function_table g_imgui_function_table = {
 	ImGui::PopClipRect,
 	ImGui::SetItemDefaultFocus,
 	ImGui::SetKeyboardFocusHere,
+	ImGui::SetNextItemAllowOverlap,
 	ImGui::IsItemHovered,
 	ImGui::IsItemActive,
 	ImGui::IsItemFocused,
@@ -297,18 +302,18 @@ imgui_function_table g_imgui_function_table = {
 	ImGui::IsAnyItemHovered,
 	ImGui::IsAnyItemActive,
 	ImGui::IsAnyItemFocused,
+	ImGui::GetItemID,
 	ImGui::GetItemRectMin,
 	ImGui::GetItemRectMax,
 	ImGui::GetItemRectSize,
-	ImGui::SetItemAllowOverlap,
+	ImGui::GetBackgroundDrawList,
+	ImGui::GetForegroundDrawList,
+	ImGui::GetBackgroundDrawList,
+	ImGui::GetForegroundDrawList,
 	ImGui::IsRectVisible,
 	ImGui::IsRectVisible,
 	ImGui::GetTime,
 	ImGui::GetFrameCount,
-	ImGui::GetBackgroundDrawList,
-	ImGui::GetForegroundDrawList,
-	ImGui::GetBackgroundDrawList,
-	ImGui::GetForegroundDrawList,
 	ImGui::GetDrawListSharedData,
 	ImGui::GetStyleColorName,
 	ImGui::SetStateStorage,
@@ -320,12 +325,12 @@ imgui_function_table g_imgui_function_table = {
 	ImGui::ColorConvertFloat4ToU32,
 	ImGui::ColorConvertRGBtoHSV,
 	ImGui::ColorConvertHSVtoRGB,
-	ImGui::GetKeyIndex,
 	ImGui::IsKeyDown,
 	ImGui::IsKeyPressed,
 	ImGui::IsKeyReleased,
 	ImGui::GetKeyPressedAmount,
-	ImGui::CaptureKeyboardFromApp,
+	ImGui::GetKeyName,
+	ImGui::SetNextFrameWantCaptureKeyboard,
 	ImGui::IsMouseDown,
 	ImGui::IsMouseClicked,
 	ImGui::IsMouseReleased,
@@ -341,10 +346,9 @@ imgui_function_table g_imgui_function_table = {
 	ImGui::ResetMouseDragDelta,
 	ImGui::GetMouseCursor,
 	ImGui::SetMouseCursor,
-	ImGui::CaptureMouseFromApp,
+	ImGui::SetNextFrameWantCaptureMouse,
 	ImGui::GetClipboardText,
 	ImGui::SetClipboardText,
-	ImGui::DebugCheckVersionAndDataLayout,
 	ImGui::SetAllocatorFunctions,
 	ImGui::GetAllocatorFunctions,
 	ImGui::MemAlloc,
@@ -368,8 +372,8 @@ imgui_function_table g_imgui_function_table = {
 	[](ImGuiListClipper *_this, int items_count, float items_height) -> void { _this->Begin(items_count, items_height); },
 	[](ImGuiListClipper *_this) -> void { _this->End(); },
 	[](ImGuiListClipper *_this) -> bool { return _this->Step(); },
-	[](ImGuiListClipper *_this, int item_min, int item_max) -> void { _this->ForceDisplayRangeByIndices(item_min, item_max); },
-	[](ImDrawList *_this, ImVec2 clip_rect_min, ImVec2 clip_rect_max, bool intersect_with_current_clip_rect) -> void { _this->PushClipRect(clip_rect_min, clip_rect_max, intersect_with_current_clip_rect); },
+	[](ImGuiListClipper *_this, int item_begin, int item_end) -> void { _this->IncludeRangeByIndices(item_begin, item_end); },
+	[](ImDrawList *_this, const ImVec2& clip_rect_min, const ImVec2& clip_rect_max, bool intersect_with_current_clip_rect) -> void { _this->PushClipRect(clip_rect_min, clip_rect_max, intersect_with_current_clip_rect); },
 	[](ImDrawList *_this) -> void { _this->PushClipRectFullScreen(); },
 	[](ImDrawList *_this) -> void { _this->PopClipRect(); },
 	[](ImDrawList *_this, ImTextureID texture_id) -> void { _this->PushTextureID(texture_id); },
@@ -414,8 +418,8 @@ imgui_function_table g_imgui_function_table = {
 	[](const ImFont *_this, ImWchar c) -> const ImFontGlyph* { return _this->FindGlyphNoFallback(c); },
 	[](const ImFont *_this, float size, float max_width, float wrap_width, const char* text_begin, const char* text_end, const char** remaining) -> ImVec2 { return _this->CalcTextSizeA(size, max_width, wrap_width, text_begin, text_end, remaining); },
 	[](const ImFont *_this, float scale, const char* text, const char* text_end, float wrap_width) -> const char* { return _this->CalcWordWrapPositionA(scale, text, text_end, wrap_width); },
-	[](const ImFont *_this, ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col, ImWchar c) -> void { _this->RenderChar(draw_list, size, pos, col, c); },
-	[](const ImFont *_this, ImDrawList* draw_list, float size, ImVec2 pos, ImU32 col, const ImVec4& clip_rect, const char* text_begin, const char* text_end, float wrap_width, bool cpu_fine_clip) -> void { _this->RenderText(draw_list, size, pos, col, clip_rect, text_begin, text_end, wrap_width, cpu_fine_clip); },
+	[](const ImFont *_this, ImDrawList* draw_list, float size, const ImVec2& pos, ImU32 col, ImWchar c) -> void { _this->RenderChar(draw_list, size, pos, col, c); },
+	[](const ImFont *_this, ImDrawList* draw_list, float size, const ImVec2& pos, ImU32 col, const ImVec4& clip_rect, const char* text_begin, const char* text_end, float wrap_width, bool cpu_fine_clip) -> void { _this->RenderText(draw_list, size, pos, col, clip_rect, text_begin, text_end, wrap_width, cpu_fine_clip); },
 
 };
 

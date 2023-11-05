@@ -114,7 +114,7 @@
       <SDLCheck>true</SDLCheck>
       <Optimization>Disabled</Optimization>
       <AdditionalIncludeDirectories>res;source;include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>RESHADE_FX;RESHADE_GUI;RESHADE_ADDON;RESHADE_VERBOSE_LOG;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>RESHADE_FX;RESHADE_GUI;RESHADE_API_LIBRARY_EXPORT;RESHADE_ADDON=2;RESHADE_VERBOSE_LOG;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <DisableSpecificWarnings>4351;26812;28251;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
@@ -145,7 +145,7 @@
       <SDLCheck>true</SDLCheck>
       <Optimization>Disabled</Optimization>
       <AdditionalIncludeDirectories>res;source;include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>RESHADE_FX;RESHADE_GUI;RESHADE_ADDON;RESHADE_VERBOSE_LOG;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>RESHADE_FX;RESHADE_GUI;RESHADE_API_LIBRARY_EXPORT;RESHADE_ADDON=2;RESHADE_VERBOSE_LOG;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <DisableSpecificWarnings>4351;26812;28251;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
@@ -176,7 +176,7 @@
       <SDLCheck>true</SDLCheck>
       <Optimization>Disabled</Optimization>
       <AdditionalIncludeDirectories>res;source;include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>RESHADE_FX;RESHADE_GUI;RESHADE_ADDON;RESHADE_TEST_APPLICATION;RESHADE_VERBOSE_LOG;D3D_DEBUG_INFO;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>RESHADE_FX;RESHADE_GUI;RESHADE_API_LIBRARY_EXPORT;RESHADE_ADDON=2;RESHADE_TEST_APPLICATION;RESHADE_VERBOSE_LOG;D3D_DEBUG_INFO;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <DisableSpecificWarnings>4351;26812;28251;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
@@ -207,7 +207,7 @@
       <SDLCheck>true</SDLCheck>
       <Optimization>Disabled</Optimization>
       <AdditionalIncludeDirectories>res;source;include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>RESHADE_FX;RESHADE_GUI;RESHADE_ADDON;RESHADE_TEST_APPLICATION;RESHADE_VERBOSE_LOG;D3D_DEBUG_INFO;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>RESHADE_FX;RESHADE_GUI;RESHADE_API_LIBRARY_EXPORT;RESHADE_ADDON=2;RESHADE_TEST_APPLICATION;RESHADE_VERBOSE_LOG;D3D_DEBUG_INFO;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <DisableSpecificWarnings>4351;26812;28251;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
@@ -239,7 +239,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <AdditionalIncludeDirectories>res;source;include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>RESHADE_FX;RESHADE_GUI;RESHADE_ADDON;_HAS_EXCEPTIONS=0;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>RESHADE_FX;RESHADE_GUI;RESHADE_API_LIBRARY_EXPORT;RESHADE_ADDON=2;_HAS_EXCEPTIONS=0;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <DisableSpecificWarnings>4351;26812;28251;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -279,7 +279,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <AdditionalIncludeDirectories>res;source;include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>RESHADE_FX;RESHADE_GUI;RESHADE_ADDON;_HAS_EXCEPTIONS=0;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>RESHADE_FX;RESHADE_GUI;RESHADE_API_LIBRARY_EXPORT;RESHADE_ADDON=2;_HAS_EXCEPTIONS=0;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <DisableSpecificWarnings>4351;26812;28251;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -397,7 +397,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <AdditionalIncludeDirectories>res;source;include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>RESHADE_FX;RESHADE_GUI;RESHADE_ADDON;RESHADE_ADDON_LITE;_HAS_EXCEPTIONS=0;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>RESHADE_FX;RESHADE_GUI;RESHADE_API_LIBRARY_EXPORT;RESHADE_ADDON=1;_HAS_EXCEPTIONS=0;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <DisableSpecificWarnings>4351;26812;28251;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -441,7 +441,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <AdditionalIncludeDirectories>res;source;include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>RESHADE_FX;RESHADE_GUI;RESHADE_ADDON;RESHADE_ADDON_LITE;_HAS_EXCEPTIONS=0;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>RESHADE_FX;RESHADE_GUI;RESHADE_API_LIBRARY_EXPORT;RESHADE_ADDON=1;_HAS_EXCEPTIONS=0;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <DisableSpecificWarnings>4351;26812;28251;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -532,6 +532,7 @@
     <ClCompile Include="source\d3d11\d3d11_impl_state_block.cpp" />
     <ClCompile Include="source\d3d11\d3d11_impl_swapchain.cpp" />
     <ClCompile Include="source\d3d11\d3d11_impl_type_convert.cpp" />
+    <ClCompile Include="source\d3d11\d3d11_resource.cpp" />
     <ClCompile Include="source\d3d12\d3d12.cpp" />
     <ClCompile Include="source\d3d12\d3d12_command_list.cpp" />
     <ClCompile Include="source\d3d12\d3d12_command_queue.cpp" />
@@ -579,7 +580,8 @@
     <ClCompile Include="source\hook.cpp" />
     <ClCompile Include="source\hook_manager.cpp" />
     <ClCompile Include="source\imgui_code_editor.cpp" />
-    <ClCompile Include="source\imgui_function_table.cpp" />
+    <ClCompile Include="source\imgui_function_table_18600.cpp" />
+    <ClCompile Include="source\imgui_function_table_18971.cpp" />
     <ClCompile Include="source\imgui_widgets.cpp" />
     <ClCompile Include="source\ini_file.cpp" />
     <ClCompile Include="source\input.cpp" />
@@ -652,6 +654,8 @@
     <ClInclude Include="source\d3d11\d3d11_impl_state_block.hpp" />
     <ClInclude Include="source\d3d11\d3d11_impl_swapchain.hpp" />
     <ClInclude Include="source\d3d11\d3d11_impl_type_convert.hpp" />
+    <ClInclude Include="source\d3d11\d3d11_resource.hpp" />
+    <ClInclude Include="source\d3d11\d3d11_resource_call_vtable.inl" />
     <ClInclude Include="source\d3d12\d3d12_command_list.hpp" />
     <ClInclude Include="source\d3d12\d3d12_command_queue.hpp" />
     <ClInclude Include="source\d3d12\d3d12_command_queue_downlevel.hpp" />
@@ -684,6 +688,8 @@
     <ClInclude Include="source\hook.hpp" />
     <ClInclude Include="source\hook_manager.hpp" />
     <ClInclude Include="source\imgui_code_editor.hpp" />
+    <ClInclude Include="source\imgui_function_table_18600.hpp" />
+    <ClInclude Include="source\imgui_function_table_18971.hpp" />
     <ClInclude Include="source\imgui_widgets.hpp" />
     <ClInclude Include="source\ini_file.hpp" />
     <ClInclude Include="source\input.hpp" />
@@ -713,7 +719,7 @@
   <ItemGroup>
     <None Include="res\exports.def" />
     <None Include="res\fonts\forkawesome.inl" />
-    <None Include="res\resource.rc2" />
+    <None Include="res\version.rc2" />
     <None Include="tools\update_version.ps1" />
   </ItemGroup>
   <ItemGroup>
@@ -728,6 +734,10 @@
       <ShaderModel>3.0</ShaderModel>
     </FxCompile>
     <FxCompile Include="res\shaders\imgui_ps_4_0.hlsl">
+      <ShaderType>Pixel</ShaderType>
+      <ShaderModel>4.0</ShaderModel>
+    </FxCompile>
+    <FxCompile Include="res\shaders\imgui_ps_4_0_hdr.hlsl">
       <ShaderType>Pixel</ShaderType>
       <ShaderModel>4.0</ShaderModel>
     </FxCompile>
@@ -746,6 +756,12 @@
   </ItemGroup>
   <ItemGroup>
     <CustomBuild Include="res\shaders\imgui_ps.glsl">
+      <FileType>Document</FileType>
+      <Command>"$(VK_SDK_PATH)\Bin\glslangValidator.exe" -V -S frag "%(FullPath)" -o "res\shaders\%(Filename).spv"</Command>
+      <Outputs>res\shaders\%(Filename).spv</Outputs>
+      <ExcludedFromBuild Condition="!Exists('$(VK_SDK_PATH)\Bin\glslangValidator.exe')">true</ExcludedFromBuild>
+    </CustomBuild>
+    <CustomBuild Include="res\shaders\imgui_ps_hdr.glsl">
       <FileType>Document</FileType>
       <Command>"$(VK_SDK_PATH)\Bin\glslangValidator.exe" -V -S frag "%(FullPath)" -o "res\shaders\%(Filename).spv"</Command>
       <Outputs>res\shaders\%(Filename).spv</Outputs>

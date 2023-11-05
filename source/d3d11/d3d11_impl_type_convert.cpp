@@ -3,11 +3,8 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#include <vector>
-#include <limits>
-#include "com_ptr.hpp"
-#include "reshade_api_pipeline.hpp"
 #include "d3d11_impl_type_convert.hpp"
+#include <limits>
 
 auto reshade::d3d11::convert_format(api::format format) -> DXGI_FORMAT
 {
@@ -25,6 +22,9 @@ auto reshade::d3d11::convert_color_space(DXGI_COLOR_SPACE_TYPE type) -> api::col
 {
 	switch (type)
 	{
+	default:
+		assert(false);
+		return api::color_space::unknown;
 	case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709:
 		return api::color_space::srgb_nonlinear;
 	case DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709:
@@ -33,11 +33,7 @@ auto reshade::d3d11::convert_color_space(DXGI_COLOR_SPACE_TYPE type) -> api::col
 		return api::color_space::hdr10_st2084;
 	case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P2020:
 		return api::color_space::hdr10_hlg;
-	default:
-		break;
 	}
-
-	return api::color_space::unknown;
 }
 
 static void convert_memory_heap_to_d3d_usage(reshade::api::memory_heap heap, D3D11_USAGE &usage, UINT &cpu_access_flags)
@@ -215,16 +211,13 @@ static void convert_misc_flags_to_resource_flags(UINT misc_flags, reshade::api::
 		flags |= api::resource_flags::sparse_binding;
 }
 
-auto reshade::d3d11::convert_access_flags(api::map_access access, bool is_vertex_or_index_buffer) -> D3D11_MAP
+auto reshade::d3d11::convert_access_flags(api::map_access access) -> D3D11_MAP
 {
 	switch (access)
 	{
 	case api::map_access::read_only:
 		return D3D11_MAP_READ;
 	case api::map_access::write_only:
-		if (is_vertex_or_index_buffer)
-			// Use no overwrite flag to simulate D3D12 behavior of there only being one allocation that backs a buffer (instead of the runtime managing multiple ones behind the scenes)
-			return D3D11_MAP_WRITE_NO_OVERWRITE;
 		return D3D11_MAP_WRITE;
 	case api::map_access::read_write:
 		return D3D11_MAP_READ_WRITE;
@@ -328,6 +321,7 @@ void reshade::d3d11::convert_resource_desc(const api::resource_desc &desc, D3D11
 }
 void reshade::d3d11::convert_resource_desc(const api::resource_desc &desc, D3D11_TEXTURE2D_DESC1 &internal_desc)
 {
+	// D3D11_TEXTURE2D_DESC1 is a superset of D3D11_TEXTURE2D_DESC
 	convert_resource_desc(desc, reinterpret_cast<D3D11_TEXTURE2D_DESC &>(internal_desc));
 }
 void reshade::d3d11::convert_resource_desc(const api::resource_desc &desc, D3D11_TEXTURE3D_DESC &internal_desc)
@@ -348,6 +342,7 @@ void reshade::d3d11::convert_resource_desc(const api::resource_desc &desc, D3D11
 }
 void reshade::d3d11::convert_resource_desc(const api::resource_desc &desc, D3D11_TEXTURE3D_DESC1 &internal_desc)
 {
+	// D3D11_TEXTURE3D_DESC1 is a superset of D3D11_TEXTURE3D_DESC
 	convert_resource_desc(desc, reinterpret_cast<D3D11_TEXTURE3D_DESC &>(internal_desc));
 }
 reshade::api::resource_desc reshade::d3d11::convert_resource_desc(const D3D11_BUFFER_DESC &internal_desc)
@@ -1246,16 +1241,16 @@ void reshade::d3d11::convert_depth_stencil_desc(const api::depth_stencil_desc &d
 	internal_desc.DepthWriteMask = desc.depth_write_mask ? D3D11_DEPTH_WRITE_MASK_ALL : D3D11_DEPTH_WRITE_MASK_ZERO;
 	internal_desc.DepthFunc = convert_compare_op(desc.depth_func);
 	internal_desc.StencilEnable = desc.stencil_enable;
-	internal_desc.StencilReadMask = desc.stencil_read_mask;
-	internal_desc.StencilWriteMask = desc.stencil_write_mask;
-	internal_desc.BackFace.StencilFailOp = convert_stencil_op(desc.back_stencil_fail_op);
-	internal_desc.BackFace.StencilDepthFailOp = convert_stencil_op(desc.back_stencil_depth_fail_op);
-	internal_desc.BackFace.StencilPassOp = convert_stencil_op(desc.back_stencil_pass_op);
-	internal_desc.BackFace.StencilFunc = convert_compare_op(desc.back_stencil_func);
+	internal_desc.StencilReadMask = desc.front_stencil_read_mask;
+	internal_desc.StencilWriteMask = desc.front_stencil_write_mask;
 	internal_desc.FrontFace.StencilFailOp = convert_stencil_op(desc.front_stencil_fail_op);
 	internal_desc.FrontFace.StencilDepthFailOp = convert_stencil_op(desc.front_stencil_depth_fail_op);
 	internal_desc.FrontFace.StencilPassOp = convert_stencil_op(desc.front_stencil_pass_op);
 	internal_desc.FrontFace.StencilFunc = convert_compare_op(desc.front_stencil_func);
+	internal_desc.BackFace.StencilFailOp = convert_stencil_op(desc.back_stencil_fail_op);
+	internal_desc.BackFace.StencilDepthFailOp = convert_stencil_op(desc.back_stencil_depth_fail_op);
+	internal_desc.BackFace.StencilPassOp = convert_stencil_op(desc.back_stencil_pass_op);
+	internal_desc.BackFace.StencilFunc = convert_compare_op(desc.back_stencil_func);
 }
 reshade::api::depth_stencil_desc reshade::d3d11::convert_depth_stencil_desc(const D3D11_DEPTH_STENCIL_DESC *internal_desc)
 {
@@ -1267,16 +1262,20 @@ reshade::api::depth_stencil_desc reshade::d3d11::convert_depth_stencil_desc(cons
 		desc.depth_write_mask = internal_desc->DepthWriteMask != D3D11_DEPTH_WRITE_MASK_ZERO;
 		desc.depth_func = convert_compare_op(internal_desc->DepthFunc);
 		desc.stencil_enable = internal_desc->StencilEnable;
-		desc.stencil_read_mask = internal_desc->StencilReadMask;
-		desc.stencil_write_mask = internal_desc->StencilWriteMask;
-		desc.back_stencil_fail_op = convert_stencil_op(internal_desc->BackFace.StencilFailOp);
-		desc.back_stencil_depth_fail_op = convert_stencil_op(internal_desc->BackFace.StencilDepthFailOp);
-		desc.back_stencil_pass_op = convert_stencil_op(internal_desc->BackFace.StencilPassOp);
-		desc.back_stencil_func = convert_compare_op(internal_desc->BackFace.StencilFunc);
+		desc.front_stencil_read_mask = internal_desc->StencilReadMask;
+		desc.front_stencil_write_mask = internal_desc->StencilWriteMask;
+		desc.front_stencil_reference_value = D3D11_DEFAULT_STENCIL_REFERENCE;
+		desc.front_stencil_func = convert_compare_op(internal_desc->FrontFace.StencilFunc);
 		desc.front_stencil_fail_op = convert_stencil_op(internal_desc->FrontFace.StencilFailOp);
 		desc.front_stencil_depth_fail_op = convert_stencil_op(internal_desc->FrontFace.StencilDepthFailOp);
 		desc.front_stencil_pass_op = convert_stencil_op(internal_desc->FrontFace.StencilPassOp);
-		desc.front_stencil_func = convert_compare_op(internal_desc->FrontFace.StencilFunc);
+		desc.back_stencil_read_mask = internal_desc->StencilReadMask;
+		desc.back_stencil_write_mask = internal_desc->StencilWriteMask;
+		desc.back_stencil_reference_value = D3D11_DEFAULT_STENCIL_REFERENCE;
+		desc.back_stencil_func = convert_compare_op(internal_desc->BackFace.StencilFunc);
+		desc.back_stencil_fail_op = convert_stencil_op(internal_desc->BackFace.StencilFailOp);
+		desc.back_stencil_depth_fail_op = convert_stencil_op(internal_desc->BackFace.StencilDepthFailOp);
+		desc.back_stencil_pass_op = convert_stencil_op(internal_desc->BackFace.StencilPassOp);
 	}
 	else
 	{
@@ -1284,16 +1283,20 @@ reshade::api::depth_stencil_desc reshade::d3d11::convert_depth_stencil_desc(cons
 		desc.depth_enable = true;
 		desc.depth_write_mask = true;
 		desc.depth_func = api::compare_op::less;
-		desc.stencil_read_mask = D3D11_DEFAULT_STENCIL_READ_MASK;
-		desc.stencil_write_mask = D3D11_DEFAULT_STENCIL_WRITE_MASK;
-		desc.back_stencil_fail_op = api::stencil_op::keep;
-		desc.back_stencil_depth_fail_op = api::stencil_op::keep;
-		desc.back_stencil_pass_op = api::stencil_op::keep;
-		desc.back_stencil_func = api::compare_op::always;
+		desc.front_stencil_read_mask = D3D11_DEFAULT_STENCIL_READ_MASK;
+		desc.front_stencil_write_mask = D3D11_DEFAULT_STENCIL_WRITE_MASK;
+		desc.front_stencil_reference_value = D3D11_DEFAULT_STENCIL_REFERENCE;
+		desc.front_stencil_func = api::compare_op::always;
 		desc.front_stencil_fail_op = api::stencil_op::keep;
 		desc.front_stencil_depth_fail_op = api::stencil_op::keep;
 		desc.front_stencil_pass_op = api::stencil_op::keep;
-		desc.front_stencil_func = api::compare_op::always;
+		desc.back_stencil_read_mask = D3D11_DEFAULT_STENCIL_READ_MASK;
+		desc.back_stencil_write_mask = D3D11_DEFAULT_STENCIL_WRITE_MASK;
+		desc.back_stencil_reference_value = D3D11_DEFAULT_STENCIL_REFERENCE;
+		desc.back_stencil_func = api::compare_op::always;
+		desc.back_stencil_fail_op = api::stencil_op::keep;
+		desc.back_stencil_depth_fail_op = api::stencil_op::keep;
+		desc.back_stencil_pass_op = api::stencil_op::keep;
 	}
 
 	return desc;

@@ -10,6 +10,7 @@
 #include <cassert>
 #include <algorithm>
 #include <filesystem>
+#include <unordered_map>
 #include <unordered_set>
 
 using namespace reshade::api;
@@ -23,7 +24,11 @@ struct tex_data
 
 struct tex_hash
 {
-	inline size_t operator()(resource_view value) const
+	size_t operator()(resource value) const
+	{
+		return static_cast<size_t>(value.handle);
+	}
+	size_t operator()(resource_view value) const
 	{
 		return static_cast<size_t>(value.handle);
 	}
@@ -35,7 +40,7 @@ struct __declspec(uuid("0ce51b56-a973-4104-bcca-945686f50170")) device_data
 	resource_view green_texture_srv = {};
 	resource_view replaced_texture_srv = {};
 	std::unordered_set<resource_view, tex_hash> current_texture_list;
-	std::map<resource, tex_data> total_texture_list;
+	std::unordered_map<resource, tex_data, tex_hash> total_texture_list;
 	std::vector<resource_view> destroyed_views;
 	uint64_t frame_index = 0;
 
@@ -141,7 +146,7 @@ static void on_destroy_texture_view(device *device, resource_view view)
 	}
 }
 
-static void on_push_descriptors(command_list *cmd_list, shader_stage stages, pipeline_layout layout, uint32_t param_index, const descriptor_set_update &update)
+static void on_push_descriptors(command_list *cmd_list, shader_stage stages, pipeline_layout layout, uint32_t param_index, const descriptor_table_update &update)
 {
 	if ((stages & shader_stage::pixel) != shader_stage::pixel || (update.type != descriptor_type::shader_resource_view && update.type != descriptor_type::sampler_with_resource_view))
 		return;
@@ -164,7 +169,7 @@ static void on_push_descriptors(command_list *cmd_list, shader_stage stages, pip
 			{
 				descriptor = data.green_texture_srv;
 
-				descriptor_set_update new_update = update;
+				descriptor_table_update new_update = update;
 				new_update.binding += i;
 				new_update.count = 1;
 				new_update.descriptors = &descriptor;
@@ -184,7 +189,7 @@ static void on_push_descriptors(command_list *cmd_list, shader_stage stages, pip
 			{
 				descriptor.view = data.green_texture_srv;
 
-				descriptor_set_update new_update = update;
+				descriptor_table_update new_update = update;
 				new_update.binding += i;
 				new_update.count = 1;
 				new_update.descriptors = &descriptor;
@@ -194,7 +199,7 @@ static void on_push_descriptors(command_list *cmd_list, shader_stage stages, pip
 		}
 	}
 }
-static void on_bind_descriptor_sets(command_list *cmd_list, shader_stage stages, pipeline_layout layout, uint32_t first, uint32_t count, const descriptor_set *sets)
+static void on_bind_descriptor_tables(command_list *cmd_list, shader_stage stages, pipeline_layout layout, uint32_t first, uint32_t count, const descriptor_table *tables)
 {
 	if ((stages & shader_stage::pixel) != shader_stage::pixel)
 		return;
@@ -207,22 +212,25 @@ static void on_bind_descriptor_sets(command_list *cmd_list, shader_stage stages,
 	for (uint32_t i = 0; i < count; ++i)
 	{
 		const pipeline_layout_param param = descriptor_data.get_pipeline_layout_param(layout, first + i);
-		assert(param.type == pipeline_layout_param_type::descriptor_set);
+		assert(param.type == pipeline_layout_param_type::descriptor_table);
 
-		for (uint32_t k = 0; k < param.descriptor_set.count; ++k)
+		for (uint32_t k = 0; k < param.descriptor_table.count; ++k)
 		{
-			const descriptor_range &range = param.descriptor_set.ranges[k];
+			const descriptor_range &range = param.descriptor_table.ranges[k];
+
+			if (range.count == UINT32_MAX)
+				continue; // Skip unbounded ranges
 
 			if ((range.visibility & shader_stage::pixel) != shader_stage::pixel || (range.type != descriptor_type::shader_resource_view && range.type != descriptor_type::sampler_with_resource_view))
 				continue;
 
 			uint32_t base_offset = 0;
-			descriptor_pool pool = { 0 };
-			device->get_descriptor_pool_offset(sets[i], range.binding, 0, &pool, &base_offset);
+			descriptor_heap heap = { 0 };
+			device->get_descriptor_heap_offset(tables[i], range.binding, 0, &heap, &base_offset);
 
-			for (uint32_t j = 0; j < std::min(10u, range.count); ++j)
+			for (uint32_t j = 0; j < range.count; ++j)
 			{
-				resource_view descriptor = descriptor_data.get_shader_resource_view(pool, base_offset + j);
+				resource_view descriptor = descriptor_data.get_shader_resource_view(heap, base_offset + j);
 				if (descriptor.handle == 0)
 					continue;
 
@@ -271,7 +279,7 @@ static void on_present(command_queue *, swapchain *swapchain, const rect *, cons
 	data.destroyed_views.clear();
 }
 
-// See implementation in 'save_texture.cpp'
+// See implementation in 'utils\save_texture_image.cpp'
 extern bool save_texture_image(const resource_desc &desc, const subresource_data &data);
 
 static bool save_texture_image(command_queue *queue, resource tex, const resource_desc &desc)
@@ -409,6 +417,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 		if (!reshade::register_addon(hModule))
 			return FALSE;
 
+		descriptor_tracking::register_events();
+
 		reshade::register_event<reshade::addon_event::init_device>(on_init_device);
 		reshade::register_event<reshade::addon_event::destroy_device>(on_destroy_device);
 		reshade::register_event<reshade::addon_event::init_command_list>(on_init_cmd_list);
@@ -419,17 +429,15 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 		reshade::register_event<reshade::addon_event::destroy_resource_view>(on_destroy_texture_view);
 
 		reshade::register_event<reshade::addon_event::push_descriptors>(on_push_descriptors);
-		reshade::register_event<reshade::addon_event::bind_descriptor_sets>(on_bind_descriptor_sets);
+		reshade::register_event<reshade::addon_event::bind_descriptor_tables>(on_bind_descriptor_tables);
 
 		reshade::register_event<reshade::addon_event::execute_command_list>(on_execute);
 		reshade::register_event<reshade::addon_event::present>(on_present);
 
 		reshade::register_overlay("TexMod", draw_overlay);
-
-		register_descriptor_tracking();
 		break;
 	case DLL_PROCESS_DETACH:
-		unregister_descriptor_tracking();
+		descriptor_tracking::unregister_events();
 
 		reshade::unregister_addon(hModule);
 		break;

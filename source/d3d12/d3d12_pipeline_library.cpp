@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#if RESHADE_ADDON && !RESHADE_ADDON_LITE
+#if RESHADE_ADDON >= 2
 
 #include "d3d12_device.hpp"
 #include "d3d12_pipeline_library.hpp"
@@ -18,7 +18,7 @@ HRESULT STDMETHODCALLTYPE ID3D12PipelineLibrary_LoadGraphicsPipeline(ID3D12Pipel
 {
 	// Do not invoke 'create_pipeline' event, since it is not possible to modify the pipeline
 
-	const HRESULT hr = reshade::hooks::call(ID3D12PipelineLibrary_LoadGraphicsPipeline, vtable_from_instance(pPipelineLibrary) + 9)(pPipelineLibrary, pName, pDesc, riid, ppPipelineState);
+	const HRESULT hr = reshade::hooks::call(ID3D12PipelineLibrary_LoadGraphicsPipeline, reshade::hooks::vtable_from_instance(pPipelineLibrary) + 9)(pPipelineLibrary, pName, pDesc, riid, ppPipelineState);
 	if (SUCCEEDED(hr))
 	{
 		assert(pDesc != nullptr && ppPipelineState != nullptr);
@@ -56,7 +56,18 @@ HRESULT STDMETHODCALLTYPE ID3D12PipelineLibrary_LoadGraphicsPipeline(ID3D12Pipel
 				uint32_t sample_mask = internal_desc.SampleMask;
 				uint32_t sample_count = internal_desc.SampleDesc.Count;
 
-				reshade::api::dynamic_state dynamic_states[3] = { reshade::api::dynamic_state::primitive_topology, reshade::api::dynamic_state::blend_constant, reshade::api::dynamic_state::stencil_reference_value };
+				std::vector<reshade::api::dynamic_state> dynamic_states = {
+					reshade::api::dynamic_state::primitive_topology,
+					reshade::api::dynamic_state::blend_constant,
+					reshade::api::dynamic_state::front_stencil_reference_value,
+					reshade::api::dynamic_state::back_stencil_reference_value
+				};
+				if (internal_desc.Flags & D3D12_PIPELINE_STATE_FLAG_DYNAMIC_DEPTH_BIAS)
+				{
+					dynamic_states.push_back(reshade::api::dynamic_state::depth_bias);
+					dynamic_states.push_back(reshade::api::dynamic_state::depth_bias_clamp);
+					dynamic_states.push_back(reshade::api::dynamic_state::depth_bias_slope_scaled);
+				}
 
 				const reshade::api::pipeline_subobject subobjects[] = {
 					{ reshade::api::pipeline_subobject_type::vertex_shader, 1, &vs_desc },
@@ -74,7 +85,7 @@ HRESULT STDMETHODCALLTYPE ID3D12PipelineLibrary_LoadGraphicsPipeline(ID3D12Pipel
 					{ reshade::api::pipeline_subobject_type::render_target_formats, internal_desc.NumRenderTargets, render_target_formats },
 					{ reshade::api::pipeline_subobject_type::depth_stencil_format, 1, &depth_stencil_format },
 					{ reshade::api::pipeline_subobject_type::sample_count, 1, &sample_count },
-					{ reshade::api::pipeline_subobject_type::dynamic_pipeline_states, static_cast<uint32_t>(std::size(dynamic_states)), dynamic_states },
+					{ reshade::api::pipeline_subobject_type::dynamic_pipeline_states, static_cast<uint32_t>(dynamic_states.size()), dynamic_states.data() },
 				};
 
 				reshade::invoke_addon_event<reshade::addon_event::init_pipeline>(device_proxy, to_handle(internal_desc.pRootSignature), static_cast<uint32_t>(std::size(subobjects)), subobjects, to_handle(pipeline));
@@ -92,13 +103,13 @@ HRESULT STDMETHODCALLTYPE ID3D12PipelineLibrary_LoadGraphicsPipeline(ID3D12Pipel
 			}
 		}
 	}
+#if RESHADE_VERBOSE_LOG
 	else
 	{
-#if RESHADE_VERBOSE_LOG
 		// 'E_INVALIDARG' is a common occurence indicating that the requested pipeline was not in the library
 		LOG(WARN) << "ID3D12PipelineLibrary::LoadGraphicsPipeline" << " failed with error code " << hr << '.';
-#endif
 	}
+#endif
 
 	return hr;
 }
@@ -106,7 +117,7 @@ HRESULT STDMETHODCALLTYPE ID3D12PipelineLibrary_LoadComputePipeline(ID3D12Pipeli
 {
 	// Do not invoke 'create_pipeline' event, since it is not possible to modify the pipeline
 
-	const HRESULT hr = reshade::hooks::call(ID3D12PipelineLibrary_LoadComputePipeline, vtable_from_instance(pPipelineLibrary) + 10)(pPipelineLibrary, pName, pDesc, riid, ppPipelineState);
+	const HRESULT hr = reshade::hooks::call(ID3D12PipelineLibrary_LoadComputePipeline, reshade::hooks::vtable_from_instance(pPipelineLibrary) + 10)(pPipelineLibrary, pName, pDesc, riid, ppPipelineState);
 	if (SUCCEEDED(hr))
 	{
 		assert(pDesc != nullptr && ppPipelineState != nullptr);
@@ -144,12 +155,12 @@ HRESULT STDMETHODCALLTYPE ID3D12PipelineLibrary_LoadComputePipeline(ID3D12Pipeli
 			}
 		}
 	}
+#if RESHADE_VERBOSE_LOG
 	else
 	{
-#if RESHADE_VERBOSE_LOG
 		LOG(WARN) << "ID3D12PipelineLibrary::LoadComputePipeline" << " failed with error code " << hr << '.';
-#endif
 	}
+#endif
 
 	return hr;
 }
@@ -158,7 +169,7 @@ HRESULT STDMETHODCALLTYPE ID3D12PipelineLibrary1_LoadPipeline(ID3D12PipelineLibr
 {
 	// Do not invoke 'create_pipeline' event, since it is not possible to modify the pipeline
 
-	const HRESULT hr = reshade::hooks::call(ID3D12PipelineLibrary1_LoadPipeline, vtable_from_instance(pPipelineLibrary) + 13)(pPipelineLibrary, pName, pDesc, riid, ppPipelineState);
+	const HRESULT hr = reshade::hooks::call(ID3D12PipelineLibrary1_LoadPipeline, reshade::hooks::vtable_from_instance(pPipelineLibrary) + 13)(pPipelineLibrary, pName, pDesc, riid, ppPipelineState);
 	if (SUCCEEDED(hr))
 	{
 		assert(pDesc != nullptr && ppPipelineState != nullptr);
@@ -330,12 +341,12 @@ HRESULT STDMETHODCALLTYPE ID3D12PipelineLibrary1_LoadPipeline(ID3D12PipelineLibr
 			}
 		}
 	}
+#if RESHADE_VERBOSE_LOG
 	else
 	{
-#if RESHADE_VERBOSE_LOG
 		LOG(WARN) << "ID3D12PipelineLibrary1::LoadPipeline" << " failed with error code " << hr << '.';
-#endif
 	}
+#endif
 
 	return hr;
 }

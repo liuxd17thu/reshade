@@ -31,6 +31,18 @@ Direct3DSwapChain9::Direct3DSwapChain9(Direct3DDevice9 *device, IDirect3DSwapCha
 	_extended_interface = 1;
 }
 
+void Direct3DSwapChain9::handle_device_loss(HRESULT hr)
+{
+	_was_still_drawing_last_frame = (hr == D3DERR_WASSTILLDRAWING);
+
+	// Ignore D3DERR_DEVICELOST, since it can frequently occur when minimizing out of exclusive fullscreen
+	if (hr == D3DERR_DEVICEREMOVED || hr == D3DERR_DEVICEHUNG)
+	{
+		LOG(ERROR) << "Device was lost with " << hr << '!';
+		// Do not clean up resources, since application has to call 'IDirect3DDevice9::Reset' anyway, which will take care of that
+	}
+}
+
 bool Direct3DSwapChain9::check_and_upgrade_interface(REFIID riid)
 {
 	if (riid == __uuidof(this) ||
@@ -132,7 +144,9 @@ HRESULT STDMETHODCALLTYPE Direct3DSwapChain9::Present(const RECT *pSourceRect, c
 	}
 
 	const HRESULT hr = _orig->Present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion, dwFlags);
-	_was_still_drawing_last_frame = (hr == D3DERR_WASSTILLDRAWING);
+
+	handle_device_loss(hr);
+
 	return hr;
 }
 HRESULT STDMETHODCALLTYPE Direct3DSwapChain9::GetFrontBufferData(IDirect3DSurface9 *pDestSurface)

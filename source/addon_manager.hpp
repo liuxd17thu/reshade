@@ -12,12 +12,12 @@
 
 namespace reshade
 {
-#  if RESHADE_ADDON_LITE
+#if RESHADE_ADDON == 1
 	/// <summary>
 	/// Global switch to enable or disable all loaded add-ons.
 	/// </summary>
 	extern bool addon_enabled;
-#  endif
+#endif
 	extern bool addon_all_loaded;
 
 	/// <summary>
@@ -65,8 +65,8 @@ namespace reshade
 	template <addon_event ev, typename... Args>
 	__forceinline std::enable_if_t<std::is_same_v<typename addon_event_traits<ev>::type, void>, void> invoke_addon_event(Args &&... args)
 	{
-#  if RESHADE_ADDON_LITE
-		// Ensure certain events are not compiled when only lite add-on support is enabled
+#if RESHADE_ADDON == 1
+		// Ensure certain events are not compiled when only limited add-on support is enabled
 		static_assert(
 			ev != addon_event::map_buffer_region &&
 			ev != addon_event::unmap_buffer_region &&
@@ -74,15 +74,15 @@ namespace reshade
 			ev != addon_event::unmap_texture_region &&
 			ev != addon_event::update_buffer_region &&
 			ev != addon_event::update_texture_region &&
-			ev != addon_event::copy_descriptor_sets &&
-			ev != addon_event::update_descriptor_sets &&
-			ev != addon_event::get_query_pool_results &&
+			ev != addon_event::copy_descriptor_tables &&
+			ev != addon_event::update_descriptor_tables &&
+			ev != addon_event::get_query_heap_results &&
 			ev != addon_event::barrier &&
 			ev != addon_event::bind_pipeline &&
 			ev != addon_event::bind_pipeline_states &&
 			ev != addon_event::push_constants &&
 			ev != addon_event::push_descriptors &&
-			ev != addon_event::bind_descriptor_sets &&
+			ev != addon_event::bind_descriptor_tables &&
 			ev != addon_event::bind_index_buffer &&
 			ev != addon_event::bind_vertex_buffers &&
 			ev != addon_event::bind_stream_output_buffers &&
@@ -95,8 +95,8 @@ namespace reshade
 			ev != addon_event::generate_mipmaps &&
 			ev != addon_event::begin_query &&
 			ev != addon_event::end_query &&
-			ev != addon_event::copy_query_pool_results,
-			"Event that is disabled with 'RESHADE_ADDON_LITE' was used!");
+			ev != addon_event::copy_query_heap_results,
+			"Event that is disabled with limited add-on support was used!");
 
 		// Allow a subset of events even when add-ons are disabled, to ensure they continue working correctly
 		if constexpr (
@@ -120,11 +120,11 @@ namespace reshade
 			ev != addon_event::destroy_pipeline &&
 			ev != addon_event::init_pipeline_layout &&
 			ev != addon_event::destroy_pipeline_layout &&
-			ev != addon_event::init_query_pool &&
-			ev != addon_event::destroy_query_pool)
+			ev != addon_event::init_query_heap &&
+			ev != addon_event::destroy_query_heap)
 		if (!addon_enabled)
 			return;
-#  endif
+#endif
 		std::vector<void *> &event_list = addon_event_list[static_cast<uint32_t>(ev)];
 		for (size_t cb = 0, count = event_list.size(); cb < count; ++cb) // Generates better code than ranged-based for loop
 			reinterpret_cast<typename addon_event_traits<ev>::decl>(event_list[cb])(std::forward<Args>(args)...);
@@ -135,10 +135,10 @@ namespace reshade
 	template <addon_event ev, typename... Args>
 	__forceinline std::enable_if_t<std::is_same_v<typename addon_event_traits<ev>::type, bool>, bool> invoke_addon_event(Args &&... args)
 	{
-#  if RESHADE_ADDON_LITE
+#if RESHADE_ADDON == 1
 		if (!addon_enabled)
 			return false;
-#  endif
+#endif
 		std::vector<void *> &event_list = addon_event_list[static_cast<uint32_t>(ev)];
 		for (size_t cb = 0, count = event_list.size(); cb < count; ++cb)
 			if (reinterpret_cast<typename addon_event_traits<ev>::decl>(event_list[cb])(std::forward<Args>(args)...))

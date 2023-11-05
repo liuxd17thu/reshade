@@ -12,7 +12,7 @@
 
 extern bool is_uwp_app();
 
-extern HMODULE g_module_handle;
+extern HANDLE g_exit_event;
 static std::shared_mutex s_windows_mutex;
 static std::unordered_map<HWND, unsigned int> s_raw_input_windows;
 static std::unordered_map<HWND, std::weak_ptr<reshade::input>> s_windows;
@@ -271,7 +271,7 @@ bool reshade::input::is_key_down(unsigned int keycode) const
 bool reshade::input::is_key_pressed(unsigned int keycode) const
 {
 	assert(keycode < ARRAYSIZE(_keys));
-	return keycode > 0 && keycode < ARRAYSIZE(_keys) && (_keys[keycode] & 0x88) == 0x88;
+	return keycode > 0 && keycode < ARRAYSIZE(_keys) && (_keys[keycode] & 0x88) == 0x88 && !is_key_repeated(keycode);
 }
 bool reshade::input::is_key_pressed(unsigned int keycode, bool ctrl, bool shift, bool alt, bool force_modifiers) const
 {
@@ -288,6 +288,11 @@ bool reshade::input::is_key_released(unsigned int keycode) const
 {
 	assert(keycode < ARRAYSIZE(_keys));
 	return keycode > 0 && keycode < ARRAYSIZE(_keys) && (_keys[keycode] & 0x88) == 0x08;
+}
+bool reshade::input::is_key_repeated(unsigned int keycode) const
+{
+	assert(keycode < ARRAYSIZE(_keys));
+	return keycode < ARRAYSIZE(_keys) && (_last_keys[keycode] & 0x80) == 0x80 && (_keys[keycode] & 0x80) == 0x80;
 }
 
 bool reshade::input::is_any_key_down() const
@@ -371,6 +376,9 @@ void reshade::input::max_mouse_position(unsigned int position[2]) const
 void reshade::input::next_frame()
 {
 	_frame_count++;
+
+	// Backup key states from the last processed frame so that state transitions can be identified
+	std::copy_n(_keys, 256, _last_keys);
 
 	for (uint8_t &state : _keys)
 		state &= ~0x08;
@@ -495,12 +503,38 @@ bool is_blocking_keyboard_input()
 extern "C" BOOL WINAPI HookGetMessageA(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax)
 {
 #if 1
-	// Implement 'GetMessage' with a timeout (see also DLL_PROCESS_DETACH in dllmain.cpp for more explanation)
-	while (!PeekMessageA(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, PM_REMOVE) && g_module_handle != nullptr)
-		MsgWaitForMultipleObjects(0, nullptr, FALSE, 500, QS_ALLINPUT);
+	DWORD mask = QS_ALLINPUT;
+	if (wMsgFilterMin != 0 || wMsgFilterMax != 0)
+	{
+		mask = QS_POSTMESSAGE | QS_SENDMESSAGE;
+		if (wMsgFilterMin <= WM_KEYLAST && wMsgFilterMax >= WM_KEYFIRST)
+			mask |= QS_KEY;
+		if ((wMsgFilterMin <= WM_MOUSELAST &&
+			 wMsgFilterMax >= WM_MOUSEFIRST) ||
+			(wMsgFilterMin <= WM_MOUSELAST + WM_NCMOUSEMOVE - WM_MOUSEMOVE &&
+			 wMsgFilterMax >= WM_MOUSEFIRST + WM_NCMOUSEMOVE - WM_MOUSEMOVE))
+			mask |= QS_MOUSE;
+		if (wMsgFilterMin <= WM_TIMER && wMsgFilterMax >= WM_TIMER)
+			mask |= QS_TIMER;
+		if (wMsgFilterMin <= WM_PAINT && wMsgFilterMax >= WM_PAINT)
+			mask |= QS_PAINT;
+		if (wMsgFilterMin <= WM_HOTKEY && wMsgFilterMax >= WM_HOTKEY)
+			mask |= QS_HOTKEY;
+		if (wMsgFilterMin <= WM_INPUT && wMsgFilterMax >= WM_INPUT)
+			mask |= QS_RAWINPUT;
+	}
 
-	if (g_module_handle == nullptr && lpMsg->message != WM_QUIT)
-		std::memset(lpMsg, 0, sizeof(MSG)); // Clear message structure, so application does not process it
+	// Implement 'GetMessage' with an additional trigger event (see also DLL_PROCESS_DETACH in dllmain.cpp for more explanation)
+	while (!PeekMessageA(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, PM_REMOVE | (mask << 16)))
+	{
+		assert(g_exit_event != nullptr);
+
+		if (MsgWaitForMultipleObjects(1, &g_exit_event, FALSE, INFINITE, mask) != (WAIT_OBJECT_0 + 1))
+		{
+			std::memset(lpMsg, 0, sizeof(MSG)); // Clear message structure, so application does not process it
+			return -1;
+		}
+	}
 #else
 	static const auto trampoline = reshade::hooks::call(HookGetMessageA);
 	const BOOL result = trampoline(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax);
@@ -524,11 +558,37 @@ extern "C" BOOL WINAPI HookGetMessageA(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMi
 extern "C" BOOL WINAPI HookGetMessageW(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax)
 {
 #if 1
-	while (!PeekMessageW(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, PM_REMOVE) && g_module_handle != nullptr)
-		MsgWaitForMultipleObjects(0, nullptr, FALSE, 500, QS_ALLINPUT);
+	DWORD mask = QS_ALLINPUT;
+	if (wMsgFilterMin != 0 || wMsgFilterMax != 0)
+	{
+		mask = QS_POSTMESSAGE | QS_SENDMESSAGE;
+		if (wMsgFilterMin <= WM_KEYLAST && wMsgFilterMax >= WM_KEYFIRST)
+			mask |= QS_KEY;
+		if ((wMsgFilterMin <= WM_MOUSELAST &&
+			 wMsgFilterMax >= WM_MOUSEFIRST) ||
+			(wMsgFilterMin <= WM_MOUSELAST + WM_NCMOUSEMOVE - WM_MOUSEMOVE &&
+			 wMsgFilterMax >= WM_MOUSEFIRST + WM_NCMOUSEMOVE - WM_MOUSEMOVE))
+			mask |= QS_MOUSE;
+		if (wMsgFilterMin <= WM_TIMER && wMsgFilterMax >= WM_TIMER)
+			mask |= QS_TIMER;
+		if (wMsgFilterMin <= WM_PAINT && wMsgFilterMax >= WM_PAINT)
+			mask |= QS_PAINT;
+		if (wMsgFilterMin <= WM_HOTKEY && wMsgFilterMax >= WM_HOTKEY)
+			mask |= QS_HOTKEY;
+		if (wMsgFilterMin <= WM_INPUT && wMsgFilterMax >= WM_INPUT)
+			mask |= QS_RAWINPUT;
+	}
 
-	if (g_module_handle == nullptr && lpMsg->message != WM_QUIT)
-		std::memset(lpMsg, 0, sizeof(MSG));
+	while (!PeekMessageW(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, PM_REMOVE | (mask << 16)))
+	{
+		assert(g_exit_event != nullptr);
+
+		if (MsgWaitForMultipleObjects(1, &g_exit_event, FALSE, INFINITE, mask) != (WAIT_OBJECT_0 + 1))
+		{
+			std::memset(lpMsg, 0, sizeof(MSG));
+			return -1;
+		}
+	}
 #else
 	static const auto trampoline = reshade::hooks::call(HookGetMessageW);
 	const BOOL result = trampoline(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax);
@@ -552,10 +612,8 @@ extern "C" BOOL WINAPI HookGetMessageW(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMi
 extern "C" BOOL WINAPI HookPeekMessageA(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax, UINT wRemoveMsg)
 {
 	static const auto trampoline = reshade::hooks::call(HookPeekMessageA);
-	if (!trampoline(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg))
+	if (!trampoline(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg) || lpMsg == nullptr)
 		return FALSE;
-
-	assert(lpMsg != nullptr);
 
 	if (lpMsg->hwnd != nullptr && (wRemoveMsg & PM_REMOVE) != 0 && reshade::input::handle_window_message(lpMsg))
 	{
@@ -571,10 +629,8 @@ extern "C" BOOL WINAPI HookPeekMessageA(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterM
 extern "C" BOOL WINAPI HookPeekMessageW(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax, UINT wRemoveMsg)
 {
 	static const auto trampoline = reshade::hooks::call(HookPeekMessageW);
-	if (!trampoline(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg))
+	if (!trampoline(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg) || lpMsg == nullptr)
 		return FALSE;
-
-	assert(lpMsg != nullptr);
 
 	if (lpMsg->hwnd != nullptr && (wRemoveMsg & PM_REMOVE) != 0 && reshade::input::handle_window_message(lpMsg))
 	{

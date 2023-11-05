@@ -5,6 +5,9 @@
 
 #pragma once
 
+#include "com_ptr.hpp"
+#include "reshade_api_pipeline.hpp"
+#include <vector>
 #include <d3d10_1.h>
 
 namespace reshade::d3d10
@@ -32,7 +35,7 @@ namespace reshade::d3d10
 		FLOAT blend_constant[4];
 	};
 
-	struct descriptor_set_impl
+	struct descriptor_table_impl
 	{
 		api::descriptor_type type;
 		uint32_t count;
@@ -45,7 +48,7 @@ namespace reshade::d3d10
 		std::vector<api::descriptor_range> ranges;
 	};
 
-	struct query_pool_impl
+	struct query_heap_impl
 	{
 		std::vector<com_ptr<ID3D10Query>> queries;
 	};
@@ -55,7 +58,7 @@ namespace reshade::d3d10
 	auto convert_format(api::format format) -> DXGI_FORMAT;
 	auto convert_format(DXGI_FORMAT format) -> api::format;
 
-	auto convert_access_flags(api::map_access access, bool is_vertex_or_index_buffer) -> D3D10_MAP;
+	auto convert_access_flags(api::map_access access) -> D3D10_MAP;
 	api::map_access convert_access_flags(D3D10_MAP map_type);
 
 	void convert_sampler_desc(const api::sampler_desc &desc, D3D10_SAMPLER_DESC &internal_desc);

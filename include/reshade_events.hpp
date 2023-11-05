@@ -196,6 +196,7 @@ namespace reshade
 		/// <item><description>ID3D10Device::CreateSamplerState</description></item>
 		/// <item><description>ID3D11Device::CreateSamplerState</description></item>
 		/// <item><description>ID3D12Device::CreateSampler</description></item>
+		/// <item><description>ID3D12Device::CreateRootSignature</description></item>
 		/// <item><description>vkCreateSampler</description></item>
 		/// </list>
 		/// <para>Callback function signature: <c>bool (api::device *device, api::sampler_desc &amp;desc)</c></para>
@@ -706,12 +707,12 @@ namespace reshade
 		/// <item><description>ID3D12Device::CopyDescriptorsSimple</description></item>
 		/// <item><description>vkUpdateDescriptorSets</description></item>
 		/// </list>
-		/// <para>Callback function signature: <c>bool (api::device *device, uint32_t count, const api::descriptor_set_copy *copies)</c></para>
+		/// <para>Callback function signature: <c>bool (api::device *device, uint32_t count, const api::descriptor_table_copy *copies)</c></para>
 		/// </summary>
 		/// <remarks>
 		/// To prevent this command from being executed, return <see langword="true"/>, otherwise return <see langword="false"/>.
 		/// </remarks>
-		copy_descriptor_sets,
+		copy_descriptor_tables,
 
 		/// <summary>
 		/// Called before:
@@ -722,51 +723,51 @@ namespace reshade
 		/// <item><description>ID3D12Device::CreateSampler</description></item>
 		/// <item><description>vkUpdateDescriptorSets</description></item>
 		/// </list>
-		/// <para>Callback function signature: <c>bool (api::device *device, uint32_t count, const api::descriptor_set_update *updates)</c></para>
+		/// <para>Callback function signature: <c>bool (api::device *device, uint32_t count, const api::descriptor_table_update *updates)</c></para>
 		/// </summary>
 		/// <remarks>
 		/// To prevent this command from being executed, return <see langword="true"/>, otherwise return <see langword="false"/>.
 		/// </remarks>
-		update_descriptor_sets,
+		update_descriptor_tables,
 
 		/// <summary>
-		/// Called after successfull query pool creation from:
+		/// Called after successfull query heap creation from:
 		/// <list type="bullet">
 		/// <item><description>ID3D12Device::CreateQueryHeap</description></item>
 		/// <item><description>vkCreateQueryPool</description></item>
 		/// </list>
-		/// <para>Callback function signature: <c>void (api::device *device, api::query_type type, uint32_t size, api::query_pool pool)</c></para>
+		/// <para>Callback function signature: <c>void (api::device *device, api::query_type type, uint32_t size, api::query_heap heap)</c></para>
 		/// </summary>
-		init_query_pool,
+		init_query_heap,
 
 		/// <summary>
-		/// Called on query pool creation, before:
+		/// Called on query heap creation, before:
 		/// <list type="bullet">
 		/// <item><description>ID3D12Device::CreateQueryHeap</description></item>
 		/// <item><description>vkCreateQueryPool</description></item>
 		/// </list>
 		/// <para>Callback function signature: <c>bool (api::device *device, api::query_type type, uint32_t &amp;size)</c></para>
 		/// </summary>
-		create_query_pool,
+		create_query_heap,
 
 		/// <summary>
-		/// Called on query pool destruction, before:
+		/// Called on query heap destruction, before:
 		/// <list type="bullet">
 		/// <item><description>ID3D12QueryHeap::Release</description></item>
 		/// <item><description>vkDestroyQueryPool</description></item>
 		/// </list>
-		/// <para>Callback function signature: <c>void (api::device *device, api::query_pool pool)</c></para>
+		/// <para>Callback function signature: <c>void (api::device *device, api::query_heap heap)</c></para>
 		/// </summary>
-		destroy_query_pool,
+		destroy_query_heap,
 
 		/// <summary>
 		/// Called before:
 		/// <list type="bullet">
 		/// <item><description>vkGetQueryPoolResults</description></item>
 		/// </list>
-		/// <para>Callback function signature: <c>bool (api::device *device, api::query_pool pool, uint32_t first, uint32_t count, void *results, uint32_t stride)</c></para>
+		/// <para>Callback function signature: <c>bool (api::device *device, api::query_heap heap, uint32_t first, uint32_t count, void *results, uint32_t stride)</c></para>
 		/// </summary>
-		get_query_pool_results,
+		get_query_heap_results,
 
 		/// <summary>
 		/// Called after:
@@ -793,7 +794,7 @@ namespace reshade
 		/// <para>Callback function signature: <c>void (api::command_list *cmd_list, uint32_t count, const api::render_pass_render_target_desc *rts, const api::render_pass_depth_stencil_desc *ds)</c></para>
 		/// </summary>
 		/// <remarks>
-		/// The depth-stencil description argument is optional and may be <see langword="nullptr"/>.
+		/// The depth-stencil description argument is optional and may be <see langword="nullptr"/> (which indicates that no depth-stencil is used).
 		/// </remarks>
 		begin_render_pass,
 
@@ -984,7 +985,7 @@ namespace reshade
 		/// <item><description>glBindMultiTextureEXT</description></item>
 		/// <item><description>vkCmdPushDescriptorSetKHR</description></item>
 		/// </list>
-		/// <para>Callback function signature: <c>void (api::command_list *cmd_list, api::shader_stage stages, api::pipeline_layout layout, uint32_t layout_param, const api::descriptor_set_update &amp;update)</c></para>
+		/// <para>Callback function signature: <c>void (api::command_list *cmd_list, api::shader_stage stages, api::pipeline_layout layout, uint32_t layout_param, const api::descriptor_table_update &amp;update)</c></para>
 		/// </summary>
 		push_descriptors,
 
@@ -997,9 +998,9 @@ namespace reshade
 		/// <item><description>ID3D12GraphicsCommandList::SetGraphicsRootDescriptorTable</description></item>
 		/// <item><description>vkCmdBindDescriptorSets</description></item>
 		/// </list>
-		/// <para>Callback function signature: <c>void (api::command_list *cmd_list, api::shader_stage stages, api::pipeline_layout layout, uint32_t first, uint32_t count, const api::descriptor_set *sets)</c></para>
+		/// <para>Callback function signature: <c>void (api::command_list *cmd_list, api::shader_stage stages, api::pipeline_layout layout, uint32_t first, uint32_t count, const api::descriptor_table *tables)</c></para>
 		/// </summary>
-		bind_descriptor_sets,
+		bind_descriptor_tables,
 
 		/// <summary>
 		/// Called after:
@@ -1193,7 +1194,7 @@ namespace reshade
 		/// To prevent this command from being executed, return <see langword="true"/>, otherwise return <see langword="false"/>.
 		/// Source resource will be in the <see cref="api::resource_usage::copy_source"/> state.
 		/// Destination resource will be in the <see cref="api::resource_usage::copy_dest"/> state.
-		/// The subresource box argument is optional and may be <see langword="nullptr"/>.
+		/// The subresource box argument is optional and may be <see langword="nullptr"/> (which indicates the entire subresource is referenced).
 		/// </remarks>
 		copy_buffer_to_texture,
 
@@ -1225,7 +1226,7 @@ namespace reshade
 		/// To prevent this command from being executed, return <see langword="true"/>, otherwise return <see langword="false"/>.
 		/// Source resource will be in the <see cref="api::resource_usage::copy_source"/> state.
 		/// Destination resource will be in the <see cref="api::resource_usage::copy_dest"/> state.
-		/// The subresource box arguments are optional and may be <see langword="nullptr"/>.
+		/// The subresource box arguments are optional and may be <see langword="nullptr"/> (which indicates the entire subresource is used).
 		/// </remarks>
 		copy_texture_region,
 
@@ -1242,7 +1243,7 @@ namespace reshade
 		/// To prevent this command from being executed, return <see langword="true"/>, otherwise return <see langword="false"/>.
 		/// Source resource will be in the <see cref="api::resource_usage::copy_source"/> state.
 		/// Destination resource will be in the <see cref="api::resource_usage::copy_dest"/> state.
-		/// The subresource box argument is optional and may be <see langword="nullptr"/>.
+		/// The subresource box argument is optional and may be <see langword="nullptr"/> (which indicates the entire subresource is used).
 		/// </remarks>
 		copy_texture_to_buffer,
 
@@ -1265,7 +1266,7 @@ namespace reshade
 		/// To prevent this command from being executed, return <see langword="true"/>, otherwise return <see langword="false"/>.
 		/// Source resource will be in the <see cref="api::resource_usage::resolve_source"/> state.
 		/// Destination resource will be in the <see cref="api::resource_usage::resolve_dest"/> state.
-		/// The subresource box argument is optional and may be <see langword="nullptr"/>.
+		/// The subresource box argument is optional and may be <see langword="nullptr"/> (which indicates the entire subresource is used).
 		/// </remarks>
 		resolve_texture_region,
 
@@ -1368,7 +1369,7 @@ namespace reshade
 		/// <item><description>vkCmdBeginQuery</description></item>
 		/// <item><description>vkCmdBeginQueryIndexedEXT</description></item>
 		/// </list>
-		/// <para>Callback function signature: <c>bool (api::command_list *cmd_list, api::query_pool pool, api::query_type type, uint32_t index)</c></para>
+		/// <para>Callback function signature: <c>bool (api::command_list *cmd_list, api::query_heap heap, api::query_type type, uint32_t index)</c></para>
 		/// </summary>
 		/// <remarks>
 		/// To prevent this command from being executed, return <see langword="true"/>, otherwise return <see langword="false"/>.
@@ -1384,7 +1385,7 @@ namespace reshade
 		/// <item><description>vkCmdWriteTimestamp</description></item>
 		/// <item><description>vkCmdWriteTimestamp2</description></item>
 		/// </list>
-		/// <para>Callback function signature: <c>bool (api::command_list *cmd_list, api::query_pool pool, api::query_type type, uint32_t index)</c></para>
+		/// <para>Callback function signature: <c>bool (api::command_list *cmd_list, api::query_heap heap, api::query_type type, uint32_t index)</c></para>
 		/// </summary>
 		/// <remarks>
 		/// To prevent this command from being executed, return <see langword="true"/>, otherwise return <see langword="false"/>.
@@ -1397,12 +1398,12 @@ namespace reshade
 		/// <item><description>ID3D12GraphicsCommandList::ResolveQueryData</description></item>
 		/// <item><description>vkCmdCopyQueryPoolResults</description></item>
 		/// </list>
-		/// <para>Callback function signature: <c>bool (api::command_list *cmd_list, api::query_pool pool, api::query_type type, uint32_t first, uint32_t count, api::resource dest, uint64_t dest_offset, uint32_t stride)</c></para>
+		/// <para>Callback function signature: <c>bool (api::command_list *cmd_list, api::query_heap heap, api::query_type type, uint32_t first, uint32_t count, api::resource dest, uint64_t dest_offset, uint32_t stride)</c></para>
 		/// </summary>
 		/// <remarks>
 		/// To prevent this command from being executed, return <see langword="true"/>, otherwise return <see langword="false"/>.
 		/// </remarks>
-		copy_query_pool_results,
+		copy_query_heap_results,
 
 		/// <summary>
 		/// Called before:
@@ -1412,6 +1413,9 @@ namespace reshade
 		/// </list>
 		/// <para>Callback function signature: <c>void (api::command_list *cmd_list)</c></para>
 		/// </summary>
+		/// <remarks>
+		/// Is not called for immediate command lists (since they cannot be reset).
+		/// </remarks>
 		reset_command_list,
 
 		/// <summary>
@@ -1423,6 +1427,9 @@ namespace reshade
 		/// </list>
 		/// <para>Callback function signature: <c>void (api::command_list *cmd_list)</c></para>
 		/// </summary>
+		/// <remarks>
+		/// Is not called for immediate command lists (since they cannot be closed).
+		/// </remarks>
 		close_command_list,
 
 		/// <summary>
@@ -1431,6 +1438,7 @@ namespace reshade
 		/// <item><description>IDirect3DDevice9::EndScene</description></item>
 		/// <item><description>ID3D10Device::Flush</description></item>
 		/// <item><description>ID3D11DeviceContext::Flush</description></item>
+		/// <item><description>ID3D11DeviceContext3::Flush1</description></item>
 		/// <item><description>ID3D12CommandQueue::ExecuteCommandLists</description></item>
 		/// <item><description>glFlush</description></item>
 		/// <item><description>vkQueueSubmit</description></item>
@@ -1470,7 +1478,7 @@ namespace reshade
 		/// <para>Callback function signature: <c>void (api::command_queue *queue, api::swapchain *swapchain, const api::rect *source_rect, const api::rect *dest_rect, uint32_t dirty_rect_count, const api::rect *dirty_rects)</c></para>
 		/// </summary>
 		/// <remarks>
-		/// The source and destination rectangle arguments are optional and may be <see langword="nullptr"/>.
+		/// The source and destination rectangle arguments are optional and may be <see langword="nullptr"/> (which indicates the swap chain is presented in its entirety).
 		/// </remarks>
 		present,
 
@@ -1495,24 +1503,26 @@ namespace reshade
 		/// <summary>
 		/// Called right after all ReShade effects were reloaded.
 		/// This occurs during effect runtime initialization or because the user pressed the "Reload" button in the overlay.
+		/// Any <see cref="api::effect_technique"/>, <see cref="api::effect_texture_variable"/> and <see cref="api::effect_uniform_variable"/> handles are invalidated when this event occurs and need to be queried again.
 		/// <para>Callback function signature: <c>void (api::effect_runtime *runtime)</c></para>
 		/// </summary>
 		reshade_reloaded_effects,
 
 		/// <summary>
-		/// Called before a uniform variable is changed.
-		/// <para>Callback function signature: <c>bool (api::effect_runtime *runtime, api::effect_uniform_variable variable, const void *data, size_t size)</c></para>
+		/// Called before a uniform variable is changed, with the new value.
+		/// <para>Callback function signature: <c>bool (api::effect_runtime *runtime, api::effect_uniform_variable variable, const void *new_value, size_t new_value_size)</c></para>
 		/// </summary>
 		/// <remarks>
-		/// To prevent the variable from being changed, return <see langword="true"/>, otherwise return <see langword="false"/>.
+		/// To prevent the variable value from being changed, return <see langword="true"/>, otherwise return <see langword="false"/>.
+		/// The new value has the data type reported by <see cref="api::effect_runtime::get_uniform_variable_type"/> and the new value size is in bytes.
 		/// </remarks>
 		reshade_set_uniform_value,
 		/// <summary>
-		/// Called before a technique is enabled or disabled.
+		/// Called before a technique is enabled or disabled, with the new state.
 		/// <para>Callback function signature: <c>bool (api::effect_runtime *runtime, api::effect_technique technique, bool enabled)</c></para>
 		/// </summary>
 		/// <remarks>
-		/// To prevent the technique from being changed, return <see langword="true"/>, otherwise return <see langword="false"/>.
+		/// To prevent the technique state from being changed, return <see langword="true"/>, otherwise return <see langword="false"/>.
 		/// </remarks>
 		reshade_set_technique_state,
 
@@ -1527,7 +1537,7 @@ namespace reshade
 		reshade_overlay,
 
 		/// <summary>
-		/// Called after a screenshot was taken and saved to disk.
+		/// Called after a screenshot was taken and saved to disk, with the path to the saved image file.
 		/// <para>Callback function signature: <c>void (api::effect_runtime *runtime, const char *path)</c></para>
 		/// </summary>
 		reshade_screenshot,
@@ -1540,13 +1550,13 @@ namespace reshade
 
 		/// <summary>
 		/// Called after a preset was loaded and applied.
-		/// This occurs during reloading or when the user chooses a new preset in the overlay.
+		/// This occurs after effect reloading or when the user chooses a new preset in the overlay.
 		/// <para>Callback function signature: <c>void (api::effect_runtime *runtime, const char *path)</c></para>
 		/// </summary>
 		reshade_set_current_preset_path,
 
 		/// <summary>
-		/// Called when the rendering order of loaded techniques is changed.
+		/// Called when the rendering order of loaded techniques is changed, with a handle array specifying the new order.
 		/// <para>Callback function signature: <c>bool (api::effect_runtime *runtime, size_t count, api::effect_technique *techniques)</c></para>
 		/// </summary>
 		/// <remarks>
@@ -1554,7 +1564,7 @@ namespace reshade
 		/// </remarks>
 		reshade_reorder_techniques,
 
-#ifdef RESHADE_ADDON
+#if RESHADE_ADDON
 		max // Last value used internally by ReShade to determine number of events in this enum
 #endif
 	};
@@ -1613,14 +1623,14 @@ namespace reshade
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::create_pipeline_layout, bool, api::device *device, uint32_t param_count, const api::pipeline_layout_param *params);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::destroy_pipeline_layout, void, api::device *device, api::pipeline_layout layout);
 
-	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::copy_descriptor_sets, bool, api::device *device, uint32_t count, const api::descriptor_set_copy *copies);
-	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::update_descriptor_sets, bool, api::device *device, uint32_t count, const api::descriptor_set_update *updates);
+	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::copy_descriptor_tables, bool, api::device *device, uint32_t count, const api::descriptor_table_copy *copies);
+	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::update_descriptor_tables, bool, api::device *device, uint32_t count, const api::descriptor_table_update *updates);
 
-	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::init_query_pool, void, api::device *device, api::query_type type, uint32_t size, api::query_pool pool);
-	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::create_query_pool, bool, api::device *device, api::query_type type, uint32_t &size);
-	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::destroy_query_pool, void, api::device *device, api::query_pool pool);
+	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::init_query_heap, void, api::device *device, api::query_type type, uint32_t size, api::query_heap heap);
+	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::create_query_heap, bool, api::device *device, api::query_type type, uint32_t &size);
+	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::destroy_query_heap, void, api::device *device, api::query_heap heap);
 
-	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::get_query_pool_results, bool, api::device *device, api::query_pool pool, uint32_t first, uint32_t count, void *results, uint32_t stride);
+	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::get_query_heap_results, bool, api::device *device, api::query_heap heap, uint32_t first, uint32_t count, void *results, uint32_t stride);
 
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::barrier, void, api::command_list *cmd_list, uint32_t count, const api::resource *resources, const api::resource_usage *old_states, const api::resource_usage *new_states);
 
@@ -1633,8 +1643,8 @@ namespace reshade
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::bind_viewports, void, api::command_list *cmd_list, uint32_t first, uint32_t count, const api::viewport *viewports);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::bind_scissor_rects, void, api::command_list *cmd_list, uint32_t first, uint32_t count, const api::rect *rects);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::push_constants, void, api::command_list *cmd_list, api::shader_stage stages, api::pipeline_layout layout, uint32_t layout_param, uint32_t first, uint32_t count, const void *values);
-	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::push_descriptors, void, api::command_list *cmd_list, api::shader_stage stages, api::pipeline_layout layout, uint32_t layout_param, const api::descriptor_set_update &update);
-	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::bind_descriptor_sets, void, api::command_list *cmd_list, api::shader_stage stages, api::pipeline_layout layout, uint32_t first, uint32_t count, const api::descriptor_set *sets);
+	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::push_descriptors, void, api::command_list *cmd_list, api::shader_stage stages, api::pipeline_layout layout, uint32_t layout_param, const api::descriptor_table_update &update);
+	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::bind_descriptor_tables, void, api::command_list *cmd_list, api::shader_stage stages, api::pipeline_layout layout, uint32_t first, uint32_t count, const api::descriptor_table *tables);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::bind_index_buffer, void, api::command_list *cmd_list, api::resource buffer, uint64_t offset, uint32_t index_size);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::bind_vertex_buffers, void, api::command_list *cmd_list, uint32_t first, uint32_t count, const api::resource *buffers, const uint64_t *offsets, const uint32_t *strides);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::bind_stream_output_buffers, void, api::command_list *cmd_list, uint32_t first, uint32_t count, const api::resource *buffers, const uint64_t *offsets, const uint64_t *max_sizes, const api::resource *counter_buffers, const uint64_t *counter_offsets);
@@ -1658,9 +1668,9 @@ namespace reshade
 
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::generate_mipmaps, bool, api::command_list *cmd_list, api::resource_view srv);
 
-	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::begin_query, bool, api::command_list *cmd_list, api::query_pool pool, api::query_type type, uint32_t index);
-	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::end_query, bool, api::command_list *cmd_list, api::query_pool pool, api::query_type type, uint32_t index);
-	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::copy_query_pool_results, bool, api::command_list *cmd_list, api::query_pool pool, api::query_type type, uint32_t first, uint32_t count, api::resource dest, uint64_t dest_offset, uint32_t stride);
+	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::begin_query, bool, api::command_list *cmd_list, api::query_heap heap, api::query_type type, uint32_t index);
+	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::end_query, bool, api::command_list *cmd_list, api::query_heap heap, api::query_type type, uint32_t index);
+	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::copy_query_heap_results, bool, api::command_list *cmd_list, api::query_heap heap, api::query_type type, uint32_t first, uint32_t count, api::resource dest, uint64_t dest_offset, uint32_t stride);
 
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::reset_command_list, void, api::command_list *cmd_list);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::close_command_list, void, api::command_list *cmd_list);

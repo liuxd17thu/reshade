@@ -7,6 +7,7 @@
 #include "d3d10_impl_type_convert.hpp"
 #include "d3d10_resource_call_vtable.inl"
 #include "dll_log.hpp"
+#include "hook_manager.hpp"
 
 void reshade::d3d10::pipeline_impl::apply(ID3D10Device *ctx, api::pipeline_stage stages) const
 {
@@ -48,9 +49,9 @@ void reshade::d3d10::device_impl::barrier(uint32_t count, const api::resource *,
 	if (transitions_away_from_shader_resource_usage)
 	{
 		ID3D10ShaderResourceView *null_srv[D3D10_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT] = {};
-		_orig->VSSetShaderResources(0, ARRAYSIZE(null_srv), null_srv);
-		_orig->GSSetShaderResources(0, ARRAYSIZE(null_srv), null_srv);
-		_orig->PSSetShaderResources(0, ARRAYSIZE(null_srv), null_srv);
+		_orig->VSSetShaderResources(0, D3D10_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, null_srv);
+		_orig->GSSetShaderResources(0, D3D10_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, null_srv);
+		_orig->PSSetShaderResources(0, D3D10_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, null_srv);
 	}
 }
 
@@ -165,7 +166,7 @@ void reshade::d3d10::device_impl::bind_pipeline_states(uint32_t count, const api
 			_orig->OMSetBlendState(state.get(), blend_constant, sample_mask);
 			break;
 		}
-		case api::dynamic_state::stencil_reference_value:
+		case api::dynamic_state::front_stencil_reference_value:
 		{
 			com_ptr<ID3D10DepthStencilState> state;
 			_orig->OMGetDepthStencilState(&state, nullptr);
@@ -276,31 +277,33 @@ void reshade::d3d10::device_impl::push_constants(api::shader_stage stages, api::
 	if (count == 0)
 		return;
 
-	if (first != 0)
-	{
-		assert(false);
-		return;
-	}
+	count += first;
 
-	if (count > _push_constants_size)
+	if (count > _push_constants_data.size())
 	{
+		_push_constants_data.resize(count);
+
 		// Enlarge push constant buffer to fit new requirement
 		D3D10_BUFFER_DESC desc = {};
-		desc.ByteWidth = count * sizeof(uint32_t);
+		desc.ByteWidth = ((count * sizeof(uint32_t)) + 15) & ~15; // Align to 16 bytes
 		desc.Usage = D3D10_USAGE_DYNAMIC;
 		desc.BindFlags = D3D10_BIND_CONSTANT_BUFFER;
 		desc.CPUAccessFlags = D3D10_CPU_ACCESS_WRITE;
 
+		_push_constants.reset();
+
 		if (FAILED(_orig->CreateBuffer(&desc, nullptr, &_push_constants)))
 		{
+			_push_constants_data.clear();
+
 			LOG(ERROR) << "Failed to create push constant buffer!";
 			return;
 		}
 
 		set_resource_name({ reinterpret_cast<uintptr_t>(_push_constants.get()) }, "Push constants");
-
-		_push_constants_size = count;
 	}
+
+	std::memcpy(_push_constants_data.data() + first, values, (count - first) * sizeof(uint32_t));
 
 	const auto push_constants = _push_constants.get();
 
@@ -308,7 +311,7 @@ void reshade::d3d10::device_impl::push_constants(api::shader_stage stages, api::
 	if (uint32_t *mapped_data;
 		SUCCEEDED(ID3D10Buffer_Map(push_constants, D3D10_MAP_WRITE_DISCARD, 0, reinterpret_cast<void **>(&mapped_data))))
 	{
-		std::memcpy(mapped_data + first, values, count * sizeof(uint32_t));
+		std::memcpy(mapped_data, _push_constants_data.data(), _push_constants_data.size() * sizeof(uint32_t));
 		ID3D10Buffer_Unmap(push_constants);
 	}
 
@@ -328,9 +331,9 @@ void reshade::d3d10::device_impl::push_constants(api::shader_stage stages, api::
 	if ((stages & api::shader_stage::pixel) == api::shader_stage::pixel)
 		_orig->PSSetConstantBuffers(push_constants_slot, 1, &push_constants);
 }
-void reshade::d3d10::device_impl::push_descriptors(api::shader_stage stages, api::pipeline_layout layout, uint32_t layout_param, const api::descriptor_set_update &update)
+void reshade::d3d10::device_impl::push_descriptors(api::shader_stage stages, api::pipeline_layout layout, uint32_t layout_param, const api::descriptor_table_update &update)
 {
-	assert(update.set.handle == 0 && update.array_offset == 0);
+	assert(update.table.handle == 0 && update.array_offset == 0);
 
 	uint32_t first = update.binding;
 	if (layout.handle != 0 && layout != global_pipeline_layout)
@@ -359,17 +362,17 @@ void reshade::d3d10::device_impl::push_descriptors(api::shader_stage stages, api
 		break;
 	}
 }
-void reshade::d3d10::device_impl::bind_descriptor_sets(api::shader_stage stages, api::pipeline_layout layout, uint32_t first, uint32_t count, const api::descriptor_set *sets)
+void reshade::d3d10::device_impl::bind_descriptor_tables(api::shader_stage stages, api::pipeline_layout layout, uint32_t first, uint32_t count, const api::descriptor_table *tables)
 {
 	for (uint32_t i = 0; i < count; ++i)
 	{
-		const auto set_impl = reinterpret_cast<const descriptor_set_impl *>(sets[i].handle);
+		const auto table_impl = reinterpret_cast<const descriptor_table_impl *>(tables[i].handle);
 
 		push_descriptors(
 			stages,
 			layout,
 			first + i,
-			api::descriptor_set_update { {}, set_impl->base_binding, 0, set_impl->count, set_impl->type, set_impl->descriptors.data() });
+			api::descriptor_table_update { {}, table_impl->base_binding, 0, table_impl->count, table_impl->type, table_impl->descriptors.data() });
 	}
 }
 
@@ -446,7 +449,7 @@ void reshade::d3d10::device_impl::copy_buffer_region(api::resource src, uint64_t
 {
 	assert(src.handle != 0 && dst.handle != 0);
 
-	if (size == UINT64_MAX)
+	if (UINT64_MAX == size)
 	{
 		D3D10_BUFFER_DESC desc;
 		reinterpret_cast<ID3D10Buffer *>(src.handle)->GetDesc(&desc);
@@ -519,19 +522,19 @@ void reshade::d3d10::device_impl::generate_mipmaps(api::resource_view srv)
 	_orig->GenerateMips(reinterpret_cast<ID3D10ShaderResourceView *>(srv.handle));
 }
 
-void reshade::d3d10::device_impl::begin_query(api::query_pool pool, api::query_type, uint32_t index)
+void reshade::d3d10::device_impl::begin_query(api::query_heap heap, api::query_type, uint32_t index)
 {
-	assert(pool.handle != 0);
+	assert(heap.handle != 0);
 
-	reinterpret_cast<query_pool_impl *>(pool.handle)->queries[index]->Begin();
+	reinterpret_cast<query_heap_impl *>(heap.handle)->queries[index]->Begin();
 }
-void reshade::d3d10::device_impl::end_query(api::query_pool pool, api::query_type, uint32_t index)
+void reshade::d3d10::device_impl::end_query(api::query_heap heap, api::query_type, uint32_t index)
 {
-	assert(pool.handle != 0);
+	assert(heap.handle != 0);
 
-	reinterpret_cast<query_pool_impl *>(pool.handle)->queries[index]->End();
+	reinterpret_cast<query_heap_impl *>(heap.handle)->queries[index]->End();
 }
-void reshade::d3d10::device_impl::copy_query_pool_results(api::query_pool, api::query_type, uint32_t, uint32_t, api::resource, uint64_t, uint32_t)
+void reshade::d3d10::device_impl::copy_query_heap_results(api::query_heap, api::query_type, uint32_t, uint32_t, api::resource, uint64_t, uint32_t)
 {
 	assert(false);
 }

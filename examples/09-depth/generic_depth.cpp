@@ -11,6 +11,7 @@
 #include <vector>
 #include <shared_mutex>
 #include <unordered_map>
+#include <Unknwn.h>
 
 using namespace reshade::api;
 
@@ -182,7 +183,7 @@ struct __declspec(uuid("e006e162-33ac-4b9f-b10f-0e15335c7bdb")) generic_depth_de
 		return nullptr;
 	}
 
-	depth_stencil_backup *track_depth_stencil_for_backup(device *device, device_api api, resource resource, resource_desc desc)
+	depth_stencil_backup *track_depth_stencil_for_backup(device *device, resource resource, resource_desc desc)
 	{
 		assert(resource != 0);
 		assert(depth_stencil_resources.find(resource) != depth_stencil_resources.end());
@@ -197,9 +198,22 @@ struct __declspec(uuid("e006e162-33ac-4b9f-b10f-0e15335c7bdb")) generic_depth_de
 			return &backup;
 		}
 
+		const device_api api = device->get_api();
+		if (api <= device_api::d3d12)
+		{
+			// Add reference to the resource so that it is not destroyed while it is being copied to the backup texture
+			reinterpret_cast<IUnknown *>(resource.handle)->AddRef();
+		}
+
 		desc.type = resource_type::texture_2d;
 		desc.heap = memory_heap::gpu_only;
 		desc.usage = resource_usage::shader_resource | resource_usage::copy_dest;
+
+		if (desc.texture.samples > 1)
+		{
+			desc.texture.samples = 1;
+			desc.usage |= resource_usage::resolve_dest;
+		}
 
 		if (api == device_api::d3d9)
 			desc.texture.format = format::r32_float; // D3DFMT_R32F, since INTZ does not support D3DUSAGE_RENDERTARGET which is required for copying
@@ -237,11 +251,9 @@ struct __declspec(uuid("e006e162-33ac-4b9f-b10f-0e15335c7bdb")) generic_depth_de
 		return &backup;
 	}
 
-	void untrack_depth_stencil(resource resource)
+	void untrack_depth_stencil(device *device, resource resource)
 	{
 		assert(resource != 0);
-
-		std::unique_lock<std::shared_mutex> lock(s_mutex);
 
 		const auto it = std::find_if(depth_stencil_backups.begin(), depth_stencil_backups.end(),
 			[resource](const depth_stencil_backup &existing) { return existing.depth_stencil_resource == resource; });
@@ -254,6 +266,13 @@ struct __declspec(uuid("e006e162-33ac-4b9f-b10f-0e15335c7bdb")) generic_depth_de
 		// Do not destroy backup texture immediately since it may still be referenced by a command list that is in flight or was prerecorded
 		// Instead mark it for delayed destruction in the future
 		backup.destroy_after_frame = frame_index + 50; // Destroy after 50 frames
+
+		const device_api api = device->get_api();
+		if (api <= device_api::d3d12)
+		{
+			// Release the reference that was added above
+			reinterpret_cast<IUnknown *>(resource.handle)->Release();
+		}
 	}
 };
 
@@ -353,7 +372,7 @@ static void update_effect_runtime(effect_runtime *runtime)
 {
 	const generic_depth_data &instance = runtime->get_private_data<generic_depth_data>();
 
-	runtime->update_texture_bindings("DEPTH", instance.selected_shader_resource);
+	runtime->update_texture_bindings("DEPTH", instance.selected_shader_resource, instance.selected_shader_resource);
 
 	runtime->enumerate_uniform_variables(nullptr, [&instance](effect_runtime *runtime, effect_uniform_variable variable) {
 		char source[32];
@@ -367,9 +386,9 @@ static void on_init_device(device *device)
 {
 	device->create_private_data<generic_depth_device_data>();
 
-	reshade::config_get_value(nullptr, "DEPTH", "DisableINTZ", s_disable_intz);
-	reshade::config_get_value(nullptr, "DEPTH", "DepthCopyBeforeClears", s_preserve_depth_buffers);
-	reshade::config_get_value(nullptr, "DEPTH", "UseAspectRatioHeuristics", s_use_aspect_ratio_heuristics);
+	reshade::get_config_value(nullptr, "DEPTH", "DisableINTZ", s_disable_intz);
+	reshade::get_config_value(nullptr, "DEPTH", "DepthCopyBeforeClears", s_preserve_depth_buffers);
+	reshade::get_config_value(nullptr, "DEPTH", "UseAspectRatioHeuristics", s_use_aspect_ratio_heuristics);
 }
 static void on_init_command_list(command_list *cmd_list)
 {
@@ -421,7 +440,7 @@ static void on_destroy_effect_runtime(effect_runtime *runtime)
 		device->destroy_resource_view(data.selected_shader_resource);
 
 		auto &device_data = device->get_private_data<generic_depth_device_data>();
-		device_data.untrack_depth_stencil(data.selected_depth_stencil);
+		device_data.untrack_depth_stencil(device, data.selected_depth_stencil);
 	}
 
 	runtime->destroy_private_data<generic_depth_data>();
@@ -431,13 +450,14 @@ static bool on_create_resource(device *device, resource_desc &desc, subresource_
 {
 	if (desc.type != resource_type::surface && desc.type != resource_type::texture_2d)
 		return false; // Skip resources that are not 2D textures
-	if (desc.texture.samples != 1 || (desc.usage & resource_usage::depth_stencil) == 0 || desc.texture.format == format::s8_uint)
+
+	if ((desc.texture.samples > 1 && !device->check_capability(device_caps::resolve_depth_stencil)) || (desc.usage & resource_usage::depth_stencil) == 0 || desc.texture.format == format::s8_uint)
 		return false; // Skip MSAA textures and resources that are not used as depth buffers
 
 	switch (device->get_api())
 	{
 	case device_api::d3d9:
-		if (s_disable_intz)
+		if (s_disable_intz || desc.texture.samples > 1)
 			return false;
 		// Skip textures that are sampled as PCF shadow maps (see https://aras-p.info/texts/D3D9GPUHacks.html#shadowmap) using hardware support, since changing format would break that
 		if (desc.type == resource_type::texture_2d && (desc.texture.format == format::d16_unorm || desc.texture.format == format::d24_unorm_x8_uint || desc.texture.format == format::d24_unorm_s8_uint))
@@ -445,6 +465,8 @@ static bool on_create_resource(device *device, resource_desc &desc, subresource_
 		// Skip small textures that are likely just shadow maps too (fixes a hang in Dragon's Dogma: Dark Arisen when changing areas)
 		if (desc.texture.width <= 512)
 			return false;
+		if (desc.texture.format == format::d32_float || desc.texture.format == format::d32_float_s8_uint)
+			reshade::log_message(reshade::log_level::warning, "Replacing high bit depth depth-stencil format with a lower bit depth format");
 		// Replace texture format with special format that supports normal sampling (see https://aras-p.info/texts/D3D9GPUHacks.html#depth)
 		desc.texture.format = format::intz;
 		desc.usage |= resource_usage::shader_resource;
@@ -458,7 +480,10 @@ static bool on_create_resource(device *device, resource_desc &desc, subresource_
 	case device_api::d3d12:
 	case device_api::vulkan:
 		// D3D12 and Vulkan always use backup texture, but need to be able to copy to it
-		desc.usage |= resource_usage::copy_source;
+		if (desc.texture.samples > 1)
+			desc.usage |= resource_usage::resolve_source;
+		else
+			desc.usage |= resource_usage::copy_source;
 		break;
 	case device_api::opengl:
 		// No need to change anything in OpenGL
@@ -475,7 +500,7 @@ static bool on_create_resource_view(device *device, resource resource, resource_
 
 	const resource_desc texture_desc = device->get_resource_desc(resource);
 	// Only non-MSAA textures where modified, so skip all others
-	if (texture_desc.texture.samples != 1 || (texture_desc.usage & resource_usage::depth_stencil) == 0)
+	if ((texture_desc.texture.samples > 1 && !device->check_capability(device_caps::resolve_depth_stencil)) || (texture_desc.usage & resource_usage::depth_stencil) == 0)
 		return false;
 
 	switch (usage_type)
@@ -782,7 +807,7 @@ static void on_begin_render_effects(effect_runtime *runtime, command_list *cmd_l
 			continue;
 
 		const resource_desc desc = device->get_resource_desc(resource);
-		if (desc.texture.samples > 1)
+		if (desc.texture.samples > 1 && (!device->check_capability(device_caps::resolve_depth_stencil) || s_preserve_depth_buffers != 0))
 			continue; // Ignore MSAA textures, since they would need to be resolved first
 
 		if (s_use_aspect_ratio_heuristics && !check_aspect_ratio(static_cast<float>(desc.texture.width), static_cast<float>(desc.texture.height), frame_width, frame_height))
@@ -812,11 +837,12 @@ static void on_begin_render_effects(effect_runtime *runtime, command_list *cmd_l
 		}
 	}
 
-	const device_api api = device->get_api();
 	const resource_view prev_shader_resource = data.selected_shader_resource;
 
 	if (best_match != 0) do
 	{
+		const device_api api = device->get_api();
+
 		depth_stencil_backup *depth_stencil_backup = device_data.find_depth_stencil_backup(best_match);
 
 		if (best_match != data.selected_depth_stencil || prev_shader_resource == 0 || (s_preserve_depth_buffers && depth_stencil_backup == nullptr))
@@ -824,7 +850,7 @@ static void on_begin_render_effects(effect_runtime *runtime, command_list *cmd_l
 			// Untrack previous depth-stencil first, so that backup texture can potentially be reused
 			if (data.selected_depth_stencil != 0)
 			{
-				device_data.untrack_depth_stencil(data.selected_depth_stencil);
+				device_data.untrack_depth_stencil(device, data.selected_depth_stencil);
 
 				data.using_backup_texture = false;
 				data.selected_depth_stencil = { 0 };
@@ -835,9 +861,9 @@ static void on_begin_render_effects(effect_runtime *runtime, command_list *cmd_l
 
 			// Need to create backup texture only if doing backup copies or original resource does not support shader access (which is necessary for binding it to effects)
 			// Also always create a backup texture in D3D12 or Vulkan to circument problems in case application makes use of resource aliasing
-			if (s_preserve_depth_buffers || (best_match_desc.usage & resource_usage::shader_resource) == 0 || (api == device_api::d3d12 || api == device_api::vulkan))
+			if (s_preserve_depth_buffers || (best_match_desc.usage & resource_usage::shader_resource) == 0 || best_match_desc.texture.samples > 1 || (api == device_api::d3d12 || api == device_api::vulkan))
 			{
-				depth_stencil_backup = device_data.track_depth_stencil_for_backup(device, api, best_match, best_match_desc);
+				depth_stencil_backup = device_data.track_depth_stencil_for_backup(device, best_match, best_match_desc);
 
 				// Abort in case backup texture creation failed
 				if (depth_stencil_backup->backup_texture == 0)
@@ -847,7 +873,7 @@ static void on_begin_render_effects(effect_runtime *runtime, command_list *cmd_l
 				depth_stencil_backup->frame_height = frame_height;
 
 				if (s_preserve_depth_buffers)
-					reshade::config_get_value(nullptr, "DEPTH", "DepthCopyAtClearIndex", depth_stencil_backup->force_clear_index);
+					reshade::get_config_value(nullptr, "DEPTH", "DepthCopyAtClearIndex", depth_stencil_backup->force_clear_index);
 				else
 					depth_stencil_backup->force_clear_index = 0;
 
@@ -880,7 +906,7 @@ static void on_begin_render_effects(effect_runtime *runtime, command_list *cmd_l
 			const resource backup_texture = depth_stencil_backup->backup_texture;
 
 			// Copy to backup texture unless already copied during the current frame
-			if (!best_snapshot->copied_during_frame && (best_match_desc.usage & resource_usage::copy_source) != 0 && (s_preserve_depth_buffers != 2 || !(api == device_api::d3d12 || api == device_api::vulkan)))
+			if (!best_snapshot->copied_during_frame && (best_match_desc.usage & (resource_usage::copy_source | resource_usage::resolve_source)) != 0 && (s_preserve_depth_buffers != 2 || !(api == device_api::d3d12 || api == device_api::vulkan)))
 			{
 				bool do_copy = true;
 				// Ensure barriers are not created with 'D3D12_RESOURCE_STATE_[...]_SHADER_RESOURCE' when resource has 'D3D12_RESOURCE_FLAG_DENY_SHADER_RESOURCE' flag set
@@ -898,9 +924,20 @@ static void on_begin_render_effects(effect_runtime *runtime, command_list *cmd_l
 
 				if (do_copy)
 				{
-					cmd_list->barrier(best_match, old_state, resource_usage::copy_source);
-					cmd_list->copy_resource(best_match, backup_texture);
-					cmd_list->barrier(best_match, resource_usage::copy_source, old_state);
+					if (best_match_desc.texture.samples > 1)
+					{
+						assert(device->check_capability(device_caps::resolve_depth_stencil));
+
+						cmd_list->barrier(best_match, old_state, resource_usage::resolve_source);
+						cmd_list->resolve_texture_region(best_match, 0, nullptr, backup_texture, 0, 0, 0, 0, best_match_desc.texture.format);
+						cmd_list->barrier(best_match, resource_usage::resolve_source, old_state);
+					}
+					else
+					{
+						cmd_list->barrier(best_match, old_state, resource_usage::copy_source);
+						cmd_list->copy_resource(best_match, backup_texture);
+						cmd_list->barrier(best_match, resource_usage::copy_source, old_state);
+					}
 				}
 			}
 
@@ -920,7 +957,7 @@ static void on_begin_render_effects(effect_runtime *runtime, command_list *cmd_l
 		// Untrack any existing depth-stencil selected in previous frames
 		if (data.selected_depth_stencil != 0)
 		{
-			device_data.untrack_depth_stencil(data.selected_depth_stencil);
+			device_data.untrack_depth_stencil(device, data.selected_depth_stencil);
 
 			data.using_backup_texture = false;
 			data.selected_depth_stencil = { 0 };
@@ -932,8 +969,7 @@ static void on_begin_render_effects(effect_runtime *runtime, command_list *cmd_l
 	{
 		update_effect_runtime(runtime);
 
-		if (data.selected_shader_resource == 0)
-			device->destroy_resource_view(prev_shader_resource);
+		device->destroy_resource_view(prev_shader_resource);
 	}
 }
 static void on_finish_render_effects(effect_runtime *runtime, command_list *cmd_list, resource_view, resource_view)
@@ -990,7 +1026,7 @@ static void draw_settings_overlay(effect_runtime *runtime)
 		ImGui::Checkbox("Use aspect ratio heuristics", &use_aspect_ratio_heuristics))
 	{
 		s_use_aspect_ratio_heuristics = use_aspect_ratio_heuristics ? 1 : 0;
-		reshade::config_set_value(nullptr, "DEPTH", "UseAspectRatioHeuristics", s_use_aspect_ratio_heuristics);
+		reshade::set_config_value(nullptr, "DEPTH", "UseAspectRatioHeuristics", s_use_aspect_ratio_heuristics);
 		force_reset = true;
 	}
 
@@ -1000,7 +1036,7 @@ static void draw_settings_overlay(effect_runtime *runtime)
 			ImGui::Checkbox("Use extended aspect ratio heuristics (for DLSS or resolution scaling)", &use_aspect_ratio_heuristics_ex))
 		{
 			s_use_aspect_ratio_heuristics = use_aspect_ratio_heuristics_ex ? 2 : 1;
-			reshade::config_set_value(nullptr, "DEPTH", "UseAspectRatioHeuristics", s_use_aspect_ratio_heuristics);
+			reshade::set_config_value(nullptr, "DEPTH", "UseAspectRatioHeuristics", s_use_aspect_ratio_heuristics);
 			force_reset = true;
 		}
 	}
@@ -1009,7 +1045,7 @@ static void draw_settings_overlay(effect_runtime *runtime)
 		ImGui::Checkbox("Copy depth buffer before clear operations", &copy_before_clear_operations))
 	{
 		s_preserve_depth_buffers = copy_before_clear_operations ? 1 : 0;
-		reshade::config_set_value(nullptr, "DEPTH", "DepthCopyBeforeClears", s_preserve_depth_buffers);
+		reshade::set_config_value(nullptr, "DEPTH", "DepthCopyBeforeClears", s_preserve_depth_buffers);
 		force_reset = true;
 	}
 
@@ -1022,7 +1058,7 @@ static void draw_settings_overlay(effect_runtime *runtime)
 			ImGui::Checkbox(is_d3d12_or_vulkan ? "Copy depth buffer during frame to prevent artifacts" : "Copy depth buffer before fullscreen draw calls", &copy_before_fullscreen_draws))
 		{
 			s_preserve_depth_buffers = copy_before_fullscreen_draws ? 2 : 1;
-			reshade::config_set_value(nullptr, "DEPTH", "DepthCopyBeforeClears", s_preserve_depth_buffers);
+			reshade::set_config_value(nullptr, "DEPTH", "DepthCopyBeforeClears", s_preserve_depth_buffers);
 		}
 	}
 
@@ -1076,7 +1112,7 @@ static void draw_settings_overlay(effect_runtime *runtime)
 		sprintf_s(label, "%c 0x%016llx", (item.resource == data.selected_depth_stencil ? '>' : ' '), item.resource.handle);
 
 		bool disabled = item.unusable;
-		if (item.desc.texture.samples > 1) // Disable widget for MSAA textures
+		if (item.desc.texture.samples > 1 && (!device->check_capability(device_caps::resolve_depth_stencil) || s_preserve_depth_buffers != 0)) // Disable widget for MSAA textures
 			has_msaa_depth_stencil = disabled = true;
 
 		if (disabled)
@@ -1130,7 +1166,7 @@ static void draw_settings_overlay(effect_runtime *runtime)
 					ImGui::Checkbox(label, &value))
 				{
 					depth_stencil_backup->force_clear_index = value ? clear_index : 0;
-					reshade::config_set_value(nullptr, "DEPTH", "DepthCopyAtClearIndex", depth_stencil_backup->force_clear_index);
+					reshade::set_config_value(nullptr, "DEPTH", "DepthCopyAtClearIndex", depth_stencil_backup->force_clear_index);
 				}
 
 				ImGui::SameLine();
@@ -1147,7 +1183,7 @@ static void draw_settings_overlay(effect_runtime *runtime)
 					ImGui::Checkbox("    Choose last clear operation with high number of draw calls", &value))
 				{
 					depth_stencil_backup->force_clear_index = value ? std::numeric_limits<uint32_t>::max() : 0;
-					reshade::config_set_value(nullptr, "DEPTH", "DepthCopyAtClearIndex", depth_stencil_backup->force_clear_index);
+					reshade::set_config_value(nullptr, "DEPTH", "DepthCopyAtClearIndex", depth_stencil_backup->force_clear_index);
 				}
 			}
 		}
@@ -1178,7 +1214,7 @@ static void draw_settings_overlay(effect_runtime *runtime)
 			queue->wait_idle(); // Ensure resource view is no longer in-use before destroying it
 			device->destroy_resource_view(data.selected_shader_resource);
 
-			device_data.untrack_depth_stencil(data.selected_depth_stencil);
+			device_data.untrack_depth_stencil(device, data.selected_depth_stencil);
 		}
 
 		data.using_backup_texture = false;

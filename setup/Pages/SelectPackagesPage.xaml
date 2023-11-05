@@ -22,7 +22,7 @@
         <ColumnDefinition Width="10" /> <!-- Margin -->
         <ColumnDefinition Width="100" />
       </Grid.ColumnDefinitions>
-      <TextBox x:Name="PathBox" Grid.Column="0" Text="Enter ZIP download link to custom repository here" GotFocus="OnTextBoxGotFocus" />
+      <TextBox x:Name="PathBox" Grid.Column="0" Text="Optionally enter download link of a custom repository to add here" GotFocus="OnTextBoxGotFocus" />
       <Button Grid.Column="2" Content="Add" Click="OnAddPackageButtonClick" />
     </Grid>
     <ListBox x:Name="ItemsListBox" Margin="10,5" HorizontalContentAlignment="Stretch" ItemsSource="{Binding Items}">
@@ -31,7 +31,12 @@
           <Grid Margin="0,3">
             <Grid.ToolTip>
               <ToolTip>
-                <TextBlock Text="{Binding DownloadUrl}" />
+                <TextBlock>
+                    <Run Text="{Binding DownloadUrl, Mode=OneTime}" />
+                    <LineBreak />
+                    <LineBreak />
+                    <Run Text="{Binding EffectFilesList, Mode=OneTime}" />
+                </TextBlock>
               </ToolTip>
             </Grid.ToolTip>
             <Grid.RowDefinitions>
@@ -42,25 +47,25 @@
               <ColumnDefinition Width="35" />
               <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
-            <local:EffectPackageCheckBox Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Center" IsChecked="{Binding Enabled}" IsEnabled="{Binding Modifiable}" IsThreeState="True">
+            <local:EffectPackageCheckBox Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Center" IsChecked="{Binding Selected}" IsEnabled="{Binding Modifiable}" IsThreeState="True">
               <local:EffectPackageCheckBox.ToolTip>
                 <TextBlock Text="Check to install all effects in the package, fill out to prompt for individual effects to install in the next step." />
               </local:EffectPackageCheckBox.ToolTip>
             </local:EffectPackageCheckBox>
             <TextBlock Grid.Column="1" VerticalAlignment="Center">
-              <Hyperlink NavigateUri="{Binding RepositoryUrl}" RequestNavigate="OnHyperlinkRequestNavigate">
-                <TextBlock Text="{Binding PackageName}" />
+              <Hyperlink NavigateUri="{Binding RepositoryUrl, Mode=OneTime}" RequestNavigate="OnHyperlinkRequestNavigate">
+                <TextBlock Text="{Binding PackageName, Mode=OneTime}" />
                 <Hyperlink.ToolTip>
-                  <TextBlock Text="{Binding RepositoryUrl}" />
+                  <TextBlock Text="{Binding RepositoryUrl, Mode=OneTime}" />                  
                 </Hyperlink.ToolTip>
               </Hyperlink>
             </TextBlock>
-            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding PackageDescription}">
+            <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding PackageDescription, Mode=OneTime}">
               <TextBlock.Style>
                 <Style TargetType="TextBlock">
                   <Style.Triggers>
                     <!-- Hide description row if it is empty -->
-                    <DataTrigger Binding="{Binding PackageDescription}" Value="{x:Null}">
+                    <DataTrigger Binding="{Binding PackageDescription, Mode=OneTime}" Value="{x:Null}">
                       <Setter Property="Visibility" Value="Collapsed" />
                     </DataTrigger>
                   </Style.Triggers>

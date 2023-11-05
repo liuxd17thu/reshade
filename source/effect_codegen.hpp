@@ -38,43 +38,45 @@ namespace reshadefx
 		/// Defines a new struct type.
 		/// </summary>
 		/// <param name="loc">Source location matching this definition (for debugging).</param>
-		/// <param name="info">The struct type description.</param>
+		/// <param name="info">Description of the type.</param>
 		/// <returns>New SSA ID of the type.</returns>
 		virtual id define_struct(const location &loc, struct_info &info) = 0;
 		/// <summary>
 		/// Defines a new texture binding.
 		/// </summary>
 		/// <param name="loc">Source location matching this definition (for debugging).</param>
-		/// <param name="info">The texture description.</param>
+		/// <param name="info">Description of the texture object.</param>
 		/// <returns>New SSA ID of the binding.</returns>
 		virtual id define_texture(const location &loc, texture_info &info) = 0;
 		/// <summary>
 		/// Defines a new sampler binding.
 		/// </summary>
 		/// <param name="loc">Source location matching this definition (for debugging).</param>
-		/// <param name="info">The sampler description.</param>
+		/// <param name="tex_info">Description of the texture this sampler object references.</param>
+		/// <param name="info">Description of the sampler object.</param>
 		/// <returns>New SSA ID of the binding.</returns>
-		virtual id define_sampler(const location &loc, sampler_info &info) = 0;
+		virtual id define_sampler(const location &loc, const texture_info &tex_info, sampler_info &info) = 0;
 		/// <summary>
 		/// Defines a new storage binding.
 		/// </summary>
 		/// <param name="loc">Source location matching this definition (for debugging).</param>
-		/// <param name="info">The storage description.</param>
+		/// <param name="tex_info">Description of the texture this storage object references.</param>
+		/// <param name="info">Description of the storage object.</param>
 		/// <returns>New SSA ID of the binding.</returns>
-		virtual id define_storage(const location &loc, storage_info &info) = 0;
+		virtual id define_storage(const location &loc, const texture_info &tex_info, storage_info &info) = 0;
 		/// <summary>
 		/// Defines a new uniform variable.
 		/// </summary>
 		/// <param name="loc">Source location matching this definition (for debugging).</param>
-		/// <param name="info">The uniform variable description.</param>
+		/// <param name="info">Description of the uniform variable.</param>
 		/// <returns>New SSA ID of the variable.</returns>
 		virtual id define_uniform(const location &loc, uniform_info &info) = 0;
 		/// <summary>
 		/// Defines a new variable.
 		/// </summary>
 		/// <param name="loc">Source location matching this definition (for debugging).</param>
-		/// <param name="type">The variable type.</param>
-		/// <param name="name">The variable name.</param>
+		/// <param name="type">Data type of the variable.</param>
+		/// <param name="name">Name of the variable.</param>
 		/// <param name="global"><c>true</c> if this variable is in global scope, <c>false</c> otherwise.</param>
 		/// <param name="initializer_value">SSA ID of an optional initializer value.</param>
 		/// <returns>New SSA ID of the variable.</returns>
@@ -83,7 +85,7 @@ namespace reshadefx
 		/// Defines a new function and its function parameters and make it current. Any code added after this call is added to this function.
 		/// </summary>
 		/// <param name="loc">Source location matching this definition (for debugging).</param>
-		/// <param name="info">The function description.</param>
+		/// <param name="info">Description of the function.</param>
 		/// <returns>New SSA ID of the function.</returns>
 		virtual id define_function(const location &loc, function_info &info) = 0;
 
@@ -91,8 +93,8 @@ namespace reshadefx
 		/// Defines a new effect technique.
 		/// </summary>
 		/// <param name="loc">Source location matching this definition (for debugging).</param>
-		/// <param name="info">The technique description.</param>
-		void define_technique(technique_info &info) { _module.techniques.push_back(info); }
+		/// <param name="info">Description of the technique.</param>
+		void define_technique(technique_info &&info) { _module.techniques.push_back(std::move(info)); }
 		/// <summary>
 		/// Makes a function a shader entry point.
 		/// </summary>
@@ -276,31 +278,41 @@ namespace reshadefx
 		virtual void leave_function() = 0;
 
 		/// <summary>
-		/// Looks up an existing struct definition.
+		/// Looks up an existing struct type.
 		/// </summary>
-		/// <param name="id">SSA ID of the struct type to find.</param>
+		/// <param name="id">SSA ID of the type to find.</param>
 		/// <returns>Reference to the struct description.</returns>
-		struct_info &find_struct(id id)
+		const struct_info &get_struct(id id) const
 		{
 			return *std::find_if(_structs.begin(), _structs.end(),
 				[id](const auto &it) { return it.definition == id; });
 		}
 		/// <summary>
-		/// Looks up an existing texture definition.
+		/// Looks up an existing texture binding.
 		/// </summary>
-		/// <param name="id">SSA ID of the texture variable to find.</param>
+		/// <param name="id">SSA ID of the texture binding to find.</param>
 		/// <returns>Reference to the texture description.</returns>
-		texture_info &find_texture(id id)
+		texture_info &get_texture(id id)
 		{
 			return *std::find_if(_module.textures.begin(), _module.textures.end(),
 				[id](const auto &it) { return it.id == id; });
 		}
-		sampler_info &find_sampler(id id)
+		/// <summary>
+		/// Looks up an existing sampler binding.
+		/// </summary>
+		/// <param name="id">SSA ID of the sampler binding to find.</param>
+		/// <returns>Reference to the sampler description.</returns>
+		const sampler_info &get_sampler(id id) const
 		{
 			return *std::find_if(_module.samplers.begin(), _module.samplers.end(),
 				[id](const auto &it) { return it.id == id; });
 		}
-		storage_info &find_storage(id id)
+		/// <summary>
+		/// Looks up an existing storage binding.
+		/// </summary>
+		/// <param name="id">SSA ID of the storage binding to find.</param>
+		/// <returns>Reference to the storage description.</returns>
+		const storage_info &get_storage(id id) const
 		{
 			return *std::find_if(_module.storages.begin(), _module.storages.end(),
 				[id](const auto &it) { return it.id == id; });
@@ -310,7 +322,7 @@ namespace reshadefx
 		/// </summary>
 		/// <param name="id">SSA ID of the function variable to find.</param>
 		/// <returns>Reference to the function description.</returns>
-		function_info &find_function(id id)
+		function_info &get_function(id id)
 		{
 			return *std::find_if(_functions.begin(), _functions.end(),
 				[id](const auto &it) { return it->definition == id; })->get();
