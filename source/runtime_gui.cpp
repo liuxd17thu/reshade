@@ -887,12 +887,14 @@ void reshade::runtime::draw_gui()
 		if (s_needs_update)
 		{
 			ImGui::TextColored(COLOR_YELLOW,
-				"An update is available! Please visit https://reshade.me and install the new version (v%u.%u.%u).",
+				"An update of Official ReShade is available! Please visit https://reshade.me and install the new version (v%u.%u.%u). \n"
+				"This modified version might sync the update later on the fork repo. You can visit from \"About\" page.",
 				s_latest_version[0], s_latest_version[1], s_latest_version[2]);
 		}
 		else
 		{
-			ImGui::TextUnformatted("Visit https://reshade.me for news, updates, effects and discussion.");
+			ImGui::TextUnformatted("Visit https://reshade.me for news, updates, effects and discussion. \n"
+				"This is a modified version, you can visit the corresponding repo from \"About\" page.");
 		}
 
 		ImGui::Spacing();
