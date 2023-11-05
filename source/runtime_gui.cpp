@@ -16,6 +16,7 @@
 #include "input_gamepad.hpp"
 #include "imgui_widgets.hpp"
 #include "platform_utils.hpp"
+#include "fonts/iosevka.h"
 #include "fonts/forkawesome.inl"
 #include <fstream>
 #include <algorithm>
@@ -155,7 +156,11 @@ void reshade::runtime::build_font_atlas()
 
 		// Use default font if custom font failed to load
 		if (_font_path.empty())
-			atlas->AddFontDefault(&cfg);
+		{
+			//atlas->AddFontDefault(&cfg);
+			atlas->AddFontFromMemoryCompressedBase85TTF(iosevka_compressed_data_base85, cfg.SizePixels, &cfg, atlas->GetGlyphRangesGreek());
+		}
+
 
 		// Merge icons into main font
 		ImFontConfig icon_config;
@@ -2695,17 +2700,21 @@ void reshade::runtime::draw_gui_log()
 }
 void reshade::runtime::draw_gui_about()
 {
-	ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT);
+	ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT " with \"ui_bind\"");
 
-	ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 7.3f * _font_size);
-	if (ImGui::SmallButton(" Open website "))
+	ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 14.0f * _font_size);
+	if (ImGui::Button("ReShade Website ", ImVec2(7.0 * _font_size, 0)))
 		utils::execute_command("https://reshade.me");
+	ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 6.5f * _font_size);
+	if (ImGui::Button("Fork Repo", ImVec2(7.0 * _font_size, 0)))
+		utils::execute_command("https://github.com/liuxd17thu/reshade.git");
 
 	ImGui::Separator();
 
 	ImGui::PushTextWrapPos();
 
-	ImGui::TextUnformatted("Developed and maintained by crosire.");
+	ImGui::TextUnformatted("Official ReShade is developed and maintained by crosire.");
+	ImGui::TextUnformatted("This version is a ReShade fork maintained by BarricadeMKXX.");
 	ImGui::TextUnformatted("This project makes use of several open source libraries, licenses of which are listed below:");
 
 	if (ImGui::CollapsingHeader("ReShade", ImGuiTreeNodeFlags_DefaultOpen))
@@ -2784,6 +2793,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	if (ImGui::CollapsingHeader("Fork Awesome"))
 	{
 		ImGui::TextUnformatted(R"(Copyright (C) 2018 Fork Awesome (https://forkawesome.github.io)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1. (http://scripts.sil.org/OFL))");
+	}
+	if (ImGui::CollapsingHeader("Iosevka"))
+	{
+		ImGui::TextUnformatted(R"(Copyright (C) 2015-2023, Renzhi Li (aka. Belleve Invis, belleve@typeof.net)
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1. (http://scripts.sil.org/OFL))");
 	}

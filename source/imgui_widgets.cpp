@@ -281,7 +281,7 @@ bool reshade::imgui::font_input_box(const char *name, std::filesystem::path &pat
 	ImGui::PushID(name);
 
 	ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - spacing - 80);
-	if (file_input_box("##font", "ProggyClean.ttf", path, dialog_path, { L".ttf" }))
+	if (file_input_box("##font", "Iosevka.ttf", path, dialog_path, { L".ttf" }))
 		res = true;
 
 	ImGui::SameLine(0, spacing);
