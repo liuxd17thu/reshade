@@ -1150,8 +1150,47 @@ void reshade::runtime::load_current_preset()
 
 	std::unordered_map<std::string, std::vector<std::pair<std::string, std::string>>> preset_preprocessor_definitions;
 	preset.get({}, "PreprocessorDefinitions", preset_preprocessor_definitions[{}]);
-	for (const effect &effect : _effects)
+	for (effect &effect : _effects) {
 		preset.get(effect.source_file.filename().u8string(), "PreprocessorDefinitions", preset_preprocessor_definitions[effect.source_file.filename().u8string()]);
+		// Scan and build ui_binds
+		for (auto &variable : effect.uniforms) {
+			std::string ui_bind_definition { variable.annotation_as_string("ui_bind") };
+			if (ui_bind_definition.empty())
+				continue;
+			std::string data_str = "";
+			if (const auto &match = std::find_if(preset_preprocessor_definitions[effect.source_file.filename().u8string()].cbegin(),
+					preset_preprocessor_definitions[effect.source_file.filename().u8string()].cend(),
+					[ui_bind_definition](std::pair<std::string, std::string> it) { return it.first == ui_bind_definition; });
+				match != preset_preprocessor_definitions[effect.source_file.filename().u8string()].end())
+				data_str = match->second;
+
+			if (data_str.empty())
+			{
+				switch (variable.type.base)
+				{
+					case reshadefx::type::t_bool:
+					{
+						data_str = variable.initializer_value.as_uint ? "1" : "0";
+						break;
+					}
+					case reshadefx::type::t_int:
+					case reshadefx::type::t_uint:
+					{
+						data_str = std::to_string(variable.initializer_value.as_int[0]);
+						break;
+					}
+					case reshadefx::type::t_float:
+					{
+						data_str = std::to_string(variable.initializer_value.as_float[0]);
+						break;
+					}
+				}
+			}
+
+			if (!data_str.empty() && !(effect.definition_bindings.count(variable.name) && !effect.definition_bindings[variable.name].second.empty()))
+				effect.definition_bindings[variable.name] = std::pair(ui_bind_definition, data_str);
+		}
+	}
 
 	// Recompile effects if preprocessor definitions have changed or running in performance mode (in which case all preset values are compile-time constants)
 	if (_reload_remaining_effects != 0 && (!_is_in_preset_transition || _last_preset_switching_time == _last_present_time)) // ... unless this is the 'load_current_preset' call in 'update_effects' or the call every frame during preset transition
@@ -1364,11 +1403,41 @@ void reshade::runtime::save_current_preset() const
 
 		const std::string effect_name = effect.source_file.filename().u8string();
 
-		if (const auto preset_it = _preset_preprocessor_definitions.find(effect_name);
-			preset_it != _preset_preprocessor_definitions.end() && !preset_it->second.empty())
-			preset.set(effect_name, "PreprocessorDefinitions", preset_it->second);
+		if (!_ui_bind_support)
+		{
+			if (const auto preset_it = _preset_preprocessor_definitions.find(effect_name);
+				preset_it != _preset_preprocessor_definitions.end() && !preset_it->second.empty())
+				preset.set(effect_name, "PreprocessorDefinitions", preset_it->second);
+			else
+				preset.remove_key(effect_name, "PreprocessorDefinitions");
+		}
 		else
-			preset.remove_key(effect_name, "PreprocessorDefinitions");
+		{
+			if (const auto preset_it = _preset_preprocessor_definitions.find(effect_name);
+				preset_it != _preset_preprocessor_definitions.end() && !preset_it->second.empty())
+			{
+				auto pp_with_value { preset_it->second };
+				// Firstly, remove the preset preprocessors if they exist in definition_bindings
+				for (auto &definition_bind : effect.definition_bindings)
+				{
+					if (auto match = std::find_if(pp_with_value.begin(), pp_with_value.end(),
+							[&](const auto &def_bind) { return def_bind.first == definition_bind.second.first; });
+						match != pp_with_value.end()
+						)
+					{
+						pp_with_value.erase(match);
+					}
+				}
+				// Then, append again
+				for (auto &definition_bind : effect.definition_bindings)
+					if(definition_bind.second.second != "")
+						pp_with_value.insert(pp_with_value.end(), definition_bind.second);
+				if (!pp_with_value.empty())
+					preset.set(effect_name, "PreprocessorDefinitions", pp_with_value);
+				else
+					preset.remove_key(effect_name, "PreprocessorDefinitions");
+			}
+		}
 
 		for (const uniform &variable : effect.uniforms)
 		{
@@ -1504,6 +1573,8 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 	const std::string effect_name = source_file.filename().u8string();
 
 	std::vector<std::pair<std::string, std::string>> preprocessor_definitions = _global_preprocessor_definitions;
+
+	effect &effect = _effects[effect_index];
 	// Insert preset preprocessor definitions before global ones, so that if there are duplicates, the preset ones are used (since 'add_macro_definition' succeeds only for the first occurance)
 	if (const auto preset_it = _preset_preprocessor_definitions.find({});
 		preset_it != _preset_preprocessor_definitions.end())
@@ -1511,6 +1582,15 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 	if (const auto preset_it = _preset_preprocessor_definitions.find(effect_name);
 		preset_it != _preset_preprocessor_definitions.end())
 		preprocessor_definitions.insert(preprocessor_definitions.begin(), preset_it->second.cbegin(), preset_it->second.cend());
+	if (_ui_bind_support)
+	{
+		for (auto &definition_bind : effect.definition_bindings)
+		{
+			if (definition_bind.second.second == "")
+				continue;
+			preprocessor_definitions.insert(preprocessor_definitions.begin(), definition_bind.second);
+		}
+	}
 
 #if RESHADE_ADDON
 	std::vector<std::string> addon_definitions;
@@ -1572,13 +1652,17 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 		}
 	}
 
-	effect &effect = _effects[effect_index];
-
 	const size_t source_hash = std::hash<std::string>()(attributes);
 	if (source_file != effect.source_file || source_hash != effect.source_hash)
 	{
 		// Source hash has changed, reset effect and load from scratch, rather than updating
+		// Backup and re-apply binds
+		auto binding_backup = std::move(effect.definition_bindings);
 		effect = {};
+
+		if (_ui_bind_support)
+			effect.definition_bindings = std::move(binding_backup);
+
 		effect.source_file = source_file;
 		effect.source_hash = source_hash;
 	}
@@ -1624,6 +1708,13 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 		pp.add_macro_definition("BUFFER_RCP_HEIGHT", "(1.0 / BUFFER_HEIGHT)");
 		pp.add_macro_definition("BUFFER_COLOR_SPACE", std::to_string(static_cast<uint32_t>(_back_buffer_color_space)));
 		pp.add_macro_definition("BUFFER_COLOR_BIT_DEPTH", std::to_string(format_color_bit_depth(_effect_color_format)));
+
+		if (_ui_bind_support)
+		{
+			for (auto &bind_pair : effect.definition_bindings)
+				if (bind_pair.second.second != "")
+					pp.add_macro_definition(bind_pair.second.first, bind_pair.second.second);
+		}
 
 		for (const std::pair<std::string, std::string> &definition : preprocessor_definitions)
 		{
@@ -1676,6 +1767,14 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 			effect.definitions.clear();
 			for (const std::pair<std::string, std::string> &definition : pp.used_macro_definitions())
 			{
+				// Also skip the preprocessors definitions which are bound to uniforms with "ui_bind"
+				if (_ui_bind_support)
+				{
+					auto it = std::find_if(effect.definition_bindings.begin(), effect.definition_bindings.end(),
+						[&definition](const auto &b) { return b.second.first == definition.first; });
+					if (it != effect.definition_bindings.end())
+						continue;
+				}
 				if (definition.first.size() < 8 ||
 					definition.first[0] == '_' ||
 					definition.first.compare(0, 7, "BUFFER_") == 0 ||
@@ -1688,6 +1787,14 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 				// Write used preprocessor definitions to the cached source
 				source = "// " + definition.first + '=' + definition.second + '\n' + source;
 			}
+
+			if (_ui_bind_support)
+				for (const auto &bind_pair : effect.definition_bindings) {
+					//if (bind_pair.second.second == "")
+					//	continue;
+					effect.definitions.emplace_back(bind_pair.second.first, trim(bind_pair.second.second));
+					source = "// " + bind_pair.second.first + '=' + bind_pair.second.second + '\n' + source;
+				}
 
 			std::sort(effect.definitions.begin(), effect.definitions.end());
 

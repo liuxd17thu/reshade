@@ -344,6 +344,7 @@ void reshade::runtime::load_config_gui(const ini_file &config)
 	config.get("OVERLAY", "VariableListHeight", _variable_editor_height);
 	config.get("OVERLAY", "VariableListUseTabs", _variable_editor_tabs);
 	config.get("OVERLAY", "AutoSavePreset", _auto_save_preset);
+	config.get("OVERLAY", "UIBindSupport", _ui_bind_support);
 	config.get("OVERLAY", "ShowPresetTransitionMessage", _show_preset_transition_message);
 #endif
 
@@ -444,6 +445,7 @@ void reshade::runtime::save_config_gui(ini_file &config) const
 	config.set("OVERLAY", "VariableListHeight", _variable_editor_height);
 	config.set("OVERLAY", "VariableListUseTabs", _variable_editor_tabs);
 	config.set("OVERLAY", "AutoSavePreset", _auto_save_preset);
+	config.set("OVERLAY", "UIBindSupport", _ui_bind_support);
 	config.set("OVERLAY", "ShowPresetTransitionMessage", _show_preset_transition_message);
 #endif
 
@@ -1628,7 +1630,7 @@ void reshade::runtime::draw_gui_home()
 		std::string auto_save_button_label = was_auto_save_preset ? _("Auto Save on") : _("Auto Save");
 		auto_save_button_label += "###auto_save";
 
-		if (imgui::toggle_button(auto_save_button_label.c_str(), _auto_save_preset, (was_auto_save_preset ? 0.0f : auto_save_button_spacing) + (12.5f * _font_size) - (button_spacing + button_size) * (was_auto_save_preset ? 2 : 3)))
+		if (imgui::toggle_button(auto_save_button_label.c_str(), _auto_save_preset, (was_auto_save_preset ? 0.0f : auto_save_button_spacing) + (12.5f * _font_size) - (button_spacing + button_size) * (was_auto_save_preset ? 3 : 4)))
 		{
 			_preset_is_modified = false;
 
@@ -1636,6 +1638,11 @@ void reshade::runtime::draw_gui_home()
 		}
 
 		ImGui::SetItemTooltip(_("Save current preset automatically on every modification"));
+
+		ImGui::SameLine(0, button_spacing);
+		if (imgui::toggle_button(_ui_bind_support ? "G" : "R", _ui_bind_support, button_size)) {
+			save_config();
+		};
 
 		if (was_auto_save_preset)
 		{
@@ -1662,6 +1669,35 @@ void reshade::runtime::draw_gui_home()
 
 		if (ImGui::ButtonEx(ICON_FK_FLOPPY, ImVec2(button_size, 0), ImGuiButtonFlags_NoNavFocus))
 		{
+			// Clear "orphan bindings" whose uniform is removed. (e.g. preprocessors in pass 2/3 of MultiLUT)
+			if (_ui_bind_support)
+			{
+				for (auto &effect : _effects)
+				{
+					if (effect.rendering == 0)
+						continue;
+					std::unordered_map<std::string, std::pair<std::string, std::string>> tmp_binds;
+					for (auto &variable : effect.uniforms) {
+						if (!variable.annotation_as_string("ui_bind").empty() && effect.definition_bindings.count(variable.name))
+						{
+							tmp_binds[variable.name] = effect.definition_bindings[variable.name];
+							effect.definition_bindings.erase(variable.name);
+						}
+					}
+					// Now only "orphan bindings" stay in effect.definition_bindings. If these preprocessors exist in preset, remove them.
+					if (!effect.definition_bindings.empty())
+					{
+						auto & ppd = _preset_preprocessor_definitions[effect.source_file.filename().u8string()];
+						for (const auto &orphan : effect.definition_bindings)
+						{
+							ppd.erase(std::find_if(ppd.begin(), ppd.end(), [&](const auto &pp) { return pp.first == orphan.second.first; }));
+						}
+					}
+					effect.definition_bindings = std::move(tmp_binds);
+				}
+				_uniform_binding_updated = std::numeric_limits<size_t>::max();
+			}
+
 			ini_file::load_cache(_current_preset_path).clear();
 			save_current_preset();
 			ini_file::flush_cache(_current_preset_path);
@@ -3438,6 +3474,11 @@ void reshade::runtime::draw_variable_editor()
 		size_t hovered_variable = 0;
 		size_t hovered_variable_index = std::numeric_limits<size_t>::max();
 
+		if (_ui_bind_support && _uniform_binding_updated == effect_index) {
+			reload_effect(effect_index);
+			_uniform_binding_updated = std::numeric_limits<size_t>::max();
+		}
+
 		for (size_t variable_index = 0; variable_index < effect.uniforms.size(); ++variable_index)
 		{
 			reshade::uniform &variable = effect.uniforms[variable_index];
@@ -3516,17 +3557,32 @@ void reshade::runtime::draw_variable_editor()
 			{
 			case reshadefx::type::t_bool:
 				get_uniform_value(variable, value.as_uint, variable.type.components());
+				if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+				{
+					value.as_uint[0] = effect.definition_bindings[variable.name].second == "0" ? 0 : 1;
+					set_uniform_value(variable, reinterpret_cast<bool *>(value.as_uint));
+				}
 				for (size_t i = 0; is_default_value && i < variable.type.components(); i++)
 					is_default_value = (value.as_uint[i] != 0) == (variable.initializer_value.as_uint[i] != 0);
 				break;
 			case reshadefx::type::t_int:
 			case reshadefx::type::t_uint:
 				get_uniform_value(variable, value.as_int, variable.type.components());
+				if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+				{
+					value.as_int[0] = std::stoi(effect.definition_bindings[variable.name].second);
+					set_uniform_value(variable, value.as_int, variable.type.components());
+				}
 				is_default_value = std::memcmp(value.as_int, variable.initializer_value.as_int, variable.type.components() * sizeof(int)) == 0;
 				break;
 			case reshadefx::type::t_float:
 				const float threshold = variable.annotation_as_float("ui_step", 0, 0.001f) * 0.75f + FLT_EPSILON;
 				get_uniform_value(variable, value.as_float, variable.type.components());
+				if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+				{
+					value.as_float[0] = std::stof(effect.definition_bindings[variable.name].second);
+					set_uniform_value(variable, value.as_float, variable.type.components());
+				}
 				for (size_t i = 0; is_default_value && i < variable.type.components(); i++)
 					is_default_value = std::abs(value.as_float[i] - variable.initializer_value.as_float[i]) < threshold;
 				break;
@@ -3540,16 +3596,31 @@ void reshade::runtime::draw_variable_editor()
 				{
 				case reshadefx::type::t_bool:
 					get_uniform_value(variable, new_value.as_uint, variable.type.components());
+					if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+					{
+						new_value.as_uint[0] = effect.definition_bindings[variable.name].second == "0" ? 0 : 1;
+						set_uniform_value(variable, reinterpret_cast<bool *>(new_value.as_uint));
+					}
 					for (size_t i = 0; !modified && i < variable.type.components(); i++)
 						modified = (new_value.as_uint[i] != 0) != (value.as_uint[i] != 0);
 					break;
 				case reshadefx::type::t_int:
 				case reshadefx::type::t_uint:
 					get_uniform_value(variable, new_value.as_int, variable.type.components());
+					if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+					{
+						new_value.as_int[0] = std::stoi(effect.definition_bindings[variable.name].second);
+						set_uniform_value(variable, new_value.as_int, variable.type.components());
+					}
 					modified = std::memcmp(new_value.as_int, value.as_int, variable.type.components() * sizeof(int)) != 0;
 					break;
 				case reshadefx::type::t_float:
 					get_uniform_value(variable, new_value.as_float, variable.type.components());
+					if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+					{
+						new_value.as_float[0] = std::stof(effect.definition_bindings[variable.name].second);
+						set_uniform_value(variable, new_value.as_float, variable.type.components());
+					}
 					for (size_t i = 0; !modified && i < variable.type.components(); i++)
 						modified = std::abs(new_value.as_float[i] - value.as_float[i]) > FLT_EPSILON;
 					break;
@@ -3588,7 +3659,14 @@ void reshade::runtime::draw_variable_editor()
 							modified = ImGui::Checkbox(label.data(), reinterpret_cast<bool *>(value.as_uint));
 
 						if (modified)
+						{
 							set_uniform_value(variable, value.as_uint, variable.type.components());
+							if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+							{
+								effect.definition_bindings[variable.name].second = value.as_uint[0] != 0 ? "1" : "0";
+								_uniform_binding_updated = effect_index;
+							}
+						}
 						break;
 					}
 					case reshadefx::type::t_int:
@@ -3607,8 +3685,8 @@ void reshade::runtime::draw_variable_editor()
 							modified = imgui::slider_with_buttons(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, value.as_int, variable.type.rows, &ui_stp_val, &ui_min_val, &ui_max_val, format.c_str());
 						else if (ui_type == "drag")
 							modified = variable.annotation_as_int("ui_step") == 0 ?
-								ImGui::DragScalarN(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, value.as_int, variable.type.rows, 1.0f, &ui_min_val, &ui_max_val, format.c_str()) :
-								imgui::drag_with_buttons(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, value.as_int, variable.type.rows, &ui_stp_val, &ui_min_val, &ui_max_val, format.c_str());
+							ImGui::DragScalarN(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, value.as_int, variable.type.rows, 1.0f, &ui_min_val, &ui_max_val, format.c_str()) :
+							imgui::drag_with_buttons(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, value.as_int, variable.type.rows, &ui_stp_val, &ui_min_val, &ui_max_val, format.c_str());
 						else if (ui_type == "list")
 							modified = imgui::list_with_buttons(label.data(), get_localized_annotation(variable, "ui_items", _current_language), value.as_int[0]);
 						else if (ui_type == "combo")
@@ -3622,7 +3700,14 @@ void reshade::runtime::draw_variable_editor()
 							modified = ImGui::InputScalarN(label.data(), variable.type.is_signed() ? ImGuiDataType_S32 : ImGuiDataType_U32, value.as_int, variable.type.rows);
 
 						if (modified)
+						{
 							set_uniform_value(variable, value.as_int, variable.type.components());
+							if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+							{
+								effect.definition_bindings[variable.name].second = std::to_string(value.as_int[0]);
+								_uniform_binding_updated = effect_index;
+							}
+						}
 						break;
 					}
 					case reshadefx::type::t_float:
@@ -3644,8 +3729,8 @@ void reshade::runtime::draw_variable_editor()
 							modified = imgui::slider_with_buttons(label.data(), ImGuiDataType_Float, value.as_float, variable.type.rows, &ui_stp_val, &ui_min_val, &ui_max_val, precision_format.c_str());
 						else if (ui_type == "drag")
 							modified = variable.annotation_as_float("ui_step") == 0.0f ?
-								ImGui::DragScalarN(label.data(), ImGuiDataType_Float, value.as_float, variable.type.rows, ui_stp_val, &ui_min_val, &ui_max_val, precision_format.c_str()) :
-								imgui::drag_with_buttons(label.data(), ImGuiDataType_Float, value.as_float, variable.type.rows, &ui_stp_val, &ui_min_val, &ui_max_val, precision_format.c_str());
+							ImGui::DragScalarN(label.data(), ImGuiDataType_Float, value.as_float, variable.type.rows, ui_stp_val, &ui_min_val, &ui_max_val, precision_format.c_str()) :
+							imgui::drag_with_buttons(label.data(), ImGuiDataType_Float, value.as_float, variable.type.rows, &ui_stp_val, &ui_min_val, &ui_max_val, precision_format.c_str());
 						else if (ui_type == "color" && variable.type.rows == 1)
 							modified = imgui::slider_for_alpha_value(label.data(), value.as_float);
 						else if (ui_type == "color" && variable.type.rows == 3)
@@ -3659,7 +3744,17 @@ void reshade::runtime::draw_variable_editor()
 							modified = ImGui::InputScalarN(label.data(), ImGuiDataType_Float, value.as_float, variable.type.rows);
 
 						if (modified)
+						{
 							set_uniform_value(variable, value.as_float, variable.type.components());
+							if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+							{
+								std::stringstream tmp;
+								tmp.precision(precision_format[2] - '0');
+								tmp << value.as_float[0];
+								effect.definition_bindings[variable.name].second = tmp.str();
+								_uniform_binding_updated = effect_index;
+							}
+						}
 						break;
 					}
 				}
@@ -3668,11 +3763,17 @@ void reshade::runtime::draw_variable_editor()
 
 				// Display tooltip
 				if (const std::string_view tooltip = get_localized_annotation(variable, "ui_tooltip", _current_language);
-					!tooltip.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled))
+					(!tooltip.empty() || (_ui_bind_support && effect.definition_bindings.count(variable.name))) && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled))
 				{
 					if (ImGui::BeginTooltip())
 					{
-						ImGui::TextUnformatted(tooltip.data());
+						if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+						{
+							const std::string bind_info = "[Bound To: " + effect.definition_bindings[variable.name].first + "]";
+							ImGui::TextColored(ImColor(51, 204, 51), bind_info.c_str());
+						}
+						if(!tooltip.empty())
+							ImGui::TextUnformatted(tooltip.data());
 						ImGui::EndTooltip();
 					}
 				}
@@ -3754,14 +3855,27 @@ void reshade::runtime::draw_variable_editor()
 
 			if (ImGui::TreeNodeEx(category_label.c_str(), ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_DefaultOpen))
 			{
-				for (const std::pair<std::string, std::string> &definition : effect.definitions)
+				for (std::pair<std::string, std::string> &definition : effect.definitions)
 				{
 					std::vector<std::pair<std::string, std::string>> *definition_scope = nullptr;
 					std::vector<std::pair<std::string, std::string>>::iterator definition_it;
 
 					char value[256];
 					if (get_preprocessor_definition(effect_name, definition.first, 0b111, definition_scope, definition_it))
-						value[definition_it->second.copy(value, sizeof(value) - 1)] = '\0';
+					{
+						if (_ui_bind_support)
+						{
+							auto match = std::find_if(effect.definition_bindings.begin(), effect.definition_bindings.end(),
+								[&](const auto &def_bind) { return definition.first == def_bind.second.first; });
+							if (match != effect.definition_bindings.end())
+							{
+								definition.second = match->second.second;
+								value[match->second.second.copy(value, sizeof(value) - 1)] = '\0';
+							}
+						}
+						else
+							value[definition_it->second.copy(value, sizeof(value) - 1)] = '\0';
+					}
 					else
 						value[0] = '\0';
 
@@ -3812,6 +3926,8 @@ void reshade::runtime::draw_variable_editor()
 						ImGui::EndPopup();
 					}
 				}
+				if (_ui_bind_support && _uniform_binding_updated == effect_index)
+					force_reload_effect = true;
 			}
 		}
 
@@ -3827,7 +3943,8 @@ void reshade::runtime::draw_variable_editor()
 
 		if (force_reload_effect)
 		{
-			save_current_preset();
+			if (_auto_save_preset)
+				save_current_preset();
 
 			const bool reload_successful_before = _last_reload_successful;
 
