@@ -481,6 +481,8 @@ namespace reshade
 		char _effect_filter[32] = {};
 		bool _variable_editor_tabs = false;
 		bool _auto_save_preset = true;
+		bool _ui_bind_support = true;
+		size_t _uniform_binding_updated = std::numeric_limits<size_t>::max();
 		bool _preset_is_modified = false;
 		bool _inherit_current_preset = false;
 		std::filesystem::path _template_preset_path;

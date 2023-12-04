@@ -252,6 +252,7 @@ namespace reshade
 			bool srgb;
 		};
 		std::vector<binding_data> texture_semantic_to_binding;
+		std::unordered_map<std::string, std::pair<std::string, std::string>> definition_bindings;
 	};
 #endif
 }
