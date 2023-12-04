@@ -4708,6 +4708,48 @@ void reshade::runtime::reset_uniform_value(uniform &variable)
 	}
 }
 
+void reshade::runtime::reset_uniform_value(uniform &variable, std::string &bind_value)
+{
+	if (variable.special != reshade::special_uniform::none)
+	{
+		std::memset(_effects[variable.effect_index].uniform_data_storage.data() + variable.offset, 0, variable.size);
+		return;
+	}
+	static const reshadefx::constant zero = {};
+
+	// Need to use typed setters, to ensure values are properly forced to floating point in D3D9
+	for (size_t i = 0, array_length = (variable.type.is_array() ? variable.type.array_length : 1); i < array_length; ++i)
+	{
+		const reshadefx::constant &value = variable.has_initializer_value ? variable.type.is_array() ? variable.initializer_value.array_data[i] : variable.initializer_value : zero;
+
+		switch (variable.type.base)
+		{
+			case reshadefx::type::t_int:
+			{
+				set_uniform_value(variable, value.as_int, variable.type.components(), i);
+				if (i == 0)
+					bind_value = std::to_string(value.as_int[0]);
+				break;
+			}
+			case reshadefx::type::t_bool:
+			case reshadefx::type::t_uint:
+			{
+				set_uniform_value(variable, value.as_uint, variable.type.components(), i);
+				if (i == 0)
+					bind_value = std::to_string(value.as_uint[0]);
+				break;
+			}
+			case reshadefx::type::t_float:
+			{
+				set_uniform_value(variable, value.as_float, variable.type.components(), i);
+				if (i == 0)
+					bind_value = std::to_string(value.as_float[0]);
+				break;
+			}
+		}
+	}
+}
+
 static inline bool force_floating_point_value(const reshadefx::type &type, uint32_t renderer_id)
 {
 	if (renderer_id == 0x9000)
