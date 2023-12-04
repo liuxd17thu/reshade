@@ -1170,7 +1170,7 @@ void reshade::runtime::load_current_preset()
 				{
 					case reshadefx::type::t_bool:
 					{
-						data_str = variable.initializer_value.as_uint ? "1" : "0";
+						data_str = variable.initializer_value.as_uint[0] ? "1" : "0";
 						break;
 					}
 					case reshadefx::type::t_int:
@@ -1414,7 +1414,7 @@ void reshade::runtime::save_current_preset() const
 		else
 		{
 			if (const auto preset_it = _preset_preprocessor_definitions.find(effect_name);
-				preset_it != _preset_preprocessor_definitions.end() && !preset_it->second.empty())
+				preset_it != _preset_preprocessor_definitions.end())
 			{
 				auto pp_with_value { preset_it->second };
 				// Firstly, remove the preset preprocessors if they exist in definition_bindings
