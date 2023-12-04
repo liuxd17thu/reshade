@@ -1567,11 +1567,6 @@ void reshade::runtime::draw_gui_home()
 
 		ImGui::SetItemTooltip(_("Save current preset automatically on every modification"));
 
-		ImGui::SameLine(0, button_spacing);
-		if (imgui::toggle_button(_ui_bind_support ? "G" : "R", _ui_bind_support, button_size)) {
-			save_config();
-		};
-
 		if (was_auto_save_preset)
 		{
 			ImGui::SameLine(0, button_spacing + auto_save_button_spacing);
@@ -1591,6 +1586,12 @@ void reshade::runtime::draw_gui_home()
 
 			ImGui::SameLine(0, button_spacing);
 		}
+
+		if (imgui::toggle_button(_ui_bind_support ? "G" : "R", _ui_bind_support, button_size))
+		{
+			save_config();
+		};
+		ImGui::SameLine(0, button_spacing);
 
 		// Cannot save in performance mode, since there are no variables to retrieve values from then
 		ImGui::BeginDisabled(_performance_mode || _is_in_preset_transition);
