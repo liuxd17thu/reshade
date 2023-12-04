@@ -1618,7 +1618,7 @@ void reshade::runtime::draw_gui_home()
 						auto & ppd = _preset_preprocessor_definitions[effect.source_file.filename().u8string()];
 						for (const auto &orphan : effect.definition_bindings)
 						{
-							ppd.erase(std::find_if(ppd.begin(), ppd.end(), [&](const auto &pp) { return pp.first == orphan.second.first; }));
+							ppd.erase(std::remove_if(ppd.begin(), ppd.end(), [&](const auto &pp) { return pp.first == orphan.second.first; }), ppd.end());
 						}
 					}
 					effect.definition_bindings = std::move(tmp_binds);
@@ -3355,7 +3355,14 @@ void reshade::runtime::draw_variable_editor()
 			// Reset all uniform variables
 			for (uniform &variable_it : effect.uniforms)
 				if (variable_it.special == special_uniform::none)
-					reset_uniform_value(variable_it);
+				{
+					if (_ui_bind_support && !variable_it.annotation_as_string("ui_bind").empty())
+					{
+						reset_uniform_value(variable_it, effect.definition_bindings[variable_it.name].second);
+					}
+					else
+						reset_uniform_value(variable_it);
+				}
 
 			// Reset all preprocessor definitions
 			if (const auto preset_it = _preset_preprocessor_definitions.find({});
@@ -3447,7 +3454,16 @@ void reshade::runtime::draw_variable_editor()
 							for (uniform &variable_it : effect.uniforms)
 								if (variable_it.special == special_uniform::none &&
 									variable_it.annotation_as_string("ui_category") == category)
-									reset_uniform_value(variable_it);
+								{
+									if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+									{
+										reset_uniform_value(variable, effect.definition_bindings[variable.name].second);
+										_uniform_binding_updated = effect_index;
+										force_reload_effect = true;
+									}
+									else
+										reset_uniform_value(variable_it);
+								}
 
 							if (_auto_save_preset)
 								save_current_preset();
@@ -3708,7 +3724,14 @@ void reshade::runtime::draw_variable_editor()
 				if (ImGui::Button(reset_button_label.c_str(), ImVec2(18.0f * _font_size, 0)))
 				{
 					modified = true;
-					reset_uniform_value(variable);
+					if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+					{
+						reset_uniform_value(variable, effect.definition_bindings[variable.name].second);
+						_uniform_binding_updated = effect_index;
+						force_reload_effect = true;
+					}
+					else
+						reset_uniform_value(variable);
 					ImGui::CloseCurrentPopup();
 				}
 
@@ -3721,7 +3744,14 @@ void reshade::runtime::draw_variable_editor()
 				if (ImGui::SmallButton(ICON_FK_UNDO))
 				{
 					modified = true;
-					reset_uniform_value(variable);
+					if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+					{
+						reset_uniform_value(variable, effect.definition_bindings[variable.name].second);
+						_uniform_binding_updated = effect_index;
+						force_reload_effect = true;
+					}
+					else
+						reset_uniform_value(variable);
 				}
 			}
 
