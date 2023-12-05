@@ -1507,6 +1507,14 @@ void reshade::runtime::draw_gui_home()
 
 		ImGui::SameLine();
 
+		if (ImGui::Button(ICON_FK_FOLDER_OPEN, ImVec2(button_size, 0)))
+		{
+			utils::open_explorer(_current_preset_path);
+		}
+		ImGui::SetItemTooltip(_("Open folder in explorer"));
+
+		ImGui::SameLine(0, button_spacing * 0.5f);
+
 		ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
 
 		const auto browse_button_pos = ImGui::GetCursorScreenPos();
