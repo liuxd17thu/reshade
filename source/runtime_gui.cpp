@@ -1943,7 +1943,8 @@ void reshade::runtime::draw_gui_home()
 
 			if (!_no_effect_cache && (_imgui_context->IO.KeyCtrl || _imgui_context->IO.KeyShift))
 				clear_effect_cache();
-
+			if (_ui_bind_support)
+				ini_file::clear_cache(_current_preset_path);
 			reload_effects();
 		}
 
@@ -3884,7 +3885,6 @@ void reshade::runtime::draw_variable_editor()
 
 		if (force_reload_effect)
 		{
-			//if (_auto_save_preset)
 				save_current_preset();
 
 			const bool reload_successful_before = _last_reload_successful;
