@@ -1659,8 +1659,9 @@ void reshade::runtime::draw_gui_home()
 			ImGui::SameLine(0, button_spacing);
 		}
 
-		if (imgui::toggle_button(_ui_bind_support ? "G" : "R", _ui_bind_support, button_size))
+		if (imgui::toggle_button(_ui_bind_support ? "B" : "R", _ui_bind_support, button_size))
 		{
+			ImGui::SetTooltip("Toggle \"ui_bind\" support");
 			save_config();
 		};
 		ImGui::SameLine(0, button_spacing);
@@ -3483,7 +3484,7 @@ void reshade::runtime::draw_variable_editor()
 		size_t hovered_variable_index = std::numeric_limits<size_t>::max();
 
 		if (_ui_bind_support && _uniform_binding_updated == effect_index) {
-			reload_effect(effect_index);
+			//reload_effect(effect_index);
 			_uniform_binding_updated = std::numeric_limits<size_t>::max();
 		}
 
@@ -3786,7 +3787,7 @@ void reshade::runtime::draw_variable_editor()
 					{
 						if (_ui_bind_support && effect.definition_bindings.count(variable.name))
 						{
-							const std::string bind_info = "[Bound To: " + effect.definition_bindings[variable.name].first + "]";
+							const std::string bind_info = "@[ " + effect.definition_bindings[variable.name].first + " ]";
 							ImGui::TextColored(ImColor(51, 204, 51), bind_info.c_str());
 						}
 						if(!tooltip.empty())
@@ -3974,7 +3975,7 @@ void reshade::runtime::draw_variable_editor()
 
 		if (force_reload_effect)
 		{
-			if (_auto_save_preset)
+			//if (_auto_save_preset)
 				save_current_preset();
 
 			const bool reload_successful_before = _last_reload_successful;
