@@ -248,8 +248,13 @@ void reshade::runtime::build_font_atlas()
 		cfg.SizePixels = static_cast<float>(_font_size);
 
 		std::error_code ec;
-		if (resolved_latin_font_path.empty() && !_default_latin_font_path.empty())
-			resolved_latin_font_path = _default_latin_font_path;
+		if (resolved_latin_font_path.empty())
+		{
+			if (!_font_path.empty())
+				resolved_latin_font_path = _font_path;
+			else if (!_default_latin_font_path.empty())
+				resolved_latin_font_path = _default_latin_font_path;
+		}
 		if (resolved_latin_font_path.stem().wstring().find(L"ProggyClean") != std::string::npos)
 			atlas->AddFontDefault(&cfg);
 		else
