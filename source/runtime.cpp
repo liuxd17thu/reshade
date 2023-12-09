@@ -1159,6 +1159,11 @@ void reshade::runtime::load_current_preset()
 			if (ui_bind_definition.empty())
 				continue;
 			std::string data_str = "";
+			if (const auto &match = std::find_if(preset_preprocessor_definitions[""].cbegin(),
+				preset_preprocessor_definitions[""].cend(),
+				[ui_bind_definition](std::pair<std::string, std::string> it) { return it.first == ui_bind_definition; });
+				match != preset_preprocessor_definitions[""].end())
+				data_str = match->second;
 			if (const auto &match = std::find_if(preset_preprocessor_definitions[effect.source_file.filename().u8string()].cbegin(),
 					preset_preprocessor_definitions[effect.source_file.filename().u8string()].cend(),
 					[ui_bind_definition](std::pair<std::string, std::string> it) { return it.first == ui_bind_definition; });

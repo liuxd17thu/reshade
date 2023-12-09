@@ -1671,35 +1671,6 @@ void reshade::runtime::draw_gui_home()
 
 		if (ImGui::ButtonEx(ICON_FK_FLOPPY, ImVec2(button_size, 0), ImGuiButtonFlags_NoNavFocus))
 		{
-			// Clear "orphan bindings" whose uniform is removed. (e.g. preprocessors in pass 2/3 of MultiLUT)
-			if (_ui_bind_support)
-			{
-				for (auto &effect : _effects)
-				{
-					if (effect.rendering == 0)
-						continue;
-					std::unordered_map<std::string, std::pair<std::string, std::string>> tmp_binds;
-					for (auto &variable : effect.uniforms) {
-						if (!variable.annotation_as_string("ui_bind").empty() && effect.definition_bindings.count(variable.name))
-						{
-							tmp_binds[variable.name] = effect.definition_bindings[variable.name];
-							effect.definition_bindings.erase(variable.name);
-						}
-					}
-					// Now only "orphan bindings" stay in effect.definition_bindings. If these preprocessors exist in preset, remove them.
-					if (!effect.definition_bindings.empty())
-					{
-						auto & ppd = _preset_preprocessor_definitions[effect.source_file.filename().u8string()];
-						for (const auto &orphan : effect.definition_bindings)
-						{
-							ppd.erase(std::remove_if(ppd.begin(), ppd.end(), [&](const auto &pp) { return pp.first == orphan.second.first; }), ppd.end());
-						}
-					}
-					effect.definition_bindings = std::move(tmp_binds);
-				}
-				_uniform_binding_updated = std::numeric_limits<size_t>::max();
-			}
-
 			ini_file::load_cache(_current_preset_path).clear();
 			save_current_preset();
 			ini_file::flush_cache(_current_preset_path);
@@ -3486,6 +3457,27 @@ void reshade::runtime::draw_variable_editor()
 
 		if (_ui_bind_support && _uniform_binding_updated == effect_index) {
 			//reload_effect(effect_index);
+			// Clear "orphan bindings" whose uniform is removed. (e.g. preprocessors in pass 2/3 of MultiLUT)
+			if (effect.rendering == 0)
+				continue;
+			std::unordered_map<std::string, std::pair<std::string, std::string>> tmp_binds;
+			for (auto &variable : effect.uniforms) {
+				if (!variable.annotation_as_string("ui_bind").empty() && effect.definition_bindings.count(variable.name))
+				{
+					tmp_binds[variable.name] = effect.definition_bindings[variable.name];
+					effect.definition_bindings.erase(variable.name);
+				}
+			}
+			// Now only "orphan bindings" stay in effect.definition_bindings. If these preprocessors exist in preset, remove them.
+			if (!effect.definition_bindings.empty())
+			{
+				auto &ppd = _preset_preprocessor_definitions[effect.source_file.filename().u8string()];
+				for (const auto &orphan : effect.definition_bindings)
+				{
+					ppd.erase(std::remove_if(ppd.begin(), ppd.end(), [&](const auto &pp) { return pp.first == orphan.second.first; }), ppd.end());
+				}
+			}
+			effect.definition_bindings = std::move(tmp_binds);
 			_uniform_binding_updated = std::numeric_limits<size_t>::max();
 		}
 
