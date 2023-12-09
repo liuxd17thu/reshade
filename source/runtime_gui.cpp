@@ -1082,7 +1082,7 @@ void reshade::runtime::draw_gui()
 			ImGuiWindowFlags_NoDocking |
 			ImGuiWindowFlags_NoFocusOnAppearing);
 
-		ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT);
+		ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT " " VERSION_STRING_CN2);
 
 		if ((s_latest_version[0] > VERSION_MAJOR) ||
 			(s_latest_version[0] == VERSION_MAJOR && s_latest_version[1] > VERSION_MINOR) ||
@@ -2997,11 +2997,29 @@ void reshade::runtime::draw_gui_log()
 }
 void reshade::runtime::draw_gui_about()
 {
-	ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT);
+	ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT " " VERSION_STRING_CN2);
 
 	ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 7.3f * _font_size);
 	if (ImGui::SmallButton(_(" Open website ")))
 		utils::execute_command("https://reshade.me");
+
+	if (_language == "zh-CN")
+	{
+		ImGui::TextUnformatted("CN2魔改：路障MKXX");
+		ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 7.3f * _font_size);
+		if (ImGui::SmallButton(" 改版源码 "))
+			utils::execute_command("https://github.com/liuxd17thu/reshade");
+		ImGui::PushTextWrapPos();
+		ImGui::TextUnformatted("联系方式：[微博同名] | 路障MKXX @FF14-宇宙和音 | wujingluren @NGA | liuxd17thu @github");
+		ImGui::TextUnformatted("感谢【印度神油君】【粒粒梦想】【白玉为何物】【夜莺不语】等人提供的帮助，以及各位用户的支持！");
+	}
+	else
+	{
+		ImGui::TextUnformatted("This is a modified version by BarricadeMKXX.");
+		ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 7.3f * _font_size);
+		if (ImGui::SmallButton(" Fork Repo "))
+			utils::execute_command("https://github.com/liuxd17thu/reshade");
+	}
 
 	ImGui::Separator();
 
