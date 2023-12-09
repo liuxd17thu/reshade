@@ -3897,6 +3897,8 @@ void reshade::runtime::draw_variable_editor()
 								definition.second = match->second.second;
 								value[match->second.second.copy(value, sizeof(value) - 1)] = '\0';
 							}
+							else
+								value[definition_it->second.copy(value, sizeof(value) - 1)] = '\0';
 						}
 						else
 							value[definition_it->second.copy(value, sizeof(value) - 1)] = '\0';
