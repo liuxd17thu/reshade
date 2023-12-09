@@ -18,6 +18,9 @@ elseif ($(git describe --tags) -match "v(\d+)\.(\d+)\.(\d+)(-\d+-\w+)?") {
 	$version = [int]::Parse($matches[1]), [int]::Parse($matches[2]), [int]::Parse($matches[3]), 0
 }
 
+$build = $(git rev-parse --short HEAD)
+$cn2 = "CN2-v0.73 DEV"
+
 # Increment build version for release builds
 if (($config -eq "Release") -or
     ($config -eq "Release Signed")) {
@@ -41,5 +44,6 @@ $official = Test-Path ($path + "\..\sign.pfx")
 #define VERSION_BUILD $($version[3])
 
 #define VERSION_STRING_FILE "$([string]::Join('.', $version))"
-#define VERSION_STRING_PRODUCT "$($version[0]).$($version[1]).$($version[2])$(if (-not $official) { " UNOFFICIAL" })"
+#define VERSION_STRING_PRODUCT "$($version[0]).$($version[1]).$($version[2])"
+#define VERSION_STRING_CN2 "$cn2 | Build $build"
 "@ | Out-File -FilePath $path -Encoding ASCII
