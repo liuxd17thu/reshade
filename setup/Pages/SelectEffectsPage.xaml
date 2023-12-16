@@ -10,12 +10,20 @@
       FocusManager.FocusedElement="{Binding ElementName=ItemsListBox}">
   <DockPanel LastChildFill="True">
     <DockPanel DockPanel.Dock="Top">
-      <Label Margin="10" Padding="0" VerticalAlignment="Top" Foreground="#FF003399" FontSize="16" Content="Select effects to install:" />
-      <Button DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center" Width="100" Margin="10" Content="Uncheck _all" Click="OnCheckAllClick" KeyboardNavigation.TabIndex="2" />
+      <Label Margin="10" Padding="0" VerticalAlignment="Top" Foreground="#FF003399" FontSize="16" Content="选择要安装的效果：" />
+      <Button DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center" Width="100" Margin="10" Content="全部不选(_A)" Click="OnCheckAllClick" KeyboardNavigation.TabIndex="2" />
     </DockPanel>
-    <TextBlock DockPanel.Dock="Top" Margin="10,5" TextWrapping="Wrap">
-      Check all effects you want to install or update. Effects not checked here will not be installed or are left untouched when updating.
-    </TextBlock>
+    <StackPanel DockPanel.Dock="Top">
+      <TextBlock DockPanel.Dock="Top" Margin="10,5" TextWrapping="Wrap">
+        选择所有需要安装或更新的效果文件。未勾选的不会被安装或改动。<LineBreak/>
+        如果你想使用CN2整合包的汉化效果器和预设，请在下面按需勾选。<LineBreak/>
+        选择CN2效果器时，会无视以下列表的着色器。
+      </TextBlock>
+      <Grid>
+        <CheckBox x:Name="AutoCN2" Content="CN2效果器：就绪" Width="120" Margin="5" HorizontalAlignment="Left" VerticalContentAlignment="Center" Foreground="#ff00aa33"/>
+        <CheckBox x:Name="AutoPresets" Content="预设包：就绪" Width="120" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="130,0,0,0" Foreground="#ff00aa33"/>
+      </Grid>
+    </StackPanel>
     <Grid DockPanel.Dock="Bottom" Margin="10,5">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*" />
@@ -24,10 +32,10 @@
         <ColumnDefinition Width="100" />
       </Grid.ColumnDefinitions>
       <TextBox x:Name="PresetPathBox" Grid.Column="0" IsReadOnly="True" Text="" />
-      <Button Grid.Column="2" Content="_Browse..." Click="OnBrowsePresetClick" />
+      <Button Grid.Column="2" Content="浏览...(_B)" Click="OnBrowsePresetClick" />
     </Grid>
     <TextBlock DockPanel.Dock="Bottom" Margin="10,5">
-      Choose a preset file (.ini) to install only the effects it uses:
+      也可以选择一个预设文件，只安装其中用到的效果：
     </TextBlock>
     <ListBox x:Name="ItemsListBox" x:FieldModifier="private" Margin="10,5" HorizontalContentAlignment="Stretch" VirtualizingPanel.ScrollUnit="Pixel" ItemsSource="{Binding Items}" d:ItemsSource="{Binding Items}">
       <ListBox.ItemTemplate>
@@ -44,7 +52,7 @@
             </Grid.ColumnDefinitions>
             <local:EffectPackageCheckBox x:Name="SelectedCheckBox" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Center" IsChecked="{Binding Selected}" IsEnabled="{Binding Modifiable}" IsThreeState="True">
               <local:EffectPackageCheckBox.ToolTip>
-                <TextBlock Text="Check to install all effects in the package, fill out to select individual effects to install." />
+                <TextBlock Text="勾选以安装这个包的所有效果，填框则可以分别选择安装哪些效果。" />
               </local:EffectPackageCheckBox.ToolTip>
             </local:EffectPackageCheckBox>
             <TextBlock Grid.Column="1" VerticalAlignment="Center">

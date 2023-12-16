@@ -19,7 +19,22 @@ namespace ReShade.Setup.Pages
 {
 	public class Addon : INotifyPropertyChanged
 	{
-		public bool Enabled => !string.IsNullOrEmpty(DownloadUrl);
+		public bool Enabled
+		{
+			get
+			{
+				var tmp = DownloadUrl;
+				if (string.IsNullOrEmpty(tmp))
+					return false;
+				else
+				{
+					if (tmp[0] == '@')
+						return File.Exists(Path.Combine(SetupConfig.CN2PackDir, tmp.Trim('@')));
+					else
+						return true;
+				}
+			}
+		}
 		public bool Selected { get; set; } = false;
 
 		public string Name { get; internal set; }
@@ -42,6 +57,24 @@ namespace ReShade.Setup.Pages
 		{
 			InitializeComponent();
 			DataContext = this;
+
+			if (Directory.Exists(@".\" + SetupConfig.CN2Version + @"\reshade-addons"))
+			{
+				Items.Add(new Addon
+				{
+					Name = "[CN2 BETA] REST 汉化版",
+					Description = "允许你将ReShade滤镜应用到指定的游戏着色器之前。",
+					DownloadUrl = "@.\\reshade-addons\\REST\\ReshadeEffectShaderToggler.addon64",
+					RepositoryUrl = "https://github.com/liuxd17thu/ReshadeEffectShaderToggler"
+				});
+				Items.Add(new Addon
+				{
+					Name = "[CN2 BETA] REST的《最终幻想14》特供配置文件",
+					Description = "在《最终幻想14》中，可以作为FFKeepUI的上位替代，但不止于此……",
+					DownloadUrl = "@.\\reshade-addons\\REST\\ReshadeEffectShaderToggler.ini",
+					RepositoryUrl = "https://github.com/liuxd17thu/ReshadeEffectShaderToggler"
+				});
+			}
 
 			Task.Run(() =>
 			{

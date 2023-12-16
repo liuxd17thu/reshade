@@ -9,22 +9,26 @@
       FocusManager.FocusedElement="{Binding ElementName=AppList}">
   <DockPanel LastChildFill="True">
     <DockPanel DockPanel.Dock="Top">
-      <Label Margin="10" Padding="0" VerticalAlignment="Top" Foreground="#FF003399" FontSize="16" Content="Select a game or application:" />
+      <Label Margin="10" Padding="0" VerticalAlignment="Top" Foreground="#FF003399" FontSize="16" Content="选择一个游戏或应用程序：" />
       <ComboBox x:Name="SortBy" x:FieldModifier="private" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalContentAlignment="Center" Margin="10" Width="100" SelectedIndex="1" SelectionChanged="OnSortByChanged">
-        <ComboBoxItem>Recently Used</ComboBoxItem>
-        <ComboBoxItem>A to Z</ComboBoxItem>
-        <ComboBoxItem>Z to A</ComboBoxItem>
+        <ComboBoxItem>最近使用</ComboBoxItem>
+        <ComboBoxItem>从A至Z</ComboBoxItem>
+        <ComboBoxItem>从Z至A</ComboBoxItem>
       </ComboBox>
       <Label DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center" Content="Sort by:" />
     </DockPanel>
     <TextBlock DockPanel.Dock="Bottom" Margin="10,5" TextWrapping="Wrap">
-      Browse and select a game to manage its ReShade installation.
+      浏览并选择一个游戏，管理它的ReShade安装。
     </TextBlock>
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Vertical" VerticalAlignment="Bottom" Margin="10,5">
+      <CheckBox x:Name="InstallSCFontCheckBox" VerticalAlignment="Bottom" Content="[CN2]安装时使用“等宽更纱黑体SC GB2312”作为默认界面字体"/>
+      <CheckBox x:Name="InstallShutterSECheckBox" Content="[CN2]安装时添加预置快门音效"/>
+    </StackPanel>
     <Grid DockPanel.Dock="Bottom" Margin="10,5">
-      <TextBlock HorizontalAlignment="Left" VerticalAlignment="Center" Text="Can't find the desired game in the list?" />
-      <Button HorizontalAlignment="Right" VerticalAlignment="Center" Width="100" Content="_Browse..." Click="OnBrowseClick" />
+      <TextBlock HorizontalAlignment="Left" VerticalAlignment="Center" Text="没有找到想要的游戏？" />
+      <Button HorizontalAlignment="Right" VerticalAlignment="Center" Width="100" Content="浏览...(_B)" Click="OnBrowseClick" />
     </Grid>
-    <TextBox x:Name="PathBox" DockPanel.Dock="Bottom" Margin="10,0,10,5" HorizontalAlignment="Stretch" GotFocus="OnPathGotFocus" TextChanged="OnPathTextChanged" Text="Search" />
+    <TextBox x:Name="PathBox" DockPanel.Dock="Bottom" Margin="10,0,10,5" HorizontalAlignment="Stretch" GotFocus="OnPathGotFocus" TextChanged="OnPathTextChanged" Text="查找" />
     <ListBox x:Name="ItemsListBox" x:FieldModifier="private" Margin="10,5" HorizontalContentAlignment="Stretch" SelectionChanged="OnSelectionChanged">
       <ListBox.ItemTemplate>
         <DataTemplate>
