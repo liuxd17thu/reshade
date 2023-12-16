@@ -8,33 +8,33 @@
       Width="Auto" Height="Auto"
       FocusManager.FocusedElement="{Binding ElementName=UpdateButton}">
   <DockPanel>
-    <Label DockPanel.Dock="Top" Margin="10" Padding="0" VerticalAlignment="Top" Foreground="#FF003399" FontSize="16" Content="Select the operation to perform:" />
+    <Label DockPanel.Dock="Top" Margin="10" Padding="0" VerticalAlignment="Top" Foreground="#FF003399" FontSize="16" Content="选择要进行的操作：" />
     <TextBlock DockPanel.Dock="Top" Margin="10,5" TextWrapping="Wrap">
-      An existing ReShade installation was found for the target game. Choose how to proceed with this installation.
+      目标游戏已有一个ReShade安装，要如何处理它？
     </TextBlock>
     <StackPanel Orientation="Vertical" HorizontalAlignment="Center" VerticalAlignment="Center">
       <RadioButton x:Name="UpdateButton" x:FieldModifier="private" Margin="0,10" IsChecked="True">
         <TextBlock Width="290" TextWrapping="Wrap">
-          <Label Content="Update _ReShade only" Padding="0" Foreground="#FF003399" FontSize="16" />
+          <Label Content="只更新ReShade主程序(_R)" Padding="0" Foreground="#FF003399" FontSize="16" />
           <LineBreak />
           <LineBreak />
-          Update ReShade to this version, but keep existing preset and effect files unchanged.
+          更新ReShade到本版本，但保持预设和效果文件不动。
         </TextBlock>
       </RadioButton>
       <RadioButton x:Name="ModifyButton" x:FieldModifier="private" Margin="0,10">
         <TextBlock Width="290" TextWrapping="Wrap">
-          <Label Content="Update ReShade and _effects" Padding="0" Foreground="#FF003399" FontSize="16" />
+          <Label Content="更新ReShade和效果(_E)" Padding="0" Foreground="#FF003399" FontSize="16" />
           <LineBreak />
           <LineBreak />
-          Update ReShade to this version and also download effect files again.
+          更新ReShade到本版本，并重新下载所有效果器。
         </TextBlock>
       </RadioButton>
       <RadioButton x:Name="UninstallButton" x:FieldModifier="private" Margin="0,10" VerticalContentAlignment="Top">
         <TextBlock Width="290" TextWrapping="Wrap">
-          <Label Content="_Uninstall ReShade and effects" Padding="0" Foreground="#FF003399" FontSize="16" />
+          <Label Content="卸载ReShade和效果(_U)" Padding="0" Foreground="#FF003399" FontSize="16" />
           <LineBreak />
           <LineBreak />
-          Remove ReShade, related configuration, logs and all installed effect files from the target game.
+          从目标游戏移除ReShade、相关配置、日志，以及所有效果文件。
         </TextBlock>
       </RadioButton>
     </StackPanel>

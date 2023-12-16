@@ -14,6 +14,8 @@ using System.Net;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Media;
 using System.Windows.Navigation;
 using Microsoft.Win32;
 using ReShade.Setup.Utilities;
@@ -79,6 +81,34 @@ namespace ReShade.Setup.Pages
 		{
 			InitializeComponent();
 			DataContext = this;
+
+			if (Directory.Exists("./" + SetupConfig.CN2Version + "/reshade-shaders"))
+			{
+				AutoCN2.Foreground = (SolidColorBrush)new BrushConverter().ConvertFrom("#ff00aa33");
+				AutoCN2.Content = "CN2效果器：就绪";
+				AutoCN2.IsChecked = false;
+			}
+			else
+			{
+				AutoCN2.Foreground = (SolidColorBrush)new BrushConverter().ConvertFrom("#ffaa0033");
+				AutoCN2.Content = "未找到CN2效果器";
+				AutoCN2.IsEnabled = false;
+				AutoCN2.IsChecked = false;
+			}
+
+			if (Directory.Exists("./" + SetupConfig.CN2Version + "/reshade-presets"))
+			{
+				AutoPresets.Foreground = (SolidColorBrush)new BrushConverter().ConvertFrom("#ff00aa33");
+				AutoPresets.Content = "预设包：就绪";
+				AutoPresets.IsChecked = false;
+			}
+			else
+			{
+				AutoPresets.Foreground = (SolidColorBrush)new BrushConverter().ConvertFrom("#ffaa0033");
+				AutoPresets.Content = "未找到预设包";
+				AutoPresets.IsEnabled = false;
+				AutoPresets.IsChecked = false;
+			}
 
 			Task.Run(() =>
 			{
@@ -205,8 +235,8 @@ namespace ReShade.Setup.Pages
 
 			if (sender is Button button)
 			{
-				const string CHECK_LABEL = "Check _all";
-				const string UNCHECK_LABEL = "Uncheck _all";
+				const string CHECK_LABEL = "全部勾选(_A)";
+				const string UNCHECK_LABEL = "全部不选(_A)";
 
 				bool check = button.Content as string == CHECK_LABEL;
 				button.Content = check ? UNCHECK_LABEL : CHECK_LABEL;
