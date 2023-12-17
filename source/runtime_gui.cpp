@@ -3747,6 +3747,17 @@ void reshade::runtime::draw_variable_editor()
 						const float ui_max_val = variable.annotation_as_float("ui_max", 0, ui_type == "slider" ? 1.0f : std::numeric_limits<float>::max());
 						const float ui_stp_val = variable.annotation_as_float("ui_step", 0, 0.001f);
 
+						is_default_value = true;
+						const float compare_precision = ui_type == "color" ? (1.0f/255.0f) : ui_stp_val;
+						for (auto i = 0u; i < variable.type.components(); i++)
+						{
+							if (std::abs(value.as_float[i] - variable.initializer_value.as_float[i]) > compare_precision)
+							{
+								is_default_value = false;
+								break;
+							}
+						}
+
 						// Calculate display precision based on step value
 						std::string precision_format = "%.0f";
 						for (float x = 1.0f; x * ui_stp_val < 1.0f && precision_format[2] < '9'; x *= 10.0f)
