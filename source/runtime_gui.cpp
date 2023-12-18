@@ -189,7 +189,9 @@ void reshade::runtime::build_font_atlas()
 	resolved_font_path = _latin_font_path;
 	if (!_default_font_path.empty())
 	{
-		if (!resolved_font_path.empty() && !(resolve_path(resolved_font_path, ec) && atlas->AddFontFromFileTTF(resolved_font_path.u8string().c_str(), cfg.SizePixels, &cfg, atlas->GetGlyphRangesDefault()) != nullptr))
+		if (resolved_font_path.empty())
+			resolved_font_path = _font_path.empty() ? _default_font_path : _font_path;
+		if (!(resolve_path(resolved_font_path, ec) && atlas->AddFontFromFileTTF(resolved_font_path.u8string().c_str(), cfg.SizePixels, &cfg, atlas->GetGlyphRangesDefault()) != nullptr))
 		{
 			LOG(ERROR) << "Failed to load latin font from " << resolved_font_path << " with error code " << ec.value() << '!';
 			resolved_font_path.clear();
@@ -2418,7 +2420,7 @@ void reshade::runtime::draw_gui_settings()
 		}
 
 		if (_imgui_context->IO.Fonts->Fonts[0]->ConfigDataCount > 2 && // Latin font + main font + icon font
-			imgui::font_input_box(_("Latin font"), "ProggyClean.ttf", _latin_font_path, _file_selection_path, _font_size))
+			imgui::font_input_box(_("Latin font"), _default_font_path.empty() ? "ProggyClean.ttf" : "-", _latin_font_path, _file_selection_path, _font_size))
 		{
 			modified = true;
 			_imgui_context->IO.Fonts->TexReady = false;
@@ -3003,7 +3005,7 @@ void reshade::runtime::draw_gui_about()
 	if (ImGui::SmallButton(_(" Open website ")))
 		utils::execute_command("https://reshade.me");
 
-	if (_language == "zh-CN")
+	if (_current_language == "zh-CN")
 	{
 		ImGui::TextUnformatted("CN2魔改：路障MKXX");
 		ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 7.3f * _font_size);
