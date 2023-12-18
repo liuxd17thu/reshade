@@ -3953,9 +3953,9 @@ void reshade::runtime::draw_variable_editor()
 						ImGui::EndPopup();
 					}
 				}
-				if (_ui_bind_support && _uniform_binding_updated == effect_index)
-					force_reload_effect = true;
 			}
+			if (_ui_bind_support && _uniform_binding_updated == effect_index)
+				force_reload_effect = true;
 		}
 
 		if (_variable_editor_tabs)
