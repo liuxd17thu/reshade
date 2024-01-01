@@ -322,7 +322,7 @@ reshade::runtime::runtime(api::swapchain *swapchain, api::command_queue *graphic
 	else
 		LOG(INFO) << "Running on " << device_description << '.';
 
-	check_for_update();
+	// check_for_update();
 
 	// Default shortcut PrtScrn
 	_screenshot_key_data[0] = 0x2C;
