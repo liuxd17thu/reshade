@@ -19,7 +19,7 @@ elseif ($(git describe --tags) -match "v(\d+)\.(\d+)\.(\d+)(-\d+-\w+)?") {
 }
 
 $build = $(git rev-parse --short HEAD)
-$cn2 = "CN2-v0.73b DEV"
+$cn2 = "CN2-v1.0 DEV"
 
 # Increment build version for release builds
 if (($config -eq "Release") -or
