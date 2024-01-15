@@ -6,7 +6,7 @@
 #if RESHADE_GUI
 
 #include "runtime.hpp"
-#include "runtime_objects.hpp"
+#include "runtime_internal.hpp"
 #include "version.h"
 #include "dll_log.hpp"
 #include "dll_resources.hpp"
@@ -3130,7 +3130,9 @@ void reshade::runtime::draw_gui_addons()
 #if RESHADE_ADDON == 1
 	if (!addon_enabled)
 	{
+		ImGui::PushTextWrapPos();
 		ImGui::TextColored(COLOR_YELLOW, _("High network activity discovered.\nAll add-ons are disabled to prevent exploitation."));
+		ImGui::PopTextWrapPos();
 		return;
 	}
 
@@ -3224,7 +3226,7 @@ void reshade::runtime::draw_gui_addons()
 					ImGui::Text(_("File:"));
 				if (!info.author.empty())
 					ImGui::Text(_("Author:"));
-				if (info.version > 1)
+				if (info.version.value)
 					ImGui::Text(_("Version:"));
 				if (!info.description.empty())
 					ImGui::Text(_("Description:"));
@@ -3237,8 +3239,8 @@ void reshade::runtime::draw_gui_addons()
 					ImGui::TextUnformatted(info.file.c_str());
 				if (!info.author.empty())
 					ImGui::TextUnformatted(info.author.c_str());
-				if (info.version > 1)
-					ImGui::Text("%u.%u.%u", info.version / 10000, (info.version / 100) % 100, info.version % 100);
+				if (info.version.value)
+					ImGui::Text("%u.%u.%u.%u", info.version.number.major, info.version.number.minor, info.version.number.build, info.version.number.revision);
 				if (!info.description.empty())
 				{
 					ImGui::PushTextWrapPos();
@@ -3468,6 +3470,7 @@ void reshade::runtime::draw_variable_editor()
 		ImGui::PopStyleVar();
 
 		bool category_closed = false;
+		bool category_visible = true;
 		std::string current_category;
 
 		size_t active_variable = 0;
@@ -3530,52 +3533,64 @@ void reshade::runtime::draw_variable_editor()
 						category_label += "###" + current_category; // Ensure widget ID does not change with varying width
 					}
 
-					ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_NoTreePushOnOpen;
-					if (!variable.annotation_as_int("ui_category_closed"))
-						flags |= ImGuiTreeNodeFlags_DefaultOpen;
+					if (category_visible = true;
+						variable.annotation_as_uint("ui_category_toggle") != 0)
+						get_uniform_value(variable, &category_visible);
 
-					category_closed = !ImGui::TreeNodeEx(category_label.c_str(), flags);
-
-					if (ImGui::BeginPopupContextItem(category_label.c_str()))
+					if (category_visible)
 					{
-						char temp[64];
-						ImFormatString(temp, sizeof(temp), _("Reset all in '%s' to default"), current_category.c_str());
-						std::string reset_category_button_label = ICON_FK_UNDO " ";
-						reset_category_button_label += temp;
+						ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_NoTreePushOnOpen;
+						if (!variable.annotation_as_int("ui_category_closed"))
+							flags |= ImGuiTreeNodeFlags_DefaultOpen;
 
-						if (imgui::confirm_button(reset_category_button_label.c_str(), ImGui::GetContentRegionAvail().x, _("Do you really want to reset all values in '%s' to their defaults?"), current_category.c_str()))
+						category_closed = !ImGui::TreeNodeEx(category_label.c_str(), flags);
+
+						if (ImGui::BeginPopupContextItem(category_label.c_str()))
 						{
-							for (uniform &variable_it : effect.uniforms)
-								if (variable_it.special == special_uniform::none && !variable_it.annotation_as_uint("noreset") &&
-									variable_it.annotation_as_string("ui_category") == category)
-								{
-									if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+							char temp[64];
+							ImFormatString(temp, sizeof(temp), _("Reset all in '%s' to default"), current_category.c_str());
+							std::string reset_category_button_label = ICON_FK_UNDO " ";
+							reset_category_button_label += temp;
+
+							if (imgui::confirm_button(reset_category_button_label.c_str(), ImGui::GetContentRegionAvail().x, _("Do you really want to reset all values in '%s' to their defaults?"), current_category.c_str()))
+							{
+								for (uniform &variable_it : effect.uniforms)
+									if (variable_it.special == special_uniform::none && !variable_it.annotation_as_uint("noreset") &&
+										variable_it.annotation_as_string("ui_category") == category)
 									{
-										reset_uniform_value(variable, effect.definition_bindings[variable.name].second);
-										_uniform_binding_updated = effect_index;
-										force_reload_effect = true;
+										if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+										{
+											reset_uniform_value(variable, effect.definition_bindings[variable.name].second);
+											_uniform_binding_updated = effect_index;
+											force_reload_effect = true;
+										}
+										else
+												reset_uniform_value(variable_it);
 									}
-									else
-										reset_uniform_value(variable_it);
-								}
 
-							if (_auto_save_preset)
-								save_current_preset();
-							else
-								_preset_is_modified = true;
+								if (_auto_save_preset)
+									save_current_preset();
+								else
+									_preset_is_modified = true;
+							}
+
+							ImGui::EndPopup();
 						}
-
-						ImGui::EndPopup();
+					}
+					else
+					{
+						category_closed = false;
 					}
 				}
 				else
 				{
 					category_closed = false;
+					category_visible = true;
 				}
 			}
 
 			// Skip rendering invisible items
-			if (category_closed)
+			if (category_closed || (!category_visible && !variable.annotation_as_uint("ui_category_toggle")))
 				continue;
 
 			bool modified = false;

@@ -3,19 +3,22 @@
  * SPDX-License-Identifier: BSD-3-Clause OR MIT
  */
 
+#include "opengl_impl_device.hpp"
+#include "opengl_impl_device_context.hpp"
 #include "opengl_impl_swapchain.hpp"
 #include "opengl_impl_type_convert.hpp"
 #include "opengl_hooks.hpp" // Fix name clashes with gl3w
 #include "dll_log.hpp"
 #include "hook_manager.hpp"
 #include "addon_manager.hpp"
+#include "runtime_manager.hpp"
 #include <shared_mutex>
 #include <unordered_map>
 #include <unordered_set>
 
 #define gl gl3wProcs.gl
 
-struct attribute
+struct wgl_attribute
 {
 	enum
 	{
@@ -97,196 +100,239 @@ struct attribute
 
 DECLARE_HANDLE(HPBUFFERARB);
 
+extern thread_local reshade::opengl::device_context_impl *g_current_context;
+
+class wgl_device : public reshade::opengl::device_impl, public reshade::opengl::device_context_impl
+{
+	friend class wgl_swapchain;
+
+public:
+	wgl_device(HDC initial_hdc, HGLRC hglrc, bool compatibility_context) :
+		device_impl(initial_hdc, hglrc, compatibility_context),
+		device_context_impl(this, hglrc)
+	{
+#if RESHADE_ADDON
+		reshade::load_addons();
+
+		reshade::invoke_addon_event<reshade::addon_event::init_device>(this);
+
+		GLint max_combined_texture_image_units = 0;
+		gl.GetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &max_combined_texture_image_units);
+		GLint max_shader_storage_buffer_bindings = 0;
+		gl.GetIntegerv(GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS, &max_shader_storage_buffer_bindings);
+		GLint max_uniform_buffer_bindings = 0;
+		gl.GetIntegerv(GL_MAX_UNIFORM_BUFFER_BINDINGS, &max_uniform_buffer_bindings);
+		GLint max_image_units = 0;
+		gl.GetIntegerv(GL_MAX_IMAGE_UNITS, &max_image_units);
+
+		const reshade::api::pipeline_layout_param global_pipeline_layout_params[6] = {
+			reshade::api::descriptor_range { 0, 0, 0, static_cast<uint32_t>(max_combined_texture_image_units), reshade::api::shader_stage::all, 1, reshade::api::descriptor_type::sampler_with_resource_view },
+			reshade::api::descriptor_range { 0, 0, 0, static_cast<uint32_t>(max_shader_storage_buffer_bindings), reshade::api::shader_stage::all, 1, reshade::api::descriptor_type::shader_storage_buffer },
+			reshade::api::descriptor_range { 0, 0, 0, static_cast<uint32_t>(max_uniform_buffer_bindings), reshade::api::shader_stage::all, 1, reshade::api::descriptor_type::constant_buffer },
+			reshade::api::descriptor_range { 0, 0, 0, static_cast<uint32_t>(max_image_units), reshade::api::shader_stage::all, 1, reshade::api::descriptor_type::unordered_access_view },
+			/* Float uniforms */ reshade::api::constant_range { 0, 0, 0, std::numeric_limits<uint32_t>::max(), reshade::api::shader_stage::all },
+			/* Integer uniforms */ reshade::api::constant_range { 0, 0, 0, std::numeric_limits<uint32_t>::max(), reshade::api::shader_stage::all },
+		};
+		reshade::invoke_addon_event<reshade::addon_event::init_pipeline_layout>(this, static_cast<uint32_t>(std::size(global_pipeline_layout_params)), global_pipeline_layout_params, reshade::opengl::global_pipeline_layout);
+
+		reshade::invoke_addon_event<reshade::addon_event::init_command_list>(this);
+		reshade::invoke_addon_event<reshade::addon_event::init_command_queue>(this);
+#endif
+	}
+	~wgl_device()
+	{
+#if RESHADE_ADDON
+		reshade::invoke_addon_event<reshade::addon_event::destroy_command_queue>(this);
+		reshade::invoke_addon_event<reshade::addon_event::destroy_command_list>(this);
+
+		reshade::invoke_addon_event<reshade::addon_event::destroy_pipeline_layout>(this, reshade::opengl::global_pipeline_layout);
+
+		reshade::invoke_addon_event<reshade::addon_event::destroy_device>(this);
+
+		reshade::unload_addons();
+#endif
+	}
+
+	auto get_pixel_format() const { return _pixel_format; }
+
+	void update_default_fbo(unsigned int width, unsigned int height)
+	{
+		assert(width != 0 && height != 0);
+		assert(g_current_context != nullptr); // Is set before this is called in 'wglMakeCurrent'
+
+		_default_fbo_desc.texture.width = width;
+		_default_fbo_desc.texture.height = height;
+
+		constexpr reshade::api::resource_view default_rtv = reshade::opengl::make_resource_view_handle(GL_FRAMEBUFFER_DEFAULT, GL_BACK);
+		g_current_context->update_current_window_height(default_rtv);
+
+#if RESHADE_ADDON
+		constexpr reshade::api::resource_view default_dsv = reshade::opengl::make_resource_view_handle(GL_FRAMEBUFFER_DEFAULT, GL_DEPTH_STENCIL_ATTACHMENT);
+
+		// Communicate default state to add-ons
+		reshade::invoke_addon_event<reshade::addon_event::bind_render_targets_and_depth_stencil>(g_current_context, 1, &default_rtv, _default_depth_format != reshade::api::format::unknown ? default_dsv : reshade::api::resource_view {});
+#endif
+	}
+
+	void destroy_resource_view(reshade::api::resource_view handle) final
+	{
+		device_impl::destroy_resource_view(handle);
+
+		// Destroy all framebuffers, to ensure they are recreated even if a resource view handle is reused
+		for (const auto &fbo_data : _fbo_lookup)
+			gl.DeleteFramebuffers(1, &fbo_data.second);
+		_fbo_lookup.clear();
+	}
+};
+class wgl_device_context : public reshade::opengl::device_context_impl
+{
+public:
+	wgl_device_context(wgl_device *device, HGLRC hglrc) :
+		device_context_impl(device, hglrc)
+	{
+#if RESHADE_ADDON
+		reshade::invoke_addon_event<reshade::addon_event::init_command_list>(this);
+		reshade::invoke_addon_event<reshade::addon_event::init_command_queue>(this);
+#endif
+	}
+	~wgl_device_context()
+	{
+#if RESHADE_ADDON
+		reshade::invoke_addon_event<reshade::addon_event::destroy_command_queue>(this);
+		reshade::invoke_addon_event<reshade::addon_event::destroy_command_list>(this);
+#endif
+	}
+};
+
+class wgl_swapchain : public reshade::opengl::swapchain_impl
+{
+public:
+	wgl_swapchain(wgl_device *device, HDC hdc) : swapchain_impl(device, hdc)
+	{
+		reshade::create_effect_runtime(this, g_current_context);
+
+		GLint scissor_box[4] = {};
+		gl.GetIntegerv(GL_SCISSOR_BOX, scissor_box);
+		assert(scissor_box[0] == 0 && scissor_box[1] == 0);
+
+		// Wolfenstein: The Old Blood creates a window with a height of zero that is later resized
+		if (scissor_box[2] != 0 && scissor_box[3] != 0)
+			on_init(scissor_box[2], scissor_box[3]);
+	}
+	~wgl_swapchain()
+	{
+		on_reset();
+
+		reshade::destroy_effect_runtime(this);
+	}
+
+	void on_init(unsigned int width, unsigned int height)
+	{
+		assert(width != 0 && height != 0);
+
+		const auto device = static_cast<wgl_device *>(get_device());
+
+#if RESHADE_ADDON
+		reshade::invoke_addon_event<reshade::addon_event::init_swapchain>(this);
+
+		if (device->_default_depth_format != reshade::api::format::unknown)
+		{
+			reshade::api::resource_desc default_fbo_depth_desc = device->_default_fbo_desc;
+			default_fbo_depth_desc.texture.width = width;
+			default_fbo_depth_desc.texture.height = height;
+			default_fbo_depth_desc.texture.format = device->_default_depth_format;
+
+			constexpr reshade::api::resource_view default_dsv = reshade::opengl::make_resource_view_handle(GL_FRAMEBUFFER_DEFAULT, GL_DEPTH_STENCIL_ATTACHMENT);
+			reshade::invoke_addon_event<reshade::addon_event::init_resource>(device, default_fbo_depth_desc, nullptr, reshade::api::resource_usage::depth_stencil, device->get_resource_from_view(default_dsv));
+			reshade::invoke_addon_event<reshade::addon_event::init_resource_view>(device, device->get_resource_from_view(default_dsv), reshade::api::resource_usage::depth_stencil, reshade::api::resource_view_desc(default_fbo_depth_desc.texture.format), default_dsv);
+		}
+#endif
+
+		_last_width = width;
+		_last_height = height;
+		device->update_default_fbo(width, height);
+
+		reshade::init_effect_runtime(this);
+	}
+	void on_reset()
+	{
+		if (_last_width == 0 && _last_height == 0)
+			return;
+
+		reshade::reset_effect_runtime(this);
+
+		_last_width = 0;
+		_last_height = 0;
+
+#if RESHADE_ADDON
+		const auto device = static_cast<wgl_device *>(get_device());
+
+		if (device->_default_depth_format != reshade::api::format::unknown)
+		{
+			constexpr reshade::api::resource_view default_dsv = reshade::opengl::make_resource_view_handle(GL_FRAMEBUFFER_DEFAULT, GL_DEPTH_STENCIL_ATTACHMENT);
+			reshade::invoke_addon_event<reshade::addon_event::destroy_resource_view>(device, default_dsv);
+			reshade::invoke_addon_event<reshade::addon_event::destroy_resource>(device, device->get_resource_from_view(default_dsv));
+		}
+
+		reshade::invoke_addon_event<reshade::addon_event::destroy_swapchain>(this);
+#endif
+	}
+	void on_present()
+	{
+		// The window handle can be invalid if the window was already destroyed
+		const auto hwnd = static_cast<HWND>(get_hwnd());
+		if (hwnd == nullptr)
+			return;
+
+		RECT window_rect = {};
+		GetClientRect(hwnd, &window_rect);
+
+		const auto width = static_cast<unsigned int>(window_rect.right);
+		const auto height = static_cast<unsigned int>(window_rect.bottom);
+
+		// Do not use default FBO description of device to compare, since it may be shared and changed repeatedly by multiple swap chains
+		if (width != _last_width || height != _last_height)
+		{
+			LOG(INFO) << "Resizing device context " << reinterpret_cast<HDC>(get_native()) << " to " << width << "x" << height << " ...";
+
+			on_reset();
+
+			if (width != 0 && height != 0)
+				on_init(width, height);
+		}
+
+		reshade::opengl::device_context_impl *const queue = (g_current_context != nullptr) ? g_current_context : static_cast<reshade::opengl::device_context_impl *>(static_cast<wgl_device *>(get_device()));
+
+#if RESHADE_ADDON
+		// Behave as if immediate command list is flushed
+		reshade::invoke_addon_event<reshade::addon_event::execute_command_list>(queue, queue);
+
+		reshade::invoke_addon_event<reshade::addon_event::present>(queue, this, nullptr, nullptr, 0, nullptr);
+#endif
+
+		// Assume that the correct OpenGL context is still current here
+		reshade::present_effect_runtime(this, queue);
+
+#ifndef NDEBUG
+		GLenum type = GL_NONE; char message[512] = "";
+		while (gl.GetDebugMessageLog(1, 512, nullptr, &type, nullptr, nullptr, nullptr, message))
+			if (type == GL_DEBUG_TYPE_ERROR || type == GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR)
+				OutputDebugStringA(message), OutputDebugStringA("\n");
+#endif
+	}
+
+private:
+	unsigned int _last_width = 0;
+	unsigned int _last_height = 0;
+};
+
 static bool s_hooks_installed = false;
 static std::shared_mutex s_global_mutex;
 static std::unordered_set<HDC> s_pbuffer_device_contexts;
+static std::unordered_map<HDC, wgl_swapchain *> s_opengl_swapchains;
 static std::unordered_set<HGLRC> s_legacy_contexts;
 static std::unordered_map<HGLRC, HGLRC> s_shared_contexts;
-static std::unordered_map<HGLRC, reshade::opengl::swapchain_impl *> s_opengl_devices;
-static std::unordered_map<HGLRC, reshade::opengl::render_context_impl *> s_opengl_queues;
-extern thread_local reshade::opengl::render_context_impl *g_current_context;
-
-void reshade::opengl::swapchain_impl::on_init(HWND hwnd, unsigned int width, unsigned int height)
-{
-	assert(width != 0 && height != 0);
-
-	_hwnd = hwnd;
-	_default_fbo_desc.texture.width = width;
-	_default_fbo_desc.texture.height = _current_window_height = height;
-
-#if RESHADE_ADDON
-	invoke_addon_event<addon_event::init_swapchain>(this);
-
-	api::resource_view default_rtv = reshade::opengl::make_resource_view_handle(GL_FRAMEBUFFER_DEFAULT, GL_BACK);
-	api::resource_view default_dsv = { 0 };
-	if (_default_depth_format != api::format::unknown)
-	{
-		default_dsv = make_resource_view_handle(GL_FRAMEBUFFER_DEFAULT, GL_DEPTH_STENCIL_ATTACHMENT);
-		invoke_addon_event<addon_event::init_resource>(this, get_resource_desc(get_resource_from_view(default_dsv)), nullptr, api::resource_usage::depth_stencil, get_resource_from_view(default_dsv));
-		invoke_addon_event<addon_event::init_resource_view>(this, get_resource_from_view(default_dsv), api::resource_usage::depth_stencil, api::resource_view_desc(_default_depth_format), default_dsv);
-	}
-
-	// Communicate default state to add-ons
-	invoke_addon_event<addon_event::bind_render_targets_and_depth_stencil>(this, 1, &default_rtv, default_dsv);
-#endif
-
-	init_effect_runtime(this);
-}
-void reshade::opengl::swapchain_impl::on_reset()
-{
-	if (_default_fbo_desc.texture.width == 0 && _default_fbo_desc.texture.height == 0)
-		return;
-
-	reset_effect_runtime(this);
-
-#if RESHADE_ADDON
-	api::resource_view default_dsv = { 0 };
-	if (_default_depth_format != api::format::unknown)
-	{
-		default_dsv = make_resource_view_handle(GL_FRAMEBUFFER_DEFAULT, GL_DEPTH_STENCIL_ATTACHMENT);
-		invoke_addon_event<addon_event::destroy_resource_view>(this, default_dsv);
-		invoke_addon_event<addon_event::destroy_resource>(this, get_resource_from_view(default_dsv));
-	}
-
-	invoke_addon_event<addon_event::destroy_swapchain>(this);
-#endif
-
-	_hwnd = nullptr;
-	_default_fbo_desc.texture.width = 0;
-	_default_fbo_desc.texture.height = 0;
-}
-void reshade::opengl::swapchain_impl::on_present(HDC hdc)
-{
-	// The window handle can be invalid if the window was already destroyed
-	const HWND hwnd = WindowFromDC(hdc);
-	if (hwnd == nullptr)
-		return;
-
-	assert(hwnd == _hwnd);
-
-	RECT rect = { 0, 0, 0, 0 };
-	GetClientRect(hwnd, &rect);
-
-	const auto width = static_cast<unsigned int>(rect.right);
-	const auto height = static_cast<unsigned int>(rect.bottom);
-
-	if (width != _default_fbo_desc.texture.width || height != _default_fbo_desc.texture.height)
-	{
-		LOG(INFO) << "Resizing device context " << hdc << " to " << width << "x" << height << " ...";
-
-		on_reset();
-
-		if (width != 0 && height != 0)
-			on_init(hwnd, width, height);
-	}
-
-	reshade::opengl::render_context_impl *const queue = (g_current_context != nullptr) ? g_current_context : this;
-
-#if RESHADE_ADDON
-	// Behave as if immediate command list is flushed
-	reshade::invoke_addon_event<reshade::addon_event::execute_command_list>(queue, queue);
-
-	reshade::invoke_addon_event<reshade::addon_event::present>(queue, this, nullptr, nullptr, 0, nullptr);
-#endif
-
-	// Assume that the correct OpenGL context is still current here
-	reshade::present_effect_runtime(this, queue);
-
-#ifndef NDEBUG
-	GLenum type = GL_NONE; char message[512] = "";
-	while (gl.GetDebugMessageLog(1, 512, nullptr, &type, nullptr, nullptr, nullptr, message))
-		if (type == GL_DEBUG_TYPE_ERROR || type == GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR)
-			OutputDebugStringA(message), OutputDebugStringA("\n");
-#endif
-}
-
-static reshade::opengl::swapchain_impl *create_swapchain_impl(HDC hdc, HGLRC hglrc)
-{
-	const auto impl = new reshade::opengl::swapchain_impl(
-		hdc, hglrc,
-		// Always set compatibility context flag on contexts that were created with 'wglCreateContext' instead of 'wglCreateContextAttribsARB'
-		// This is necessary because with some pixel formats the 'GL_ARB_compatibility' extension is not exposed even though the context was not created with the core profile
-		s_legacy_contexts.find(hglrc) != s_legacy_contexts.end());
-
-#if RESHADE_ADDON
-	reshade::load_addons();
-
-	reshade::invoke_addon_event<reshade::addon_event::init_device>(impl);
-
-	GLint max_combined_texture_image_units = 0;
-	gl.GetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &max_combined_texture_image_units);
-	GLint max_shader_storage_buffer_bindings = 0;
-	gl.GetIntegerv(GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS, &max_shader_storage_buffer_bindings);
-	GLint max_uniform_buffer_bindings = 0;
-	gl.GetIntegerv(GL_MAX_UNIFORM_BUFFER_BINDINGS, &max_uniform_buffer_bindings);
-	GLint max_image_units = 0;
-	gl.GetIntegerv(GL_MAX_IMAGE_UNITS, &max_image_units);
-
-	const reshade::api::pipeline_layout_param global_pipeline_layout_params[6] = {
-		reshade::api::descriptor_range { 0, 0, 0, static_cast<uint32_t>(max_combined_texture_image_units), reshade::api::shader_stage::all, 1, reshade::api::descriptor_type::sampler_with_resource_view },
-		reshade::api::descriptor_range { 0, 0, 0, static_cast<uint32_t>(max_shader_storage_buffer_bindings), reshade::api::shader_stage::all, 1, reshade::api::descriptor_type::shader_storage_buffer },
-		reshade::api::descriptor_range { 0, 0, 0, static_cast<uint32_t>(max_uniform_buffer_bindings), reshade::api::shader_stage::all, 1, reshade::api::descriptor_type::constant_buffer },
-		reshade::api::descriptor_range { 0, 0, 0, static_cast<uint32_t>(max_image_units), reshade::api::shader_stage::all, 1, reshade::api::descriptor_type::unordered_access_view },
-		/* Float uniforms */ reshade::api::constant_range { 0, 0, 0, std::numeric_limits<uint32_t>::max(), reshade::api::shader_stage::all },
-		/* Integer uniforms */ reshade::api::constant_range { 0, 0, 0, std::numeric_limits<uint32_t>::max(), reshade::api::shader_stage::all },
-	};
-	reshade::invoke_addon_event<reshade::addon_event::init_pipeline_layout>(impl, static_cast<uint32_t>(std::size(global_pipeline_layout_params)), global_pipeline_layout_params, reshade::opengl::global_pipeline_layout);
-
-	reshade::invoke_addon_event<reshade::addon_event::init_command_list>(impl);
-	reshade::invoke_addon_event<reshade::addon_event::init_command_queue>(impl);
-#endif
-
-	reshade::create_effect_runtime(impl, impl);
-
-	GLint scissor_box[4] = {};
-	gl.GetIntegerv(GL_SCISSOR_BOX, scissor_box);
-	assert(scissor_box[0] == 0 && scissor_box[1] == 0);
-
-	// Wolfenstein: The Old Blood creates a window with a height of zero that is later resized
-	if (scissor_box[2] != 0 && scissor_box[3] != 0)
-		impl->on_init(WindowFromDC(hdc), scissor_box[2], scissor_box[3]);
-
-	return impl;
-}
-static reshade::opengl::render_context_impl *create_render_context_impl(reshade::opengl::device_impl *device, HGLRC hglrc)
-{
-	const auto impl = new reshade::opengl::render_context_impl(device, hglrc);
-
-#if RESHADE_ADDON
-	reshade::invoke_addon_event<reshade::addon_event::init_command_list>(impl);
-	reshade::invoke_addon_event<reshade::addon_event::init_command_queue>(impl);
-#endif
-
-	return impl;
-}
-static void destroy_swapchain_impl(reshade::opengl::swapchain_impl *impl)
-{
-	impl->on_reset();
-
-	reshade::destroy_effect_runtime(impl);
-
-#if RESHADE_ADDON
-	reshade::invoke_addon_event<reshade::addon_event::destroy_command_queue>(impl);
-	reshade::invoke_addon_event<reshade::addon_event::destroy_command_list>(impl);
-
-	reshade::invoke_addon_event<reshade::addon_event::destroy_pipeline_layout>(impl, reshade::opengl::global_pipeline_layout);
-
-	reshade::invoke_addon_event<reshade::addon_event::destroy_device>(impl);
-
-	reshade::unload_addons();
-#endif
-
-	delete impl;
-}
-static void destroy_render_context_impl(reshade::opengl::render_context_impl *impl)
-{
-#if RESHADE_ADDON
-	reshade::invoke_addon_event<reshade::addon_event::destroy_command_queue>(impl);
-	reshade::invoke_addon_event<reshade::addon_event::destroy_command_list>(impl);
-#endif
-
-	delete impl;
-}
+static std::unordered_map<HGLRC, reshade::opengl::device_context_impl *> s_opengl_contexts;
 
 extern "C" int   WINAPI wglChoosePixelFormat(HDC hdc, const PIXELFORMATDESCRIPTOR *ppfd)
 {
@@ -337,77 +383,77 @@ extern "C" int   WINAPI wglChoosePixelFormat(HDC hdc, const PIXELFORMATDESCRIPTO
 	{
 		switch (attrib[0])
 		{
-		case attribute::WGL_DRAW_TO_WINDOW_ARB:
+		case wgl_attribute::WGL_DRAW_TO_WINDOW_ARB:
 			LOG(INFO) << "  | WGL_DRAW_TO_WINDOW_ARB                  | " << std::setw(39) << (attrib[1] != FALSE ? "TRUE" : "FALSE") << " |";
 			break;
-		case attribute::WGL_DRAW_TO_BITMAP_ARB:
+		case wgl_attribute::WGL_DRAW_TO_BITMAP_ARB:
 			LOG(INFO) << "  | WGL_DRAW_TO_BITMAP_ARB                  | " << std::setw(39) << (attrib[1] != FALSE ? "TRUE" : "FALSE") << " |";
 			break;
-		case attribute::WGL_ACCELERATION_ARB:
+		case wgl_attribute::WGL_ACCELERATION_ARB:
 			LOG(INFO) << "  | WGL_ACCELERATION_ARB                    | " << std::setw(39) << std::hex << attrib[1] << std::dec << " |";
 			break;
-		case attribute::WGL_SWAP_LAYER_BUFFERS_ARB:
+		case wgl_attribute::WGL_SWAP_LAYER_BUFFERS_ARB:
 			layerplanes = layerplanes || attrib[1] != FALSE;
 			LOG(INFO) << "  | WGL_SWAP_LAYER_BUFFERS_ARB              | " << std::setw(39) << (attrib[1] != FALSE ? "TRUE" : "FALSE") << " |";
 			break;
-		case attribute::WGL_SWAP_METHOD_ARB:
+		case wgl_attribute::WGL_SWAP_METHOD_ARB:
 			LOG(INFO) << "  | WGL_SWAP_METHOD_ARB                     | " << std::setw(39) << std::hex << attrib[1] << std::dec << " |";
 			break;
-		case attribute::WGL_NUMBER_OVERLAYS_ARB:
+		case wgl_attribute::WGL_NUMBER_OVERLAYS_ARB:
 			layerplanes = layerplanes || attrib[1] != 0;
 			LOG(INFO) << "  | WGL_NUMBER_OVERLAYS_ARB                 | " << std::setw(39) << attrib[1] << " |";
 			break;
-		case attribute::WGL_NUMBER_UNDERLAYS_ARB:
+		case wgl_attribute::WGL_NUMBER_UNDERLAYS_ARB:
 			layerplanes = layerplanes || attrib[1] != 0;
 			LOG(INFO) << "  | WGL_NUMBER_UNDERLAYS_ARB                | " << std::setw(39) << attrib[1] << " |";
 			break;
-		case attribute::WGL_SUPPORT_GDI_ARB:
+		case wgl_attribute::WGL_SUPPORT_GDI_ARB:
 			LOG(INFO) << "  | WGL_SUPPORT_GDI_ARB                     | " << std::setw(39) << (attrib[1] != FALSE ? "TRUE" : "FALSE") << " |";
 			break;
-		case attribute::WGL_SUPPORT_OPENGL_ARB:
+		case wgl_attribute::WGL_SUPPORT_OPENGL_ARB:
 			LOG(INFO) << "  | WGL_SUPPORT_OPENGL_ARB                  | " << std::setw(39) << (attrib[1] != FALSE ? "TRUE" : "FALSE") << " |";
 			break;
-		case attribute::WGL_DOUBLE_BUFFER_ARB:
+		case wgl_attribute::WGL_DOUBLE_BUFFER_ARB:
 			doublebuffered = attrib[1] != FALSE;
 			LOG(INFO) << "  | WGL_DOUBLE_BUFFER_ARB                   | " << std::setw(39) << (attrib[1] != FALSE ? "TRUE" : "FALSE") << " |";
 			break;
-		case attribute::WGL_STEREO_ARB:
+		case wgl_attribute::WGL_STEREO_ARB:
 			LOG(INFO) << "  | WGL_STEREO_ARB                          | " << std::setw(39) << (attrib[1] != FALSE ? "TRUE" : "FALSE") << " |";
 			break;
-		case attribute::WGL_PIXEL_TYPE_ARB:
+		case wgl_attribute::WGL_PIXEL_TYPE_ARB:
 			LOG(INFO) << "  | WGL_PIXEL_TYPE_ARB                      | " << std::setw(39) << std::hex << attrib[1] << std::dec << " |";
 			break;
-		case attribute::WGL_COLOR_BITS_ARB:
+		case wgl_attribute::WGL_COLOR_BITS_ARB:
 			LOG(INFO) << "  | WGL_COLOR_BITS_ARB                      | " << std::setw(39) << attrib[1] << " |";
 			break;
-		case attribute::WGL_RED_BITS_ARB:
+		case wgl_attribute::WGL_RED_BITS_ARB:
 			LOG(INFO) << "  | WGL_RED_BITS_ARB                        | " << std::setw(39) << attrib[1] << " |";
 			break;
-		case attribute::WGL_GREEN_BITS_ARB:
+		case wgl_attribute::WGL_GREEN_BITS_ARB:
 			LOG(INFO) << "  | WGL_GREEN_BITS_ARB                      | " << std::setw(39) << attrib[1] << " |";
 			break;
-		case attribute::WGL_BLUE_BITS_ARB:
+		case wgl_attribute::WGL_BLUE_BITS_ARB:
 			LOG(INFO) << "  | WGL_BLUE_BITS_ARB                       | " << std::setw(39) << attrib[1] << " |";
 			break;
-		case attribute::WGL_ALPHA_BITS_ARB:
+		case wgl_attribute::WGL_ALPHA_BITS_ARB:
 			LOG(INFO) << "  | WGL_ALPHA_BITS_ARB                      | " << std::setw(39) << attrib[1] << " |";
 			break;
-		case attribute::WGL_DEPTH_BITS_ARB:
+		case wgl_attribute::WGL_DEPTH_BITS_ARB:
 			LOG(INFO) << "  | WGL_DEPTH_BITS_ARB                      | " << std::setw(39) << attrib[1] << " |";
 			break;
-		case attribute::WGL_STENCIL_BITS_ARB:
+		case wgl_attribute::WGL_STENCIL_BITS_ARB:
 			LOG(INFO) << "  | WGL_STENCIL_BITS_ARB                    | " << std::setw(39) << attrib[1] << " |";
 			break;
-		case attribute::WGL_DRAW_TO_PBUFFER_ARB:
+		case wgl_attribute::WGL_DRAW_TO_PBUFFER_ARB:
 			LOG(INFO) << "  | WGL_DRAW_TO_PBUFFER_ARB                 | " << std::setw(39) << (attrib[1] != FALSE ? "TRUE" : "FALSE") << " |";
 			break;
-		case attribute::WGL_SAMPLE_BUFFERS_ARB:
+		case wgl_attribute::WGL_SAMPLE_BUFFERS_ARB:
 			LOG(INFO) << "  | WGL_SAMPLE_BUFFERS_ARB                  | " << std::setw(39) << attrib[1] << " |";
 			break;
-		case attribute::WGL_SAMPLES_ARB:
+		case wgl_attribute::WGL_SAMPLES_ARB:
 			LOG(INFO) << "  | WGL_SAMPLES_ARB                         | " << std::setw(39) << attrib[1] << " |";
 			break;
-		case attribute::WGL_FRAMEBUFFER_SRGB_CAPABLE_ARB:
+		case wgl_attribute::WGL_FRAMEBUFFER_SRGB_CAPABLE_ARB:
 			LOG(INFO) << "  | WGL_FRAMEBUFFER_SRGB_CAPABLE_ARB        | " << std::setw(39) << (attrib[1] != FALSE ? "TRUE" : "FALSE") << " |";
 			break;
 		default:
@@ -517,7 +563,7 @@ extern "C" BOOL  WINAPI wglSetPixelFormat(HDC hdc, int iPixelFormat, const PIXEL
 
 	if (s_hooks_installed && reshade::hooks::call(wglGetPixelFormatAttribivARB) != nullptr)
 	{
-		int attrib_names[2] = { attribute::WGL_SAMPLES_ARB, attribute::WGL_SWAP_METHOD_ARB }, attrib_values[2] = {};
+		int attrib_names[2] = { wgl_attribute::WGL_SAMPLES_ARB, wgl_attribute::WGL_SWAP_METHOD_ARB }, attrib_values[2] = {};
 		if (reshade::hooks::call(wglGetPixelFormatAttribivARB)(hdc, iPixelFormat, 0, 2, attrib_names, attrib_values))
 		{
 			if (attrib_values[0] != 0)
@@ -542,26 +588,26 @@ extern "C" BOOL  WINAPI wglSetPixelFormat(HDC hdc, int iPixelFormat, const PIXEL
 		if (s_hooks_installed && reshade::hooks::call(wglChoosePixelFormatARB) != nullptr)
 		{
 			int i = 14;
-			attribute attribs[17] = {
-				{ attribute::WGL_DRAW_TO_WINDOW_ARB, (pfd.dwFlags & PFD_DRAW_TO_WINDOW) != 0 },
-				{ attribute::WGL_DRAW_TO_BITMAP_ARB, (pfd.dwFlags & PFD_DRAW_TO_BITMAP) != 0 },
-				{ attribute::WGL_SUPPORT_GDI_ARB, (pfd.dwFlags & PFD_SUPPORT_GDI) != 0 },
-				{ attribute::WGL_SUPPORT_OPENGL_ARB, (pfd.dwFlags & PFD_SUPPORT_OPENGL) != 0 },
-				{ attribute::WGL_DOUBLE_BUFFER_ARB, (pfd.dwFlags & PFD_DOUBLEBUFFER) != 0 },
-				{ attribute::WGL_STEREO_ARB, (pfd.dwFlags & PFD_STEREO) != 0 },
-				{ attribute::WGL_RED_BITS_ARB, pfd.cRedBits },
-				{ attribute::WGL_GREEN_BITS_ARB, pfd.cGreenBits },
-				{ attribute::WGL_BLUE_BITS_ARB, pfd.cBlueBits },
-				{ attribute::WGL_ALPHA_BITS_ARB, pfd.cAlphaBits },
-				{ attribute::WGL_DEPTH_BITS_ARB, pfd.cDepthBits },
-				{ attribute::WGL_STENCIL_BITS_ARB, pfd.cStencilBits },
-				{ attribute::WGL_SAMPLE_BUFFERS_ARB, desc.back_buffer.texture.samples > 1 },
-				{ attribute::WGL_SAMPLES_ARB, desc.back_buffer.texture.samples > 1 ? desc.back_buffer.texture.samples : 0 },
+			wgl_attribute attribs[17] = {
+				{ wgl_attribute::WGL_DRAW_TO_WINDOW_ARB, (pfd.dwFlags & PFD_DRAW_TO_WINDOW) != 0 },
+				{ wgl_attribute::WGL_DRAW_TO_BITMAP_ARB, (pfd.dwFlags & PFD_DRAW_TO_BITMAP) != 0 },
+				{ wgl_attribute::WGL_SUPPORT_GDI_ARB, (pfd.dwFlags & PFD_SUPPORT_GDI) != 0 },
+				{ wgl_attribute::WGL_SUPPORT_OPENGL_ARB, (pfd.dwFlags & PFD_SUPPORT_OPENGL) != 0 },
+				{ wgl_attribute::WGL_DOUBLE_BUFFER_ARB, (pfd.dwFlags & PFD_DOUBLEBUFFER) != 0 },
+				{ wgl_attribute::WGL_STEREO_ARB, (pfd.dwFlags & PFD_STEREO) != 0 },
+				{ wgl_attribute::WGL_RED_BITS_ARB, pfd.cRedBits },
+				{ wgl_attribute::WGL_GREEN_BITS_ARB, pfd.cGreenBits },
+				{ wgl_attribute::WGL_BLUE_BITS_ARB, pfd.cBlueBits },
+				{ wgl_attribute::WGL_ALPHA_BITS_ARB, pfd.cAlphaBits },
+				{ wgl_attribute::WGL_DEPTH_BITS_ARB, pfd.cDepthBits },
+				{ wgl_attribute::WGL_STENCIL_BITS_ARB, pfd.cStencilBits },
+				{ wgl_attribute::WGL_SAMPLE_BUFFERS_ARB, desc.back_buffer.texture.samples > 1 },
+				{ wgl_attribute::WGL_SAMPLES_ARB, desc.back_buffer.texture.samples > 1 ? desc.back_buffer.texture.samples : 0 },
 			};
 
 			if (desc.present_mode)
 			{
-				attribs[i].name = attribute::WGL_SWAP_METHOD_ARB;
+				attribs[i].name = wgl_attribute::WGL_SWAP_METHOD_ARB;
 				attribs[i++].value = static_cast<int>(desc.present_mode);
 			}
 
@@ -569,7 +615,7 @@ extern "C" BOOL  WINAPI wglSetPixelFormat(HDC hdc, int iPixelFormat, const PIXEL
 				desc.back_buffer.texture.format == reshade::api::format::b8g8r8a8_unorm_srgb || desc.back_buffer.texture.format == reshade::api::format::b8g8r8x8_unorm_srgb ||
 				desc.back_buffer.texture.format == reshade::api::format::bc1_unorm_srgb || desc.back_buffer.texture.format == reshade::api::format::bc2_unorm_srgb || desc.back_buffer.texture.format == reshade::api::format::bc3_unorm_srgb)
 			{
-				attribs[i].name = attribute::WGL_FRAMEBUFFER_SRGB_CAPABLE_ARB;
+				attribs[i].name = wgl_attribute::WGL_FRAMEBUFFER_SRGB_CAPABLE_ARB;
 				attribs[i++].value = 1;
 			}
 
@@ -684,7 +730,7 @@ extern "C" HGLRC WINAPI wglCreateContext(HDC hdc)
 
 	int i = 0, major = 1, minor = 0, flags = 0;
 	bool compatibility = false;
-	attribute attribs[8] = {};
+	wgl_attribute attribs[8] = {};
 
 	for (const int *attrib = piAttribList; attrib != nullptr && *attrib != 0 && i < 5; attrib += 2, ++i)
 	{
@@ -693,17 +739,17 @@ extern "C" HGLRC WINAPI wglCreateContext(HDC hdc)
 
 		switch (attrib[0])
 		{
-		case attribute::WGL_CONTEXT_MAJOR_VERSION_ARB:
+		case wgl_attribute::WGL_CONTEXT_MAJOR_VERSION_ARB:
 			major = attrib[1];
 			break;
-		case attribute::WGL_CONTEXT_MINOR_VERSION_ARB:
+		case wgl_attribute::WGL_CONTEXT_MINOR_VERSION_ARB:
 			minor = attrib[1];
 			break;
-		case attribute::WGL_CONTEXT_FLAGS_ARB:
+		case wgl_attribute::WGL_CONTEXT_FLAGS_ARB:
 			flags = attrib[1];
 			break;
-		case attribute::WGL_CONTEXT_PROFILE_MASK_ARB:
-			compatibility = (attrib[1] & attribute::WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB) != 0;
+		case wgl_attribute::WGL_CONTEXT_PROFILE_MASK_ARB:
+			compatibility = (attrib[1] & wgl_attribute::WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB) != 0;
 			break;
 		}
 	}
@@ -712,14 +758,14 @@ extern "C" HGLRC WINAPI wglCreateContext(HDC hdc)
 		compatibility = true;
 
 #ifndef NDEBUG
-	flags |= attribute::WGL_CONTEXT_DEBUG_BIT_ARB;
+	flags |= wgl_attribute::WGL_CONTEXT_DEBUG_BIT_ARB;
 #endif
 
 	// This works because the specs specifically notes that "If an attribute is specified more than once, then the last value specified is used."
-	attribs[i].name = attribute::WGL_CONTEXT_FLAGS_ARB;
+	attribs[i].name = wgl_attribute::WGL_CONTEXT_FLAGS_ARB;
 	attribs[i++].value = flags;
-	attribs[i].name = attribute::WGL_CONTEXT_PROFILE_MASK_ARB;
-	attribs[i++].value = compatibility ? attribute::WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB : attribute::WGL_CONTEXT_CORE_PROFILE_BIT_ARB;
+	attribs[i].name = wgl_attribute::WGL_CONTEXT_PROFILE_MASK_ARB;
+	attribs[i++].value = compatibility ? wgl_attribute::WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB : wgl_attribute::WGL_CONTEXT_CORE_PROFILE_BIT_ARB;
 
 	LOG(INFO) << "> Requesting " << (compatibility ? "compatibility" : "core") << " OpenGL context for version " << major << '.' << minor << '.';
 
@@ -731,14 +777,14 @@ extern "C" HGLRC WINAPI wglCreateContext(HDC hdc)
 		{
 			switch (attribs[k].name)
 			{
-			case attribute::WGL_CONTEXT_MAJOR_VERSION_ARB:
+			case wgl_attribute::WGL_CONTEXT_MAJOR_VERSION_ARB:
 				attribs[k].value = 4;
 				break;
-			case attribute::WGL_CONTEXT_MINOR_VERSION_ARB:
+			case wgl_attribute::WGL_CONTEXT_MINOR_VERSION_ARB:
 				attribs[k].value = 3;
 				break;
-			case attribute::WGL_CONTEXT_PROFILE_MASK_ARB:
-				attribs[k].value = attribute::WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB;
+			case wgl_attribute::WGL_CONTEXT_PROFILE_MASK_ARB:
+				attribs[k].value = wgl_attribute::WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB;
 				break;
 			}
 		}
@@ -805,58 +851,69 @@ extern "C" BOOL  WINAPI wglDeleteContext(HGLRC hglrc)
 
 	{ const std::unique_lock<std::shared_mutex> lock(s_global_mutex);
 
-		if (const auto it = s_opengl_queues.find(hglrc);
-			it != s_opengl_queues.end())
+		if (const auto it = s_opengl_contexts.find(hglrc);
+			it != s_opengl_contexts.end())
 		{
-			// Separate command queue objects are only created for shared contexts
-			// It is important that the context that it is shared with still exists, otherwise accessing the device in the command queue object during destruction would crash
-			const HGLRC prev_hglrc = wglGetCurrentContext();
-			if (prev_hglrc == hglrc || (prev_hglrc != nullptr && prev_hglrc == s_shared_contexts.at(hglrc)))
-			{
-				destroy_render_context_impl(it->second);
-			}
-			else
-			{
-				LOG(WARN) << "Unable to make context current! Leaking resources ...";
-			}
+			const auto device = static_cast<wgl_device *>(it->second->get_device());
 
-			if (it->second == g_current_context)
-				g_current_context = nullptr;
-
-			s_opengl_queues.erase(it);
-		}
-
-		if (const auto it = s_opengl_devices.find(hglrc);
-			it != s_opengl_devices.end())
-		{
-			// Set the render context current so its resources can be cleaned up
-			const HGLRC prev_hglrc = wglGetCurrentContext();
-			if (prev_hglrc == hglrc)
+			if (it->second != device)
 			{
-				destroy_swapchain_impl(it->second);
-			}
-			else
-			{
-				// Choose a device context to make current with
-				HDC hdc = reinterpret_cast<HDC>(static_cast<reshade::api::swapchain *>(it->second)->get_native());
-				const HDC prev_hdc = wglGetCurrentDC();
-
-				// In case the original was destroyed already, create a dummy window to get a valid context
-				HWND dummy_window_handle = nullptr;
-				if (!WindowFromDC(hdc))
+				// Separate contexts are only created for shared render contexts
+				// It is important that the context that it is shared with still exists, otherwise accessing the device in the command queue object during destruction would crash
+				const HGLRC prev_hglrc = wglGetCurrentContext();
+				if (prev_hglrc == hglrc || (prev_hglrc != nullptr && prev_hglrc == s_shared_contexts.at(hglrc)))
 				{
+					delete static_cast<wgl_device_context *>(it->second);
+				}
+				else
+				{
+					LOG(WARN) << "Unable to make context current! Leaking resources ...";
+				}
+			}
+			else
+			{
+				const HDC prev_hdc = wglGetCurrentDC();
+				const HGLRC prev_hglrc = wglGetCurrentContext();
+
+				// Set the render context current so its resources can be cleaned up
+				bool hglrc_is_current = true;
+				HWND dummy_window_handle = nullptr;
+
+				if (prev_hglrc != hglrc)
+				{
+					// In case the original was destroyed already, create a dummy window to get a valid context
 					dummy_window_handle = CreateWindow(TEXT("STATIC"), nullptr, 0, 0, 0, 0, 0, nullptr, nullptr, nullptr, 0);
-					hdc = GetDC(dummy_window_handle);
+					const HDC hdc = GetDC(dummy_window_handle);
 					const PIXELFORMATDESCRIPTOR dummy_pfd = { sizeof(dummy_pfd), 1, PFD_DOUBLEBUFFER | PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL };
-					reshade::hooks::call(wglSetPixelFormat)(hdc, it->second->get_pixel_format(), &dummy_pfd);
+					reshade::hooks::call(wglSetPixelFormat)(hdc, device->get_pixel_format(), &dummy_pfd);
+
+					hglrc_is_current = reshade::hooks::call(wglMakeCurrent)(hdc, hglrc);
 				}
 
-				if (reshade::hooks::call(wglMakeCurrent)(hdc, hglrc))
+				if (hglrc_is_current)
 				{
-					destroy_swapchain_impl(it->second);
+					// Delete any swap chains referencing this device
+					for (auto swapchain_it = s_opengl_swapchains.begin(); swapchain_it != s_opengl_swapchains.end();)
+					{
+						wgl_swapchain *const swapchain = swapchain_it->second;
+
+						if (device == swapchain->get_device())
+						{
+							delete swapchain;
+
+							swapchain_it = s_opengl_swapchains.erase(swapchain_it);
+						}
+						else
+						{
+							++swapchain_it;
+						}
+					}
+
+					delete device;
 
 					// Restore previous device and render context
-					reshade::hooks::call(wglMakeCurrent)(prev_hdc, prev_hglrc);
+					if (prev_hglrc != hglrc)
+						reshade::hooks::call(wglMakeCurrent)(prev_hdc, prev_hglrc);
 				}
 				else
 				{
@@ -871,7 +928,7 @@ extern "C" BOOL  WINAPI wglDeleteContext(HGLRC hglrc)
 			if (it->second == g_current_context)
 				g_current_context = nullptr;
 
-			s_opengl_devices.erase(it);
+			s_opengl_contexts.erase(it);
 		}
 
 		s_legacy_contexts.erase(hglrc);
@@ -960,34 +1017,13 @@ extern "C" BOOL  WINAPI wglMakeCurrent(HDC hdc, HGLRC hglrc)
 #endif
 	}
 
-	if (const auto it = s_opengl_devices.find(shared_hglrc);
-		it != s_opengl_devices.end())
+	if (const auto it = s_opengl_contexts.find(shared_hglrc);
+		it != s_opengl_contexts.end())
 	{
-		if (it->second != g_current_context)
-		{
-			g_current_context = it->second;
-		}
-
-		// Keep track of all device contexts that were used with this render context
-		// Do this outside the above if statement since the application may change the device context without changing the render context
-		it->second->_hdcs.insert(hdc);
+		g_current_context = it->second;
 	}
 	else
 	{
-		const HWND hwnd = WindowFromDC(hdc);
-
-		if (hwnd == nullptr || s_pbuffer_device_contexts.find(hdc) != s_pbuffer_device_contexts.end())
-		{
-			g_current_context = nullptr;
-
-			LOG(WARN) << "Skipping render context " << hglrc << " because there is no window associated with device context " << hdc << '.';
-			return TRUE;
-		}
-		else if ((GetClassLongPtr(hwnd, GCL_STYLE) & CS_OWNDC) == 0)
-		{
-			LOG(WARN) << "Window class style of window " << hwnd << " is missing 'CS_OWNDC' flag.";
-		}
-
 		// Force installation of hooks in 'wglGetProcAddress' defined below in case it has not happened yet
 		if (!s_hooks_installed)
 			wglGetProcAddress("wglCreateContextAttribsARB");
@@ -1006,32 +1042,74 @@ extern "C" BOOL  WINAPI wglMakeCurrent(HDC hdc, HGLRC hglrc)
 			return reinterpret_cast<GL3WglProc>(address);
 		});
 
-		if (gl3wIsSupported(4, 3))
-		{
-			assert(s_hooks_installed);
-
-			g_current_context = s_opengl_devices[shared_hglrc] = create_swapchain_impl(hdc, shared_hglrc);
-		}
-		else
+		if (!gl3wIsSupported(4, 3))
 		{
 			LOG(ERROR) << "Your graphics card does not seem to support OpenGL 4.3. Initialization failed.";
 
 			g_current_context = nullptr;
+
+			return TRUE;
 		}
+
+		assert(s_hooks_installed);
+
+		const auto device = new wgl_device(
+			hdc, shared_hglrc,
+			// Always set compatibility context flag on contexts that were created with 'wglCreateContext' instead of 'wglCreateContextAttribsARB'
+			// This is necessary because with some pixel formats the 'GL_ARB_compatibility' extension is not exposed even though the context was not created with the core profile
+			s_legacy_contexts.find(shared_hglrc) != s_legacy_contexts.end());
+
+		s_opengl_contexts.emplace(shared_hglrc, device);
+		g_current_context = device;
 	}
 
-	if (hglrc != shared_hglrc && g_current_context != nullptr)
+	assert(g_current_context != nullptr);
+	const auto device = static_cast<wgl_device *>(g_current_context);
+
+	if (hglrc != shared_hglrc)
 	{
-		if (const auto it = s_opengl_queues.find(hglrc);
-			it != s_opengl_queues.end())
+		if (const auto it = s_opengl_contexts.find(hglrc);
+			it != s_opengl_contexts.end())
 		{
 			g_current_context = it->second;
 		}
 		else
 		{
-			const auto device = static_cast<reshade::opengl::device_impl *>(g_current_context->get_device());
+			const auto context = new wgl_device_context(device, hglrc);
 
-			g_current_context = s_opengl_queues[hglrc] = create_render_context_impl(device, hglrc);
+			s_opengl_contexts.emplace(hglrc, context);
+			g_current_context = context;
+		}
+	}
+
+	const HWND hwnd = WindowFromDC(hdc);
+
+	if (const auto it = s_opengl_swapchains.find(hdc);
+		it != s_opengl_swapchains.end())
+	{
+		assert(hwnd != nullptr);
+
+		RECT window_rect = {};
+		GetClientRect(hwnd, &window_rect);
+
+		device->update_default_fbo(static_cast<unsigned int>(window_rect.right), static_cast<unsigned int>(window_rect.bottom));
+	}
+	else
+	{
+		if (hwnd == nullptr || s_pbuffer_device_contexts.find(hdc) != s_pbuffer_device_contexts.end())
+		{
+#if RESHADE_VERBOSE_LOG
+			LOG(WARN) << "Skipping render context " << hglrc << " because there is no window associated with device context " << hdc << '.';
+#endif
+		}
+		else
+		{
+			if ((GetClassLongPtr(hwnd, GCL_STYLE) & CS_OWNDC) == 0)
+			{
+				LOG(WARN) << "Window class style of window " << hwnd << " is missing 'CS_OWNDC' flag.";
+			}
+
+			s_opengl_swapchains.emplace(hdc, new wgl_swapchain(device, hdc));
 		}
 	}
 
@@ -1157,24 +1235,25 @@ extern "C" HGLRC WINAPI wglGetCurrentContext()
 
 extern "C" BOOL  WINAPI wglSwapBuffers(HDC hdc)
 {
-	static const auto trampoline = reshade::hooks::call(wglSwapBuffers);
+	{ const std::shared_lock<std::shared_mutex> lock(s_global_mutex);
 
-	reshade::opengl::swapchain_impl *swapchain = reshade::opengl::swapchain_impl::from_context(g_current_context);
-	if (swapchain == nullptr || swapchain->_hdcs.find(hdc) == swapchain->_hdcs.end())
-	{
-		const std::shared_lock<std::shared_mutex> lock(s_global_mutex);
-
-		// Find the swap chain that is associated with this device context
-		const auto it = std::find_if(s_opengl_devices.cbegin(), s_opengl_devices.cend(),
-			[hdc](const std::pair<HGLRC, reshade::opengl::swapchain_impl *> &it) {
-				return it.second->_hdcs.find(hdc) != it.second->_hdcs.end();
-			});
-		swapchain = (it != s_opengl_devices.cend()) ? it->second : nullptr;
+		std::unordered_map<HDC, wgl_swapchain *>::iterator it = s_opengl_swapchains.find(hdc);
+		if (it == s_opengl_swapchains.end())
+		{
+			// Fall back to searching for a swap chain to the same window, in case the device context handle has changed (without 'CS_OWNDC')
+			const HWND hwnd = WindowFromDC(hdc);
+			if (hwnd != nullptr)
+				it = std::find_if(s_opengl_swapchains.begin(), s_opengl_swapchains.end(),
+					[hwnd](const std::pair<HDC, wgl_swapchain *> &it) { return hwnd == WindowFromDC(it.first); });
+		}
+		if (it != s_opengl_swapchains.end())
+		{
+			wgl_swapchain *const swapchain = it->second;
+			swapchain->on_present();
+		}
 	}
 
-	if (swapchain != nullptr)
-		swapchain->on_present(hdc);
-
+	static const auto trampoline = reshade::hooks::call(wglSwapBuffers);
 	return trampoline(hdc);
 }
 extern "C" BOOL  WINAPI wglSwapLayerBuffers(HDC hdc, UINT i)
