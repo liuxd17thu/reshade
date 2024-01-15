@@ -1992,7 +1992,9 @@ void reshade::runtime::draw_gui_home()
 
 		if (ImGui::Button(reload_button_label.c_str(), ImVec2(-11.5f * _font_size, 0)))
 		{
+			std::filesystem::path backup_current_path = _current_preset_path;
 			load_config(); // Reload configuration too
+			_current_preset_path = std::move(backup_current_path);
 
 			if (!_no_effect_cache && (_imgui_context->IO.KeyCtrl || _imgui_context->IO.KeyShift))
 				clear_effect_cache();
