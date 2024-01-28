@@ -36,6 +36,13 @@ static auto filter_name(ImGuiInputTextCallbackData *data) -> int
 	return data->EventChar == L'\"' || data->EventChar == L'*' || data->EventChar == L'/' || data->EventChar == L':' || data->EventChar == L'<' || data->EventChar == L'>' || data->EventChar == L'?' || data->EventChar == L'\\' || data->EventChar == L'|';
 }
 
+static auto filter_name_plus(ImGuiInputTextCallbackData *data) -> int
+{
+	// Legal In GShade: [-] [_] [']
+	return !(data->EventChar >= 'A' && data->EventChar <= 'Z') && !(data->EventChar >= 'a' && data->EventChar <= 'z') && !(data->EventChar >= '0' && data->EventChar <= '9')
+		&& data->EventChar != '-' && data->EventChar != '_' && data->EventChar != '\'';
+}
+
 template <typename F>
 static void parse_errors(const std::string_view errors, F &&callback)
 {
@@ -4245,6 +4252,8 @@ void reshade::runtime::draw_technique_editor()
 				std::string label(get_localized_annotation(tech, "ui_label", _current_language));
 				if (label.empty())
 					label = tech.name;
+				if (_effects[tech.effect_index].dup_id != "")
+					label += "+" + _effects[tech.effect_index].dup_id;
 				label += " [" + effect.source_file.filename().u8string() + ']';
 
 				if (bool status = tech.enabled;
@@ -4284,7 +4293,34 @@ void reshade::runtime::draw_technique_editor()
 			// Create context menu
 			if (ImGui::BeginPopupContextItem("##context"))
 			{
-				ImGui::TextUnformatted(tech.name.c_str());
+				ImGui::Text(tech.name.c_str());
+				ImGui::SameLine(9.8f * _font_size);
+				if (ImGui::Button("+ DUP", ImVec2(4.0f * _font_size, 0)))
+					ImGui::OpenPopup("##Create Duplicate");
+				if (ImGui::BeginPopup("##Create Duplicate"))
+				{
+					char dup_name[260] = "";
+					if (ImGui::InputText("Duplicate Name", dup_name, sizeof(dup_name), ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCharFilter, filter_name_plus)
+						&& dup_name[0] != '\0')
+					{
+						reshade::effect dup_effect;
+						dup_effect.dup_id = dup_name;
+						dup_effect.source_file = _effects[tech.effect_index].source_file;
+						_effects.emplace_back(dup_effect);
+						load_effect(dup_effect.source_file, ini_file::load_cache(_current_preset_path), _effects.size() - 1, true, true);
+					}
+					ImGui::EndPopup();
+				}
+
+				ImGui::SameLine(14.0f * _font_size);
+				if (!effect.dup_id.empty())
+					ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+				if (ImGui::Button("- DUP", ImVec2(4.0f * _font_size, 0)))
+				{
+
+				}
+				if (!effect.dup_id.empty())
+					ImGui::PopItemFlag();
 				ImGui::Separator();
 
 				ImGui::SetNextItemWidth(18.0f * _font_size);

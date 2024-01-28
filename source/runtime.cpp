@@ -1311,7 +1311,8 @@ void reshade::runtime::save_current_preset() const
 		if (tech.annotation_as_uint("nosave"))
 			continue;
 
-		const std::string unique_name = tech.name + '@' + _effects[tech.effect_index].source_file.filename().u8string();
+		const std::string unique_name = tech.name + '@' + _effects[tech.effect_index].source_file.filename().u8string()
+			+ (_effects[tech.effect_index].dup_id == "" ? "" : ("+" + _effects[tech.effect_index].dup_id));
 
 		if (tech.enabled)
 			technique_list.push_back(unique_name);
@@ -1346,7 +1347,8 @@ void reshade::runtime::save_current_preset() const
 
 		const effect &effect = _effects[effect_index];
 
-		const std::string effect_name = effect.source_file.filename().u8string();
+		const std::string effect_name = effect.source_file.filename().u8string()
+			+ (effect.dup_id == "" ? "" : "+" + effect.dup_id);
 
 		if (!_ui_bind_support)
 		{
@@ -1603,10 +1605,12 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 		// Source hash has changed, reset effect and load from scratch, rather than updating
 		// Backup and re-apply binds
 		auto binding_backup = std::move(effect.definition_bindings);
+		auto dup_backup = effect.dup_id;
 		effect = {};
 
 		if (_ui_bind_support)
 			effect.definition_bindings = std::move(binding_backup);
+		effect.dup_id = dup_backup;
 
 		effect.source_file = source_file;
 		effect.source_hash = source_hash;
