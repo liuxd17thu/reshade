@@ -153,11 +153,10 @@ void reshade::runtime::build_font_atlas()
 	{
 		glyph_ranges = atlas->GetGlyphRangesJapanese();
 
-		_default_font_path = L"C:\\Windows\\Fonts\\msgothic.ttc"; // MS Gothic
-
 		// Morisawa BIZ UDGothic Regular, available since Windows 10 October 2018 Update (1809) Build 17763.1
-		if (std::filesystem::exists(L"C:\\Windows\\Fonts\\BIZ-UDGothicR.ttc", ec))
-			_default_font_path = L"C:\\Windows\\Fonts\\BIZ-UDGothicR.ttc";
+		_default_font_path = L"C:\\Windows\\Fonts\\BIZ-UDGothicR.ttc";
+		if (!std::filesystem::exists(_default_font_path, ec))
+			_default_font_path = L"C:\\Windows\\Fonts\\msgothic.ttc"; // MS Gothic
 	}
 	else
 	if (language.find("zh") == 0)
@@ -165,6 +164,8 @@ void reshade::runtime::build_font_atlas()
 		glyph_ranges = GetGlyphRangesChineseSimplifiedGB2312();
 
 		_default_font_path = L"C:\\Windows\\Fonts\\msyh.ttc"; // Microsoft YaHei
+		if (!std::filesystem::exists(_default_font_path, ec))
+			_default_font_path = L"C:\\Windows\\Fonts\\simsun.ttc"; // SimSun
 	}
 	else
 #endif
@@ -173,10 +174,6 @@ void reshade::runtime::build_font_atlas()
 
 		_default_font_path.clear();
 	}
-
-	// Set default editor font
-	if (std::filesystem::exists(L"C:\\Windows\\Fonts\\CascadiaMono.ttf"))
-		_default_editor_font_path = L"C:\\Windows\\Fonts\\CascadiaMono.ttf";
 
 	extern bool resolve_path(std::filesystem::path &path, std::error_code &ec);
 
@@ -342,7 +339,8 @@ void reshade::runtime::load_config_gui(const ini_file &config)
 	config.get("OVERLAY", "ShowFrameTime", _show_frametime);
 	config.get("OVERLAY", "ShowScreenshotMessage", _show_screenshot_message);
 #if RESHADE_FX
-	global_config().get("OVERLAY", "TutorialProgress", _tutorial_index);
+	if (!global_config().get("OVERLAY", "TutorialProgress", _tutorial_index))
+		config.get("OVERLAY", "TutorialProgress", _tutorial_index);
 	config.get("OVERLAY", "VariableListHeight", _variable_editor_height);
 	config.get("OVERLAY", "VariableListUseTabs", _variable_editor_tabs);
 	config.get("OVERLAY", "AutoSavePreset", _auto_save_preset);
@@ -444,6 +442,7 @@ void reshade::runtime::save_config_gui(ini_file &config) const
 	config.set("OVERLAY", "ShowScreenshotMessage", _show_screenshot_message);
 #if RESHADE_FX
 	global_config().set("OVERLAY", "TutorialProgress", _tutorial_index);
+	config.set("OVERLAY", "TutorialProgress", _tutorial_index);
 	config.set("OVERLAY", "VariableListHeight", _variable_editor_height);
 	config.set("OVERLAY", "VariableListUseTabs", _variable_editor_tabs);
 	config.set("OVERLAY", "AutoSavePreset", _auto_save_preset);
@@ -2442,7 +2441,7 @@ void reshade::runtime::draw_gui_settings()
 		}
 
 		// Only show on possible HDR swap chains
-		if ((_renderer_id & 0xB000 || _renderer_id & 0xC000 || _renderer_id & 0x20000) &&
+		if (((_renderer_id & 0xB000) == 0xB000 || (_renderer_id & 0xC000) == 0xC000 || (_renderer_id & 0x20000) == 0x20000) &&
 			(_back_buffer_format == reshade::api::format::r10g10b10a2_unorm || _back_buffer_format == reshade::api::format::b10g10r10a2_unorm || _back_buffer_format == reshade::api::format::r16g16b16a16_float))
 		{
 			if (ImGui::SliderFloat(_("HDR overlay brightness"), &_hdr_overlay_brightness, 20.f, 400.f, "%.0f nits", ImGuiSliderFlags_AlwaysClamp))
@@ -2685,7 +2684,7 @@ void reshade::runtime::draw_gui_statistics()
 
 		const float total_width = ImGui::GetContentRegionAvail().x;
 		int texture_index = 0;
-		const unsigned int num_columns = static_cast<unsigned int>(std::ceilf(total_width / (55.0f * _font_size)));
+		const unsigned int num_columns = std::max(1u, static_cast<unsigned int>(std::ceilf(total_width / (55.0f * _font_size))));
 		const float single_image_width = (total_width / num_columns) - 5.0f;
 
 		// Variables used to calculate memory size of textures
@@ -3141,7 +3140,7 @@ void reshade::runtime::draw_gui_addons()
 	ImGui::AlignTextToFramePadding();
 	ImGui::TextUnformatted(_("This build of ReShade has only limited add-on functionality."));
 #else
-	std::filesystem::path addon_search_path = g_reshade_base_path;
+	std::filesystem::path addon_search_path = L".\\";
 	config.get("ADDON", "AddonPath", addon_search_path);
 	if (imgui::directory_input_box(_("Add-on search path"), addon_search_path, _file_selection_path))
 		config.set("ADDON", "AddonPath", addon_search_path);
@@ -4652,7 +4651,7 @@ bool reshade::runtime::init_imgui_resources()
 		reshade::api::shader_stage shader_stage = api::shader_stage::vertex;
 
 		// Add HDR push constants for possible HDR swap chains
-		if ((_renderer_id & 0xB000 || _renderer_id & 0xC000 || _renderer_id & 0x20000) &&
+		if (((_renderer_id & 0xB000) == 0xB000 || (_renderer_id & 0xC000) == 0xC000 || (_renderer_id & 0x20000) == 0x20000) &&
 			(_back_buffer_format == reshade::api::format::r10g10b10a2_unorm || _back_buffer_format == reshade::api::format::b10g10r10a2_unorm || _back_buffer_format == reshade::api::format::r16g16b16a16_float))
 		{
 			num_push_constants += 4;
@@ -4676,7 +4675,7 @@ bool reshade::runtime::init_imgui_resources()
 	if ((_renderer_id & 0xF0000) == 0 || _renderer_id >= 0x20000)
 	{
 		const bool is_possibe_hdr_swapchain =
-			(_renderer_id & 0xB000 || _renderer_id & 0xC000 || _renderer_id & 0x20000) &&
+			((_renderer_id & 0xB000) == 0xB000 || (_renderer_id & 0xC000) == 0xC000 || (_renderer_id & 0x20000) == 0x20000) &&
 			(_back_buffer_format == reshade::api::format::r10g10b10a2_unorm || _back_buffer_format == reshade::api::format::b10g10r10a2_unorm || _back_buffer_format == reshade::api::format::r16g16b16a16_float);
 
 		const resources::data_resource vs_res = resources::load_data_resource(_renderer_id >= 0x20000 ? IDR_IMGUI_VS_SPIRV : _renderer_id < 0xa000 ? IDR_IMGUI_VS_3_0 : IDR_IMGUI_VS_4_0);
@@ -4886,7 +4885,7 @@ void reshade::runtime::render_imgui_draw_data(api::command_list *cmd_list, ImDra
 		cmd_list->push_descriptors(api::shader_stage::pixel, _imgui_pipeline_layout, 0, api::descriptor_table_update { {}, 0, 0, 1, api::descriptor_type::sampler, &_imgui_sampler_state });
 
 	// Add HDR push constants for possible HDR swap chains
-	if ((_renderer_id & 0xB000 || _renderer_id & 0xC000 || _renderer_id & 0x20000) &&
+	if (((_renderer_id & 0xB000) == 0xB000 || (_renderer_id & 0xC000) == 0xC000 || (_renderer_id & 0x20000) == 0x20000) &&
 		(_back_buffer_format == reshade::api::format::r10g10b10a2_unorm || _back_buffer_format == reshade::api::format::b10g10r10a2_unorm || _back_buffer_format == reshade::api::format::r16g16b16a16_float))
 	{
 		const struct {

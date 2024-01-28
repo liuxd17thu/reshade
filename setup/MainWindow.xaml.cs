@@ -901,6 +901,13 @@ namespace ReShade.Setup
 					{
 						Directory.CreateDirectory(commonPath);
 					}
+
+					// Make sure the DLLs will have permissions set up for 'ALL_APPLICATION_PACKAGES', so that loading the layer won't fail in UWP apps
+					var sid = new SecurityIdentifier("S-1-15-2-1");
+
+					DirectorySecurity access = Directory.GetAccessControl(commonPath);
+					access.AddAccessRule(new FileSystemAccessRule(sid, FileSystemRights.ReadAndExecute, AccessControlType.Allow));
+					Directory.SetAccessControl(commonPath, access);
 				}
 				catch (SystemException ex)
 				{
@@ -1309,7 +1316,8 @@ namespace ReShade.Setup
 			if (!config.HasValue("INPUT"))
 			{
 				config.SetValue("INPUT", "KeyOverlay", "48,1,0,0");
-				config.SetValue("INPUT", "GamepadNavigation", "1");
+				// Only enable gamepad input in cases where keyboard and mouse input is known to not work (when installed to UWP apps or the NVIDIA RTX Remix Bridge)
+				config.SetValue("INPUT", "GamepadNavigation", currentInfo.targetPath.Contains("WindowsApps") || Path.GetFileName(currentInfo.targetPath) == "NvRemixBridge.exe" ? "1" : "0");
 			}
 
 			// [CN2] Add default font and sound effects

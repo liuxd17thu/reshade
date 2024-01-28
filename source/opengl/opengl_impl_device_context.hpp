@@ -38,7 +38,9 @@ namespace reshade::opengl
 		void bind_framebuffer_with_resource(GLenum target, GLenum attachment, api::resource dest, uint32_t dest_subresource, const api::resource_desc &dest_desc);
 		void bind_framebuffer_with_resource_views(GLenum target, uint32_t count, const api::resource_view *rtvs, api::resource_view dsv);
 
+		void update_default_framebuffer(unsigned int width, unsigned int height);
 		void update_current_window_height(api::resource_view default_attachment);
+		void invalidate_framebuffer_cache();
 
 		void bind_pipeline(api::pipeline_stage stages, api::pipeline pipeline) final;
 		void bind_pipeline_states(uint32_t count, const api::dynamic_state *states, const uint32_t *values) final;
@@ -96,6 +98,10 @@ namespace reshade::opengl
 		GLuint _current_vertex_count = 0; // Used to calculate vertex count inside 'glBegin'/'glEnd' pairs
 		GLuint _current_window_height = 0; // Current height of the window coordinate system
 
+		// Each render context may be active with a different device context, corresponding to different dimensions (pixel format has to match, so texture format etc. are identical to '_default_fbo_desc' of the device)
+		unsigned int _default_fbo_width = 0;
+		unsigned int _default_fbo_height = 0;
+
 	private:
 		device_impl *const _device_impl;
 
@@ -106,7 +112,7 @@ namespace reshade::opengl
 		GLuint _push_constants = 0;
 		GLuint _push_constants_size = 0;
 
-	protected:
+		bool _fbo_lookup_valid = true;
 		std::unordered_map<size_t, GLuint> _fbo_lookup;
 	};
 }

@@ -67,7 +67,7 @@ static std::filesystem::path make_relative_path(const std::filesystem::path &pat
 	std::filesystem::path proximate_path = path.lexically_proximate(g_reshade_base_path);
 	if (proximate_path.native().rfind(L"..", 0) != std::wstring::npos)
 		return path; // Do not use relative path if preset is in a parent directory
-	if (proximate_path.is_relative())
+	if (proximate_path.is_relative() && !proximate_path.empty() && proximate_path.native().front() != L'.')
 		// Prefix preset path with dot character to better indicate it being a relative path
 		proximate_path = L"." / proximate_path;
 	return proximate_path;
@@ -2988,9 +2988,6 @@ void reshade::runtime::destroy_effect(size_t effect_index)
 {
 	assert(effect_index < _effects.size());
 
-	// Make sure no effect resources are currently in use
-	_graphics_queue->wait_idle();
-
 	for (technique &tech : _techniques)
 	{
 		if (tech.effect_index != effect_index)
@@ -3585,6 +3582,9 @@ bool reshade::runtime::reload_effect(size_t effect_index)
 	_show_splash = false; // Hide splash bar when reloading a single effect file
 #endif
 
+	// Make sure no effect resources are currently in use
+	_graphics_queue->wait_idle();
+
 	const std::filesystem::path source_file = _effects[effect_index].source_file;
 	destroy_effect(effect_index);
 
@@ -3631,6 +3631,9 @@ void reshade::runtime::destroy_effects()
 
 	// Reset the effect creation queue
 	_reload_create_queue.clear();
+
+	// Make sure no effect resources are currently in use (do this even when the effect list is empty, since it is dependent upon by 'on_reset')
+	_graphics_queue->wait_idle();
 
 	for (size_t effect_index = 0; effect_index < _effects.size(); ++effect_index)
 		destroy_effect(effect_index);
