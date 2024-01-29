@@ -28,7 +28,7 @@ namespace ReShade.Setup
 {
 	public static class SetupConfig
 	{
-		public static string CN2Version = @"CN2-v1.0";
+		public static string CN2Version = @"CN2-v1.0.1";
 		public static string CN2PackDir = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), CN2Version);
 		public static string SCFontName = @"sarasa-mono-sc-gb2312.ttf";
 		public static string ShutterSEName = @"350d-shutter.wav";
