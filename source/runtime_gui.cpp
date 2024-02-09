@@ -159,6 +159,13 @@ void reshade::runtime::build_font_atlas()
 			_default_font_path = L"C:\\Windows\\Fonts\\msgothic.ttc"; // MS Gothic
 	}
 	else
+	if (language.find("ko") == 0)
+	{
+		glyph_ranges = atlas->GetGlyphRangesKorean();
+
+		_default_font_path = L"C:\\Windows\\Fonts\\malgun.ttf"; // Malgun Gothic
+	}
+	else
 	if (language.find("zh") == 0)
 	{
 		glyph_ranges = GetGlyphRangesChineseSimplifiedGB2312();
@@ -908,8 +915,8 @@ void reshade::runtime::draw_gui()
 			{ ImGuiKey_DownArrow, 0x28 /* VK_DOWN */ },
 			{ ImGuiKey_PageUp, 0x21 /* VK_PRIOR */ },
 			{ ImGuiKey_PageDown, 0x22 /* VK_NEXT */ },
+			{ ImGuiKey_End, 0x23 /* VK_END */ },
 			{ ImGuiKey_Home, 0x24 /* VK_HOME */ },
-			{ ImGuiKey_End, 0x24 /* VK_END */ },
 			{ ImGuiKey_Insert, 0x2D /* VK_INSERT */ },
 			{ ImGuiKey_Delete, 0x2E /* VK_DELETE */ },
 			{ ImGuiKey_Backspace, 0x08 /* VK_BACK */ },
@@ -3002,7 +3009,7 @@ void reshade::runtime::draw_gui_about()
 {
 	ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT " " VERSION_STRING_CN2);
 
-	ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 7.3f * _font_size);
+	ImGui::SameLine(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(_(" Open website ")).x);
 	if (ImGui::SmallButton(_(" Open website ")))
 		utils::execute_command("https://reshade.me");
 
