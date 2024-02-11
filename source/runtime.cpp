@@ -1346,7 +1346,15 @@ void reshade::runtime::save_current_preset() const
 
 	// Save preset description
 	if (preset.has({}, "Description") || !_description.empty())
-		preset.set({}, "Description", _description);
+	{
+		std::string desc =  _description;
+		int pos = desc.find("\n");
+		while (pos != -1) {
+			desc.replace(pos, 1, "\\n");
+			pos = desc.find("\n");
+		}
+		preset.set({}, "Description", desc);
+	}
 
 	if (const auto preset_it = _preset_preprocessor_definitions.find({});
 		preset_it != _preset_preprocessor_definitions.end() && !preset_it->second.empty())
