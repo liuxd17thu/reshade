@@ -1182,7 +1182,7 @@ void reshade::runtime::load_current_preset()
 		}
 
 	}
-	
+
 	for (effect &effect : _effects) {
 		preset.get(effect.source_file.filename().u8string(), "PreprocessorDefinitions", preset_preprocessor_definitions[effect.source_file.filename().u8string()]);
 		// Scan and build ui_binds
@@ -1384,7 +1384,7 @@ void reshade::runtime::load_current_preset()
 			disable_technique(tech);
 
 		preset.get({}, "Key" + unique_name, tech.toggle_key_data);
-		preset.get({}, "Key" + tech.name, tech.toggle_key_data);
+		preset.get({}, "Key" + tech.name + build_postfix(_effects[tech.effect_index], _xshade_feature), tech.toggle_key_data);
 	}
 
 	// Reverse queue so that effects are enabled in the order they are defined in the preset (since the queue is worked from back to front)

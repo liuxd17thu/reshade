@@ -54,7 +54,18 @@ public:
 		return true;
 	}
 
-	/// <summary>
+	bool get_section_name(const std::string &section, std::vector<std::string> &data)
+	{
+		const auto it1 = _sections.find(section);
+		if (it1 == _sections.end())
+			return false;
+		data.clear();
+		data.resize(it1->second.size());
+		for (auto &kv : it1->second)
+			data.push_back(kv.first);
+		return true;
+	}
+	/// <summary>s
 	/// Gets the value of the specified <paramref name="section"/> and <paramref name="key"/> from the INI.
 	/// </summary>
 	/// <param name="value">Reference filled with the data of this INI entry.</param>

@@ -4496,12 +4496,20 @@ void reshade::runtime::draw_technique_editor()
 		if (make_effect_dup < size)
 		{
 			_show_splash = false;
-			reshade::effect dup_effect;
-			dup_effect.source_file = _effects[make_effect_dup].source_file;
-			dup_effect.included_files = _effects[make_effect_dup].included_files;
-			dup_effect.dup_id = std::move(make_dup_name);
-			_effects.emplace_back(dup_effect);
-			load_effect(dup_effect.source_file, ini_file::load_cache(_current_preset_path), _effects.size() - 1, true, true);
+			
+			auto source_name = _effects[make_effect_dup].source_file.filename().u8string();
+			auto exists = std::find_if(_effects.begin(), _effects.end(), [&](const effect &ef) {
+				return ef.dup_id == make_dup_name && ef.source_file.filename().u8string() == source_name;
+			}) != _effects.end();
+			if (!exists)
+			{
+				reshade::effect dup_effect;
+				dup_effect.source_file = _effects[make_effect_dup].source_file;
+				dup_effect.included_files = _effects[make_effect_dup].included_files;
+				dup_effect.dup_id = std::move(make_dup_name);
+				_effects.emplace_back(dup_effect);
+				load_effect(dup_effect.source_file, ini_file::load_cache(_current_preset_path), _effects.size() - 1, true, true);
+			}
 		}
 		// Remove effect duplication
 		if (remove_effect_dup < size)
@@ -4510,6 +4518,13 @@ void reshade::runtime::draw_technique_editor()
 			const std::string name = _effects[remove_effect_dup].source_file.filename().u8string()
 				+ build_postfix(_effects[remove_effect_dup], _xshade_feature);
 			preset.remove_section(name);
+
+			std::vector<std::string> keys;
+			preset.get_section_name("", keys);
+			for (auto & iter : keys)
+				if (iter.substr(0, 3) == "Key" && iter.find(name))
+					preset.remove_key("", iter);
+
 			destroy_effect(remove_effect_dup);
 			_effects.erase(_effects.begin() + remove_effect_dup);
 		}
