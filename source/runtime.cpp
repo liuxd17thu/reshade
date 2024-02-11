@@ -1088,6 +1088,18 @@ void reshade::runtime::load_current_preset()
 	std::vector<std::string> sorted_technique_list;
 	preset.get({}, "TechniqueSorting", sorted_technique_list);
 
+	// load preset description
+	if (preset.get({}, "Description", _description)) {
+		int pos = _description.find("\\n");
+		while (pos != -1) {
+			_description.replace(pos, 2, "\n");
+			pos = _description.find("\\n");
+		}
+	}
+	else{
+		_description.clear();
+	}
+
 	std::unordered_map<std::string, std::vector<std::pair<std::string, std::string>>> preset_preprocessor_definitions;
 	preset.get({}, "PreprocessorDefinitions", preset_preprocessor_definitions[{}]);
 	for (effect &effect : _effects) {
@@ -1331,6 +1343,10 @@ void reshade::runtime::save_current_preset() const
 		preset.set({}, "TechniqueSorting", std::move(sorted_technique_list));
 
 	preset.set({}, "Techniques", std::move(technique_list));
+
+	// Save preset description
+	if (preset.has({}, "Description") || !_description.empty())
+		preset.set({}, "Description", _description);
 
 	if (const auto preset_it = _preset_preprocessor_definitions.find({});
 		preset_it != _preset_preprocessor_definitions.end() && !preset_it->second.empty())

@@ -346,6 +346,7 @@ void reshade::runtime::load_config_gui(const ini_file &config)
 	config.get("OVERLAY", "AutoSavePreset", _auto_save_preset);
 	config.get("OVERLAY", "UIBindSupport", _ui_bind_support);
 	config.get("OVERLAY", "ShowPresetTransitionMessage", _show_preset_transition_message);
+	config.get("OVERLAY", "ShowPresetDescription", _show_preset_description);
 #endif
 
 	ImGuiStyle &imgui_style = _imgui_context->Style;
@@ -448,6 +449,7 @@ void reshade::runtime::save_config_gui(ini_file &config) const
 	config.set("OVERLAY", "AutoSavePreset", _auto_save_preset);
 	config.set("OVERLAY", "UIBindSupport", _ui_bind_support);
 	config.set("OVERLAY", "ShowPresetTransitionMessage", _show_preset_transition_message);
+	config.set("OVERLAY", "ShowPresetDescription", _show_preset_description);
 #endif
 
 	const ImGuiStyle &imgui_style = _imgui_context->Style;
@@ -1956,6 +1958,14 @@ void reshade::runtime::draw_gui_home()
 			save_config();
 		}
 
+		// show preset description before variables editor
+		if (_show_preset_description && !_description.empty()) {
+			if (ImGui::TreeNodeEx(_("Preset Description"), ImGuiTreeNodeFlags_DefaultOpen)) {
+				ImGui::Text(_description.c_str());
+				ImGui::TreePop();
+			}
+		}
+
 		if (_tutorial_index == 3)
 		{
 			tutorial_text = _(
@@ -2292,6 +2302,10 @@ void reshade::runtime::draw_gui_settings()
 
 		if (_effect_load_skipping)
 			modified |= ImGui::Checkbox(_("Show \"Force load all effects\" button"), &_show_force_load_effects_button);
+#endif
+
+#if RESHADE_FX
+		modified |= ImGui::Checkbox(_("Show preset description"), &_show_preset_description);
 #endif
 
 #if RESHADE_FX
