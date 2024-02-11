@@ -174,6 +174,8 @@ namespace reshade
 		void save_config() const;
 
 #if RESHADE_FX
+		std::string build_postfix(const effect &effect, int feature) const;
+		bool check_preset_feature(int feature) const;
 		void load_current_preset();
 		void save_current_preset() const final;
 
@@ -475,6 +477,8 @@ namespace reshade
 		bool _variable_editor_tabs = false;
 		bool _auto_save_preset = true;
 		bool _ui_bind_support = true;
+		int _xshade_feature = 1;
+		bool _xshade_auto_feature = false;
 		size_t _uniform_binding_updated = std::numeric_limits<size_t>::max();
 		bool _preset_is_modified = false;
 		bool _inherit_current_preset = false;

@@ -251,6 +251,18 @@ public:
 		_modified = true;
 		_modified_at = std::filesystem::file_time_type::clock::now();
 	}
+	/// <summary>
+	/// Removes a whole <paramref name="section"/>.
+	/// </summary>
+	void remove_section(const std::string &section)
+	{
+		const auto it = _sections.find(section);
+		if (it == _sections.end())
+			return;
+		_sections.erase(it);
+		_modified = true;
+		_modified_at = std::filesystem::file_time_type::clock::now();
+	}
 
 	/// <summary>
 	/// Loads all values from disk.

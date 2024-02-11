@@ -953,6 +953,10 @@ void reshade::runtime::load_config()
 	config_get("GENERAL", "PresetPath", _current_preset_path);
 	config_get("GENERAL", "PresetTransitionDuration", _preset_transition_duration);
 
+	config_get("GENERAL", "UIBindSupport", _ui_bind_support);
+	config_get("GENERAL", "XShadeFeature", _xshade_feature);
+	config_get("GENERAL", "XShadeAutoFeature", _xshade_auto_feature);
+
 	// Fall back to temp directory if cache path does not exist
 	std::error_code ec;
 	if (_effect_cache_path.empty() || !resolve_path(_effect_cache_path, ec))
@@ -1036,6 +1040,10 @@ void reshade::runtime::save_config() const
 
 	config.set("GENERAL", "PresetTransitionDuration", _preset_transition_duration);
 
+	config.set("GENERAL", "UIBindSupport", _ui_bind_support);
+	config.set("GENERAL", "XShadeFeature", _xshade_feature);
+	config.set("GENERAL", "XShadeAutoFeature", _xshade_auto_feature);
+
 	std::vector<unsigned int> preset_key_data;
 	std::vector<std::filesystem::path> preset_shortcut_paths;
 	for (const preset_shortcut &shortcut : _preset_shortcuts)
@@ -1077,6 +1085,42 @@ void reshade::runtime::save_config() const
 }
 
 #if RESHADE_FX
+std::string reshade::runtime::build_postfix(const effect & effect, int feature) const
+{
+	std::string ret = "";
+	switch (feature)
+	{
+	case 3: {
+		ret = (effect.dup_id == "") ? "" : ("+" + effect.dup_id);
+		break;
+	}
+	case 4: {
+		// ret = (effect.dup_id == "") ? "" : ("|" + effect.dup_id);
+		break;
+	}
+	default:
+		ret = "";
+	}
+	return ret;
+}
+
+bool reshade::runtime::check_preset_feature(int feature) const
+{
+	bool ret = false;
+	switch (feature)
+	{
+	case 3: {
+		ret = std::find_if(_effects.begin(), _effects.end(),
+			[](const reshade::effect &ef) { return ef.dup_id != ""; }
+		) != _effects.end();
+		break;
+	}
+	default:
+		ret = false;
+	}
+	return ret;
+}
+
 void reshade::runtime::load_current_preset()
 {
 	_preset_save_successful = true;
@@ -1090,6 +1134,55 @@ void reshade::runtime::load_current_preset()
 
 	std::unordered_map<std::string, std::vector<std::pair<std::string, std::string>>> preset_preprocessor_definitions;
 	preset.get({}, "PreprocessorDefinitions", preset_preprocessor_definitions[{}]);
+	std::vector<std::string> flair_list;
+	preset.get({}, "Flairs", flair_list);
+
+	if (_xshade_auto_feature)
+		_xshade_feature = [&]() -> int {
+			// gshade 4 check
+			if (!flair_list.empty())
+				return 4;
+			// gshade 3 check
+			std::vector<std::string> &check_tech_list = sorted_technique_list.empty() ? technique_list : sorted_technique_list;
+			auto tech_it = std::find_if(check_tech_list.begin(), check_tech_list.end(), [](const std::string &it) {
+				return it.find('+') != it.npos;
+			});
+			if (tech_it != check_tech_list.end())
+				return 3;
+			return 1;
+		}();
+
+	if (_xshade_feature == 3)
+	{
+		auto &check_tech_list = sorted_technique_list.empty() ? technique_list : sorted_technique_list;
+		for (auto &tech : check_tech_list)
+		{
+			auto p = tech.find('+'), a = tech.find('@');
+			if (p == std::string::npos || a == std::string::npos)
+				continue;
+			const std::string dup_id = tech.substr(p + 1);
+			const std::string effect_file = tech.substr(a + 1, p - a - 1);
+			// For a valid duplication, the corresponding effect should already exist.
+			auto base_effect_it = std::find_if(_effects.begin(), _effects.end(),
+				[&](const effect &ef) {
+					return ef.source_file.filename().u8string() == effect_file && ef.dup_id == "";
+				});
+			// Check if the duplication already exists
+			auto dup_effect_it = std::find_if(_effects.begin(), _effects.end(),
+				[&](const effect &ef) {
+					return ef.source_file.filename().u8string() == effect_file && ef.dup_id == dup_id;
+				});
+			if (base_effect_it == _effects.end() || dup_effect_it != _effects.end()) continue;
+			effect dup_effect;
+			dup_effect.dup_id = dup_id;
+			dup_effect.source_file = base_effect_it->source_file;
+			dup_effect.included_files = base_effect_it->included_files;
+			_effects.emplace_back(dup_effect);
+			load_effect(dup_effect.source_file, ini_file::load_cache(_current_preset_path), _effects.size() - 1, true, true);
+		}
+
+	}
+	
 	for (effect &effect : _effects) {
 		preset.get(effect.source_file.filename().u8string(), "PreprocessorDefinitions", preset_preprocessor_definitions[effect.source_file.filename().u8string()]);
 		// Scan and build ui_binds
@@ -1175,11 +1268,13 @@ void reshade::runtime::load_current_preset()
 			const technique &lhs = _techniques[lhs_technique_index];
 			const technique &rhs = _techniques[rhs_technique_index];
 
-			const std::string lhs_unique = lhs.name + '@' + _effects[lhs.effect_index].source_file.filename().u8string();
+			const std::string lhs_unique = lhs.name + '@' + _effects[lhs.effect_index].source_file.filename().u8string()
+				+ build_postfix(_effects[lhs.effect_index], _xshade_feature);
 			auto lhs_it = std::find(sorted_technique_list.cbegin(), sorted_technique_list.cend(), lhs_unique);
 			lhs_it = (lhs_it == sorted_technique_list.cend()) ? std::find(sorted_technique_list.cbegin(), sorted_technique_list.cend(), lhs.name) : lhs_it;
 
-			const std::string rhs_unique = rhs.name + '@' + _effects[rhs.effect_index].source_file.filename().u8string();
+			const std::string rhs_unique = rhs.name + '@' + _effects[rhs.effect_index].source_file.filename().u8string()
+				+ build_postfix(_effects[rhs.effect_index], _xshade_feature);
 			auto rhs_it = std::find(sorted_technique_list.cbegin(), sorted_technique_list.cend(), rhs_unique);
 			rhs_it = (rhs_it == sorted_technique_list.cend()) ? std::find(sorted_technique_list.cbegin(), sorted_technique_list.cend(), rhs.name) : rhs_it;
 
@@ -1222,7 +1317,8 @@ void reshade::runtime::load_current_preset()
 
 	for (effect &effect : _effects)
 	{
-		const std::string effect_name = effect.source_file.filename().u8string();
+		const std::string effect_name = effect.source_file.filename().u8string()
+			+ build_postfix(effect, _xshade_feature);
 
 		for (uniform &variable : effect.uniforms)
 		{
@@ -1276,7 +1372,8 @@ void reshade::runtime::load_current_preset()
 
 	for (technique &tech : _techniques)
 	{
-		const std::string unique_name = tech.name + '@' + _effects[tech.effect_index].source_file.filename().u8string();
+		const std::string unique_name = tech.name + '@' + _effects[tech.effect_index].source_file.filename().u8string()
+			+ build_postfix(_effects[tech.effect_index], _xshade_feature);
 
 		// Ignore preset if "enabled" annotation is set
 		if (tech.annotation_as_int("enabled") ||
@@ -1311,7 +1408,8 @@ void reshade::runtime::save_current_preset() const
 		if (tech.annotation_as_uint("nosave"))
 			continue;
 
-		const std::string unique_name = tech.name + '@' + _effects[tech.effect_index].source_file.filename().u8string();
+		std::string unique_name = tech.name + '@' + _effects[tech.effect_index].source_file.filename().u8string()
+			+ build_postfix(_effects[tech.effect_index], _xshade_feature);
 
 		if (tech.enabled)
 			technique_list.push_back(unique_name);
@@ -1346,7 +1444,8 @@ void reshade::runtime::save_current_preset() const
 
 		const effect &effect = _effects[effect_index];
 
-		const std::string effect_name = effect.source_file.filename().u8string();
+		const std::string effect_name = effect.source_file.filename().u8string()
+			+ build_postfix(effect, _xshade_feature);
 
 		if (!_ui_bind_support)
 		{
@@ -1603,10 +1702,12 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 		// Source hash has changed, reset effect and load from scratch, rather than updating
 		// Backup and re-apply binds
 		auto binding_backup = std::move(effect.definition_bindings);
+		auto dup_backup = effect.dup_id;
 		effect = {};
 
 		if (_ui_bind_support)
 			effect.definition_bindings = std::move(binding_backup);
+		effect.dup_id = dup_backup;
 
 		effect.source_file = source_file;
 		effect.source_hash = source_hash;

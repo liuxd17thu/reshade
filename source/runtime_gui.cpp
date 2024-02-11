@@ -36,6 +36,13 @@ static auto filter_name(ImGuiInputTextCallbackData *data) -> int
 	return data->EventChar == L'\"' || data->EventChar == L'*' || data->EventChar == L'/' || data->EventChar == L':' || data->EventChar == L'<' || data->EventChar == L'>' || data->EventChar == L'?' || data->EventChar == L'\\' || data->EventChar == L'|';
 }
 
+static auto filter_name_plus(ImGuiInputTextCallbackData *data) -> int
+{
+	// Legal In GShade: [-] [_] [']
+	return !(data->EventChar >= 'A' && data->EventChar <= 'Z') && !(data->EventChar >= 'a' && data->EventChar <= 'z') && !(data->EventChar >= '0' && data->EventChar <= '9')
+		&& data->EventChar != '-' && data->EventChar != '_' && data->EventChar != '\'';
+}
+
 template <typename F>
 static void parse_errors(const std::string_view errors, F &&callback)
 {
@@ -344,7 +351,6 @@ void reshade::runtime::load_config_gui(const ini_file &config)
 	config.get("OVERLAY", "VariableListHeight", _variable_editor_height);
 	config.get("OVERLAY", "VariableListUseTabs", _variable_editor_tabs);
 	config.get("OVERLAY", "AutoSavePreset", _auto_save_preset);
-	config.get("OVERLAY", "UIBindSupport", _ui_bind_support);
 	config.get("OVERLAY", "ShowPresetTransitionMessage", _show_preset_transition_message);
 #endif
 
@@ -446,7 +452,6 @@ void reshade::runtime::save_config_gui(ini_file &config) const
 	config.set("OVERLAY", "VariableListHeight", _variable_editor_height);
 	config.set("OVERLAY", "VariableListUseTabs", _variable_editor_tabs);
 	config.set("OVERLAY", "AutoSavePreset", _auto_save_preset);
-	config.set("OVERLAY", "UIBindSupport", _ui_bind_support);
 	config.set("OVERLAY", "ShowPresetTransitionMessage", _show_preset_transition_message);
 #endif
 
@@ -1660,11 +1665,39 @@ void reshade::runtime::draw_gui_home()
 			ImGui::SameLine(0, button_spacing);
 		}
 
-		if (imgui::toggle_button(_ui_bind_support ? "B" : "R", _ui_bind_support, button_size))
+		if (ImGui::Button("X", ImVec2(button_size, 0)))
+			ImGui::OpenPopup("##Feature Level");
+		if (ImGui::BeginPopup("##Feature Level"))
 		{
-			ImGui::SetTooltip("Toggle \"ui_bind\" support");
-			save_config();
-		};
+			bool modified = false;
+			ImGui::TextUnformatted("XShade Feature Setting");
+
+			std::string status = _ui_bind_support ? " ON" : "OFF";
+			const std::string toggle_str = "UI_BIND Support: " + status;
+			if (imgui::toggle_button(toggle_str.c_str(), _ui_bind_support, 18.0f * _font_size))
+				save_config();
+			const std::string feature_string[3] {"ReShade", "GShade 3 (Shader Cloning)", "[WIP] GShade 4+ (Preset Flair)"};
+			const int feature_id[3] = {1, 3, 4};
+			bool feature_is_using = check_preset_feature(_xshade_feature);
+			ImGui::Separator();
+			if (feature_is_using)
+			{
+				ImGui::TextColored(ImColor(255, 255, 100), "Feature In Use:");
+			}
+			for (auto i = 0; i < 3; i++) {
+				if (feature_is_using && feature_id[i] != _xshade_feature)
+					continue;
+				if (ImGui::RadioButton(feature_string[i].c_str(), &_xshade_feature, feature_id[i]))
+					modified = true;
+			}
+			ImGui::Separator();
+			ImGui::Checkbox("Auto select when loading", &_xshade_auto_feature);
+			if (modified) {
+				save_config();
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::EndPopup();
+		}
 		ImGui::SameLine(0, button_spacing);
 
 		// Cannot save in performance mode, since there are no variables to retrieve values from then
@@ -3393,7 +3426,8 @@ void reshade::runtime::draw_variable_editor()
 
 		bool force_reload_effect = false;
 		const bool is_focused = _focused_effect == effect_index;
-		const std::string effect_name = effect.source_file.filename().u8string();
+		const std::string effect_name = effect.source_file.filename().u8string()
+			+ build_postfix(effect, _xshade_feature);
 
 		// Create separate tab for every effect file
 		if (_variable_editor_tabs)
@@ -4203,6 +4237,9 @@ void reshade::runtime::draw_technique_editor()
 	size_t force_reload_effect = std::numeric_limits<size_t>::max();
 	size_t hovered_technique_index = std::numeric_limits<size_t>::max();
 
+	size_t remove_effect_dup = std::numeric_limits<size_t>::max();
+	size_t make_effect_dup = std::numeric_limits<size_t>::max();
+	std::string make_dup_name = "";
 	for (size_t index = 0; index < _technique_sorting.size(); ++index)
 	{
 		const size_t technique_index = _technique_sorting[index];
@@ -4245,6 +4282,7 @@ void reshade::runtime::draw_technique_editor()
 				std::string label(get_localized_annotation(tech, "ui_label", _current_language));
 				if (label.empty())
 					label = tech.name;
+				label += build_postfix(_effects[tech.effect_index], _xshade_feature);
 				label += " [" + effect.source_file.filename().u8string() + ']';
 
 				if (bool status = tech.enabled;
@@ -4284,7 +4322,37 @@ void reshade::runtime::draw_technique_editor()
 			// Create context menu
 			if (ImGui::BeginPopupContextItem("##context"))
 			{
-				ImGui::TextUnformatted(tech.name.c_str());
+				ImGui::Text(tech.name.c_str());
+				if (_xshade_feature == 3)
+				{
+					ImGui::SameLine(9.8f * _font_size);
+					if (ImGui::Button("+ DUP", ImVec2(4.0f * _font_size, 0)))
+						ImGui::OpenPopup("##Create Duplicate");
+					if (ImGui::BeginPopup("##Create Duplicate"))
+					{
+						char dup_name[260] = "";
+						if (ImGui::InputText("Duplicate Name", dup_name, sizeof(dup_name), ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCharFilter, filter_name_plus)
+							&& dup_name[0] != '\0')
+						{
+							make_effect_dup = tech.effect_index;
+							make_dup_name = dup_name;
+							ImGui::CloseCurrentPopup();
+						}
+						ImGui::EndPopup();
+					}
+					if (make_effect_dup != std::numeric_limits<size_t>::max())
+						ImGui::CloseCurrentPopup();
+					ImGui::SameLine(14.0f * _font_size);
+					if (effect.dup_id.empty())
+						ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+					if (ImGui::Button("- DUP", ImVec2(4.0f * _font_size, 0)))
+					{
+						remove_effect_dup = tech.effect_index;
+						ImGui::CloseCurrentPopup();
+					}
+					if (effect.dup_id.empty())
+						ImGui::PopItemFlag();
+				}
 				ImGui::Separator();
 
 				ImGui::SetNextItemWidth(18.0f * _font_size);
@@ -4420,6 +4488,39 @@ void reshade::runtime::draw_technique_editor()
 				else
 					_preset_is_modified = true;
 			}
+		}
+	}
+	if (_xshade_feature == 3) {
+		// Build effect duplication
+		auto size = _effects.size();
+		if (make_effect_dup < size)
+		{
+			_show_splash = false;
+			reshade::effect dup_effect;
+			dup_effect.source_file = _effects[make_effect_dup].source_file;
+			dup_effect.included_files = _effects[make_effect_dup].included_files;
+			dup_effect.dup_id = std::move(make_dup_name);
+			_effects.emplace_back(dup_effect);
+			load_effect(dup_effect.source_file, ini_file::load_cache(_current_preset_path), _effects.size() - 1, true, true);
+		}
+		// Remove effect duplication
+		if (remove_effect_dup < size)
+		{
+			ini_file &preset = ini_file::load_cache(_current_preset_path);
+			const std::string name = _effects[remove_effect_dup].source_file.filename().u8string()
+				+ build_postfix(_effects[remove_effect_dup], _xshade_feature);
+			preset.remove_section(name);
+			destroy_effect(remove_effect_dup);
+			_effects.erase(_effects.begin() + remove_effect_dup);
+		}
+		if (make_effect_dup < size || remove_effect_dup < size)
+		{
+			if (_auto_save_preset)
+				save_current_preset();
+			else
+				_preset_is_modified = true;
+			make_effect_dup = std::numeric_limits<size_t>::max();
+			remove_effect_dup = std::numeric_limits<size_t>::max();
 		}
 	}
 
