@@ -1157,8 +1157,10 @@ void reshade::runtime::load_current_preset()
 		auto &check_tech_list = sorted_technique_list.empty() ? technique_list : sorted_technique_list;
 		for (auto &tech : check_tech_list)
 		{
-			auto p = tech.find('+'), a = tech.find('@');
-			if (p == std::string::npos || a == std::string::npos)
+			// "+" may exist in file name part, e.g. "abc+d_.fx+alter" "abc+d_.fx"
+			// so check if '.'(from ".fx") exists in the potential "dup id"
+			auto p = tech.rfind('+'), a = tech.find('@');
+			if (p == std::string::npos || a == std::string::npos || tech.substr(p + 1).find('.') != std::string::npos)
 				continue;
 			const std::string dup_id = tech.substr(p + 1);
 			const std::string effect_file = tech.substr(a + 1, p - a - 1);

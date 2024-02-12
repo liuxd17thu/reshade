@@ -1088,7 +1088,7 @@ void reshade::runtime::draw_gui()
 			ImGuiWindowFlags_NoDocking |
 			ImGuiWindowFlags_NoFocusOnAppearing);
 
-		ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT " " VERSION_STRING_CN2);
+		ImGui::Text("AuroraShade %s (Based on ReShade %s)", VERSION_STRING_CN2, VERSION_STRING_PRODUCT);
 
 		if ((s_latest_version[0] > VERSION_MAJOR) ||
 			(s_latest_version[0] == VERSION_MAJOR && s_latest_version[1] > VERSION_MINOR) ||
@@ -1101,7 +1101,8 @@ void reshade::runtime::draw_gui()
 		}
 		else
 		{
-			ImGui::Text(_("Visit %s for news, updates, effects and discussion."), "https://reshade.me");
+			// ImGui::Text(_("Visit %s for news, updates, effects and discussion."), "https://reshade.me");
+			ImGui::Text("Developed by BarricadeMKXX.");
 		}
 
 		ImGui::Spacing();
@@ -1867,7 +1868,7 @@ void reshade::runtime::draw_gui_home()
 				if (label.empty())
 					label = tech.name;
 
-				tech.hidden = tech.annotation_as_int("hidden") != 0 || !(filter_text(label, _effect_filter) || filter_text(_effects[tech.effect_index].source_file.filename().u8string(), _effect_filter));
+				tech.hidden = tech.annotation_as_int("hidden") != 0 || !(filter_text(label, _effect_filter) || filter_text(_effects[tech.effect_index].source_file.filename().u8string() + build_postfix(_effects[tech.effect_index], _xshade_feature), _effect_filter));
 			}
 		}
 
@@ -3033,7 +3034,8 @@ void reshade::runtime::draw_gui_log()
 }
 void reshade::runtime::draw_gui_about()
 {
-	ImGui::TextUnformatted("ReShade " VERSION_STRING_PRODUCT " " VERSION_STRING_CN2);
+	ImGui::TextUnformatted("AuroraShade" VERSION_STRING_CN2);
+	ImGui::TextUnformatted("Based on ReShade " VERSION_STRING_PRODUCT);
 
 	ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 7.3f * _font_size);
 	if (ImGui::SmallButton(_(" Open website ")))
@@ -3041,13 +3043,13 @@ void reshade::runtime::draw_gui_about()
 
 	if (_current_language == "zh-CN")
 	{
-		ImGui::TextUnformatted("CN2魔改：路障MKXX");
+		ImGui::TextUnformatted("作者：路障MKXX");
 		ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 7.3f * _font_size);
 		if (ImGui::SmallButton(" 改版源码 "))
 			utils::execute_command("https://github.com/liuxd17thu/reshade");
 		ImGui::PushTextWrapPos();
 		ImGui::TextUnformatted("联系方式：[微博同名] | 路障MKXX @FF14-宇宙和音 | wujingluren @NGA | liuxd17thu @github");
-		ImGui::TextUnformatted("感谢【印度神油君】【粒粒梦想】【白玉为何物】【夜莺不语】等人提供的帮助，以及各位用户的支持！");
+		ImGui::TextUnformatted("感谢【印度神油君】【粒粒梦想】【白玉为何物】等人提供的帮助，以及各位用户的支持！");
 	}
 	else
 	{
@@ -4509,6 +4511,9 @@ void reshade::runtime::draw_technique_editor()
 				dup_effect.dup_id = std::move(make_dup_name);
 				_effects.emplace_back(dup_effect);
 				load_effect(dup_effect.source_file, ini_file::load_cache(_current_preset_path), _effects.size() - 1, true, true);
+#if RESHADE_ADDON
+				invoke_addon_event<addon_event::reshade_reloaded_effects>(this);
+#endif
 			}
 		}
 		// Remove effect duplication
@@ -4526,6 +4531,9 @@ void reshade::runtime::draw_technique_editor()
 					preset.remove_key("", iter);
 
 			destroy_effect(remove_effect_dup);
+#if RESHADE_ADDON
+			invoke_addon_event<addon_event::reshade_reloaded_effects>(this);
+#endif
 			_effects.erase(_effects.begin() + remove_effect_dup);
 		}
 		if (make_effect_dup < size || remove_effect_dup < size)
