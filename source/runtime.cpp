@@ -1095,7 +1095,7 @@ std::string reshade::runtime::build_postfix(const effect & effect, int feature) 
 		break;
 	}
 	case 4: {
-		// ret = (effect.dup_id == "") ? "" : ("|" + effect.dup_id);
+		ret = (_current_flair == "" || _current_flair == u8"\u2014") ? "" : ("|" + _current_flair);
 		break;
 	}
 	default:
@@ -1113,6 +1113,10 @@ bool reshade::runtime::check_preset_feature(int feature) const
 		ret = std::find_if(_effects.begin(), _effects.end(),
 			[](const reshade::effect &ef) { return ef.dup_id != ""; }
 		) != _effects.end();
+		break;
+	}
+	case 4: {
+		ret = _flairs.size() > 1;
 		break;
 	}
 	default:
@@ -1134,13 +1138,19 @@ void reshade::runtime::load_current_preset()
 
 	std::unordered_map<std::string, std::vector<std::pair<std::string, std::string>>> preset_preprocessor_definitions;
 	preset.get({}, "PreprocessorDefinitions", preset_preprocessor_definitions[{}]);
-	std::vector<std::string> flair_list;
-	preset.get({}, "Flairs", flair_list);
+
+	std::vector<std::string> tmp_flair;
+	preset.get({}, "Flairs", tmp_flair);
+	preset.get({}, "CurrentFlair", _current_flair);
+	if (_current_flair.empty())
+		_current_flair = u8"\u2014";
+	_flairs.clear(); _flairs.push_back(u8"\u2014");
+	_flairs.insert(_flairs.end(), std::make_move_iterator(tmp_flair.begin()), std::make_move_iterator(tmp_flair.end()));
 
 	if (_xshade_auto_feature)
 		_xshade_feature = [&]() -> int {
 			// gshade 4 check
-			if (!flair_list.empty())
+			if (_flairs.size() > 1)
 				return 4;
 			// gshade 3 check
 			std::vector<std::string> &check_tech_list = sorted_technique_list.empty() ? technique_list : sorted_technique_list;
@@ -1271,12 +1281,12 @@ void reshade::runtime::load_current_preset()
 			const technique &rhs = _techniques[rhs_technique_index];
 
 			const std::string lhs_unique = lhs.name + '@' + _effects[lhs.effect_index].source_file.filename().u8string()
-				+ build_postfix(_effects[lhs.effect_index], _xshade_feature);
+				+ (_xshade_feature == 3 ? build_postfix(_effects[lhs.effect_index], _xshade_feature) : "");
 			auto lhs_it = std::find(sorted_technique_list.cbegin(), sorted_technique_list.cend(), lhs_unique);
 			lhs_it = (lhs_it == sorted_technique_list.cend()) ? std::find(sorted_technique_list.cbegin(), sorted_technique_list.cend(), lhs.name) : lhs_it;
 
 			const std::string rhs_unique = rhs.name + '@' + _effects[rhs.effect_index].source_file.filename().u8string()
-				+ build_postfix(_effects[rhs.effect_index], _xshade_feature);
+				+ (_xshade_feature == 3 ? build_postfix(_effects[rhs.effect_index], _xshade_feature) : "");
 			auto rhs_it = std::find(sorted_technique_list.cbegin(), sorted_technique_list.cend(), rhs_unique);
 			rhs_it = (rhs_it == sorted_technique_list.cend()) ? std::find(sorted_technique_list.cbegin(), sorted_technique_list.cend(), rhs.name) : rhs_it;
 
@@ -1319,8 +1329,18 @@ void reshade::runtime::load_current_preset()
 
 	for (effect &effect : _effects)
 	{
-		const std::string effect_name = effect.source_file.filename().u8string()
-			+ build_postfix(effect, _xshade_feature);
+		const std::string raw_effect_name = effect.source_file.filename().u8string();
+		std::string effect_name = raw_effect_name + build_postfix(effect, _xshade_feature);
+		if (_xshade_feature == 4)
+		{
+			if (preset.has(effect_name))
+				effect.flair_touched = true;
+			else
+			{
+				effect_name = raw_effect_name;
+				effect.flair_touched = false;
+			}
+		}
 
 		for (uniform &variable : effect.uniforms)
 		{
@@ -1330,7 +1350,7 @@ void reshade::runtime::load_current_preset()
 
 			if (variable.supports_toggle_key())
 			{
-				if (!preset.get(effect_name, "Key" + variable.name, variable.toggle_key_data))
+				if (!preset.get(raw_effect_name, "Key" + variable.name, variable.toggle_key_data))
 					std::memset(variable.toggle_key_data, 0, sizeof(variable.toggle_key_data));
 			}
 
@@ -1375,7 +1395,7 @@ void reshade::runtime::load_current_preset()
 	for (technique &tech : _techniques)
 	{
 		const std::string unique_name = tech.name + '@' + _effects[tech.effect_index].source_file.filename().u8string()
-			+ build_postfix(_effects[tech.effect_index], _xshade_feature);
+			+ build_postfix(_effects[tech.effect_index], _xshade_feature == 3 ? 3 : 0);
 
 		// Ignore preset if "enabled" annotation is set
 		if (tech.annotation_as_int("enabled") ||
@@ -1403,6 +1423,14 @@ void reshade::runtime::save_current_preset() const
 	std::vector<std::string> sorted_technique_list;
 	sorted_technique_list.reserve(_technique_sorting.size());
 
+	if (_xshade_feature == 4)
+	{
+		auto save_flair = std::vector(_flairs.begin() + 1, _flairs.end());
+		preset.set({}, "Flairs", save_flair);
+		if (!_current_flair.empty())
+			preset.set({}, "CurrentFlair", _current_flair);
+	}
+
 	for (size_t technique_index : _technique_sorting)
 	{
 		const technique &tech = _techniques[technique_index];
@@ -1411,7 +1439,7 @@ void reshade::runtime::save_current_preset() const
 			continue;
 
 		std::string unique_name = tech.name + '@' + _effects[tech.effect_index].source_file.filename().u8string()
-			+ build_postfix(_effects[tech.effect_index], _xshade_feature);
+			+ build_postfix(_effects[tech.effect_index], _xshade_feature == 3 ? 3 : 0);
 
 		if (tech.enabled)
 			technique_list.push_back(unique_name);
@@ -1446,20 +1474,20 @@ void reshade::runtime::save_current_preset() const
 
 		const effect &effect = _effects[effect_index];
 
-		const std::string effect_name = effect.source_file.filename().u8string()
-			+ build_postfix(effect, _xshade_feature);
+		const std::string raw_effect_name = effect.source_file.filename().u8string();
+		const std::string effect_name = effect.flair_touched ? (raw_effect_name + build_postfix(effect, _xshade_feature)) : raw_effect_name;
 
 		if (!_ui_bind_support)
 		{
-			if (const auto preset_it = _preset_preprocessor_definitions.find(effect_name);
+			if (const auto preset_it = _preset_preprocessor_definitions.find(raw_effect_name);
 				preset_it != _preset_preprocessor_definitions.end() && !preset_it->second.empty())
-				preset.set(effect_name, "PreprocessorDefinitions", preset_it->second);
+				preset.set(raw_effect_name, "PreprocessorDefinitions", preset_it->second);
 			else
-				preset.remove_key(effect_name, "PreprocessorDefinitions");
+				preset.remove_key(raw_effect_name, "PreprocessorDefinitions");
 		}
 		else
 		{
-			if (const auto preset_it = _preset_preprocessor_definitions.find(effect_name);
+			if (const auto preset_it = _preset_preprocessor_definitions.find(raw_effect_name);
 				preset_it != _preset_preprocessor_definitions.end())
 			{
 				auto pp_with_value { preset_it->second };
@@ -1479,9 +1507,9 @@ void reshade::runtime::save_current_preset() const
 					if(definition_bind.second.second != "")
 						pp_with_value.insert(pp_with_value.end(), definition_bind.second);
 				if (!pp_with_value.empty())
-					preset.set(effect_name, "PreprocessorDefinitions", pp_with_value);
+					preset.set(raw_effect_name, "PreprocessorDefinitions", pp_with_value);
 				else
-					preset.remove_key(effect_name, "PreprocessorDefinitions");
+					preset.remove_key(raw_effect_name, "PreprocessorDefinitions");
 			}
 		}
 
@@ -1495,9 +1523,9 @@ void reshade::runtime::save_current_preset() const
 			{
 				// Save the shortcut key into the preset files
 				if (variable.toggle_key_data[0] != 0)
-					preset.set(effect_name, "Key" + variable.name, variable.toggle_key_data);
+					preset.set(raw_effect_name, "Key" + variable.name, variable.toggle_key_data);
 				else
-					preset.remove_key(effect_name, "Key" + variable.name);
+					preset.remove_key(raw_effect_name, "Key" + variable.name);
 			}
 
 			const unsigned int components = variable.type.components();

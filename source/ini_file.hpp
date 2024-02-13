@@ -54,6 +54,12 @@ public:
 		return true;
 	}
 
+	bool has(const std::string &section) const
+	{
+		const auto it1 = _sections.find(section);
+		return it1 != _sections.end();
+	}
+
 	bool get_section_name(const std::string &section, std::vector<std::string> &data)
 	{
 		const auto it1 = _sections.find(section);

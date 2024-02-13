@@ -1637,7 +1637,7 @@ void reshade::runtime::draw_gui_home()
 		std::string auto_save_button_label = was_auto_save_preset ? _("Auto Save on") : _("Auto Save");
 		auto_save_button_label += "###auto_save";
 
-		if (imgui::toggle_button(auto_save_button_label.c_str(), _auto_save_preset, (was_auto_save_preset ? 0.0f : auto_save_button_spacing) + (12.5f * _font_size) - (button_spacing + button_size) * (was_auto_save_preset ? 3 : 4)))
+		if (imgui::toggle_button(auto_save_button_label.c_str(), _auto_save_preset, (was_auto_save_preset ? 0.0f : auto_save_button_spacing) + (12.5f * _font_size) - 0.5f * button_spacing - (button_spacing + button_size) * (was_auto_save_preset ? 3 : 4)))
 		{
 			_preset_is_modified = false;
 
@@ -1671,13 +1671,14 @@ void reshade::runtime::draw_gui_home()
 		if (ImGui::BeginPopup("##Feature Level"))
 		{
 			bool modified = false;
-			ImGui::TextUnformatted("XShade Feature Setting");
-
+			ImGui::TextUnformatted("AuroraShade Feature Setting");
+			ImGui::Spacing();
+			ImGui::Separator();
 			std::string status = _ui_bind_support ? " ON" : "OFF";
 			const std::string toggle_str = "UI_BIND Support: " + status;
 			if (imgui::toggle_button(toggle_str.c_str(), _ui_bind_support, 18.0f * _font_size))
 				save_config();
-			const std::string feature_string[3] {"ReShade", "GShade 3 (Shader Cloning)", "[WIP] GShade 4+ (Preset Flair)"};
+			const std::string feature_string[3] {"ReShade\n  Nothing", "GShade 3\n  Shader Cloning", "GShade 4+ \n  Preset Template/Variation"};
 			const int feature_id[3] = {1, 3, 4};
 			bool feature_is_using = check_preset_feature(_xshade_feature);
 			ImGui::Separator();
@@ -1823,6 +1824,104 @@ void reshade::runtime::draw_gui_home()
 			if (!is_loading()) // Will be called by 'update_effects' when 'load_current_preset' forced a reload
 				invoke_addon_event<addon_event::reshade_set_current_preset_path>(this, _current_preset_path.u8string().c_str());
 #endif
+		}
+
+		std::string next_flair = _current_flair;
+		auto get_flair_it = [&]() -> std::vector<std::string>::iterator {
+			auto flair_it = std::find(_flairs.begin(), _flairs.end(), _current_flair);
+			if (flair_it == _flairs.end())
+				flair_it = _flairs.begin();
+			return flair_it;
+		};
+		if (_xshade_feature == 4)
+		{
+			ImGui::BeginDisabled(_reload_remaining_effects != std::numeric_limits<size_t>::max());
+			if (ImGui::ArrowButtonEx("<##prev_flair", ImGuiDir_Left, ImVec2(button_size, button_size), ImGuiButtonFlags_NoNavFocus)
+				&& _flairs.size() > 1)
+			{
+				auto flair_it = get_flair_it();
+				next_flair = *(flair_it == _flairs.begin() ? std::prev(_flairs.end()) : std::prev(flair_it));
+			}
+			ImGui::SetItemTooltip("Previous variation");
+			ImGui::SameLine(0, button_spacing);
+
+			if (ImGui::ArrowButtonEx(">##next_flair", ImGuiDir_Right, ImVec2(button_size, button_size), ImGuiButtonFlags_NoNavFocus)
+				&& _flairs.size() > 1)
+			{
+				auto flair_it = get_flair_it();
+				next_flair = *(std::next(flair_it) == _flairs.end() ? _flairs.begin() : std::next(flair_it));
+			}
+			ImGui::SetItemTooltip("Next variation");
+			ImGui::SameLine(0, 2 * button_spacing);
+
+			const auto flair_button_pos = ImGui::GetCursorScreenPos();
+			const std::string cur_flair_label = _current_flair + "##flair";
+			ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
+			if (ImGui::ButtonEx(cur_flair_label.c_str(), ImVec2(browse_button_width - button_size - button_spacing, 0), ImGuiButtonFlags_NoNavFocus))
+			{
+				ImGui::OpenPopup("##select_flair");
+			}
+			ImGui::PopStyleVar();
+			ImGui::SameLine(0, button_spacing);
+
+			if (ImGui::ButtonEx(ICON_FK_PLUS "###add_flair", ImVec2(button_size, button_size), ImGuiButtonFlags_NoNavFocus | ImGuiButtonFlags_PressedOnClick))
+				ImGui::OpenPopup("##Add Flair");
+			if (ImGui::BeginPopup("##Add Flair"))
+			{
+				char flair_name[260] = "";
+				if (ImGui::InputText("Variation Name", flair_name, sizeof(flair_name), ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCharFilter, filter_name_plus)
+					&& flair_name[0] != '\0')
+				{
+					if (std::find(_flairs.begin(), _flairs.end(), flair_name) == _flairs.end())
+					{
+						auto flair_it = get_flair_it();
+						next_flair = *(_flairs.insert(std::next(flair_it), flair_name));
+					}
+					ImGui::CloseCurrentPopup();
+				}
+				ImGui::EndPopup();
+			}
+			ImGui::SetItemTooltip("Create new variation");
+			ImGui::SameLine(0, button_spacing);
+
+			ImGui::BeginDisabled(_current_flair == u8"\u2014");
+			if (ImGui::ButtonEx(ICON_FK_MINUS "###remove_flair", ImVec2(button_size, button_size), ImGuiButtonFlags_NoNavFocus | ImGuiButtonFlags_PressedOnClick))
+			{
+				auto flair_it = std::find(_flairs.begin(), _flairs.end(), _current_flair);
+				if (flair_it != _flairs.begin() && flair_it != _flairs.end())
+				{
+					flair_it = _flairs.erase(flair_it);
+					if (flair_it == _flairs.end())
+						flair_it = _flairs.begin();
+					next_flair = *flair_it;
+				}
+			}
+			ImGui::SetItemTooltip("Remove this variation");
+			ImGui::EndDisabled();
+			ImGui::SameLine(0, 2 * button_spacing);
+
+			ImGui::ButtonEx("[WIP] Nothing Here Yet", ImVec2(12.5f * _font_size, button_size), ImGuiButtonFlags_NoNavFocus | ImGuiButtonFlags_PressedOnClick);
+
+			ImGui::SetNextWindowPos(flair_button_pos + ImVec2(button_spacing - _imgui_context->Style.WindowPadding.x, ImGui::GetFrameHeightWithSpacing()));
+			ImGui::SetNextWindowSize(ImVec2(browse_button_width + button_size + 2 * button_spacing, 0));
+			if (ImGui::BeginPopup("##select_flair"))
+			{
+				for (auto &it : _flairs)
+					if (ImGui::Selectable(it.c_str(), it == _current_flair))
+						next_flair = it;
+				ImGui::EndPopup();
+			}
+
+			if (next_flair != _current_flair)
+			{
+				save_current_preset();
+				auto &preset = ini_file::load_cache(_current_preset_path);
+				preset.set({}, "CurrentFlair", next_flair);
+				//preset.set({}, "Flairs", );
+				load_current_preset();
+			}
+
+			ImGui::EndDisabled();
 		}
 
 		if (_tutorial_index == 1)
@@ -3428,8 +3527,8 @@ void reshade::runtime::draw_variable_editor()
 
 		bool force_reload_effect = false;
 		const bool is_focused = _focused_effect == effect_index;
-		const std::string effect_name = effect.source_file.filename().u8string()
-			+ build_postfix(effect, _xshade_feature);
+		const std::string raw_effect_name = effect.source_file.filename().u8string();
+		const std::string effect_name = raw_effect_name	+ build_postfix(effect, _xshade_feature);
 
 		// Create separate tab for every effect file
 		if (_variable_editor_tabs)
@@ -3492,7 +3591,7 @@ void reshade::runtime::draw_variable_editor()
 				}
 			}
 
-			if (const auto preset_it = _preset_preprocessor_definitions.find(effect_name);
+			if (const auto preset_it = _preset_preprocessor_definitions.find(raw_effect_name);
 				preset_it != _preset_preprocessor_definitions.end() && !preset_it->second.empty())
 			{
 				_preset_preprocessor_definitions.erase(preset_it);
@@ -3924,6 +4023,8 @@ void reshade::runtime::draw_variable_editor()
 			// A value has changed, so save the current preset
 			if (modified && !variable.annotation_as_uint("nosave"))
 			{
+				if (_xshade_feature == 4 && _current_flair != u8"\u2014" && !effect.flair_touched)
+					effect.flair_touched = true;
 				if (_auto_save_preset)
 					save_current_preset();
 				else
@@ -3937,7 +4038,7 @@ void reshade::runtime::draw_variable_editor()
 			set_uniform_value(effect.uniforms[hovered_variable_index], static_cast<uint32_t>(hovered_variable));
 
 		// Draw preprocessor definition list after all uniforms of an effect file
-		std::vector<std::pair<std::string, std::string>> &effect_definitions = _preset_preprocessor_definitions[effect_name];
+		std::vector<std::pair<std::string, std::string>> &effect_definitions = _preset_preprocessor_definitions[raw_effect_name];
 		std::vector<std::pair<std::string, std::string>>::iterator modified_definition;
 
 		if (!effect.definitions.empty())
@@ -4059,7 +4160,7 @@ void reshade::runtime::draw_variable_editor()
 
 					// Update preset again now, so that the removed preprocessor definition does not reappear on a reload
 					// The preset is actually loaded again next frame to update the technique status (see 'update_effects'), so cannot use 'save_current_preset' here
-					ini_file::load_cache(_current_preset_path).set(effect_name, "PreprocessorDefinitions", effect_definitions);
+					ini_file::load_cache(_current_preset_path).set(raw_effect_name, "PreprocessorDefinitions", effect_definitions);
 				}
 			}
 
@@ -4284,7 +4385,10 @@ void reshade::runtime::draw_technique_editor()
 				std::string label(get_localized_annotation(tech, "ui_label", _current_language));
 				if (label.empty())
 					label = tech.name;
-				label += build_postfix(_effects[tech.effect_index], _xshade_feature);
+				if (_xshade_feature == 4 && _effects[tech.effect_index].flair_touched)
+					label = ((_current_flair == "" || _current_flair == u8"\u2014") ? "" : ("{" + _current_flair + "} ")) + label;
+				if (_xshade_feature == 3)
+					label += build_postfix(_effects[tech.effect_index], _xshade_feature);
 				label += " [" + effect.source_file.filename().u8string() + ']';
 
 				if (bool status = tech.enabled;
@@ -4397,6 +4501,17 @@ void reshade::runtime::draw_technique_editor()
 						_preset_is_modified = true;
 
 					ImGui::CloseCurrentPopup();
+				}
+				if (_xshade_feature == 4 && _current_flair != u8"\u2014" && _effects[tech.effect_index].flair_touched)
+				{
+					if (is_not_bottom && ImGui::Button("Remove Variation", ImVec2(18.0f * _font_size, 0)))
+					{
+						_effects[tech.effect_index].flair_touched = false;
+						auto &preset = ini_file::load_cache(_current_preset_path);
+						preset.remove_section(_effects[tech.effect_index].source_file.filename().u8string() + "|" + _current_flair);
+						load_current_preset();
+						ImGui::CloseCurrentPopup();
+					}
 				}
 
 				if (is_not_top || is_not_bottom || (_input != nullptr && !force_enabled))

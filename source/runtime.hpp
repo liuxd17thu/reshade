@@ -308,6 +308,8 @@ namespace reshade
 		std::atomic<size_t> _reload_remaining_effects = std::numeric_limits<size_t>::max();
 		void *_d3d_compiler_module = nullptr;
 
+		std::vector<std::string> _flairs;
+		std::string _current_flair = u8"—";
 		std::vector<effect> _effects;
 		std::vector<texture> _textures;
 		std::vector<technique> _techniques;
