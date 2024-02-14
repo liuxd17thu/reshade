@@ -511,12 +511,58 @@ void reshade::runtime::load_custom_style()
 	switch (_style_index)
 	{
 	case 0:
-		ImGui::StyleColorsDark(&_imgui_context->Style);
+		colors[ImGuiCol_Text] = ImColor(0xffe0e0e0);
+		colors[ImGuiCol_TextDisabled] = ImColor(0x90e0e0e0);
+		colors[ImGuiCol_WindowBg] = ImColor(0xff202020);
+		colors[ImGuiCol_ChildBg] = ImColor(0x28404040);
+		colors[ImGuiCol_PopupBg] = ImColor(0xe0202020);
+		colors[ImGuiCol_Border] = ImColor(0x50ffffff);
+		colors[ImGuiCol_FrameBg] = ImColor(0xff604434);
+		colors[ImGuiCol_FrameBgHovered] = ImColor(0xa8c09060);
+		colors[ImGuiCol_FrameBgActive] = ImColor(0xffc09060);
+		colors[ImGuiCol_TitleBg] = ImColor(0x80c09060);
+		colors[ImGuiCol_TitleBgActive] = ImColor(0x90c09060);
+		colors[ImGuiCol_TitleBgCollapsed] = ImColor(0x60c09060);
+		colors[ImGuiCol_MenuBarBg] = ImColor(0x90403c38);
+		colors[ImGuiCol_ScrollbarBg] = ImColor(0x50403c38);
+		colors[ImGuiCol_ScrollbarGrab] = ImColor(0x50ff9060);
+		colors[ImGuiCol_ScrollbarGrabHovered] = ImColor(0xc0ff6090);
+		colors[ImGuiCol_ScrollbarGrabActive] = ImColor(0xffff60c0);
+		colors[ImGuiCol_CheckMark] = ImColor(0xd0ff90c0);
+		colors[ImGuiCol_SliderGrab] = ImColor(0x80ff60c0);
+		colors[ImGuiCol_SliderGrabActive] = ImColor(0xffff88d0);
+		colors[ImGuiCol_Button] = ImColor(0x70c09060);
+		colors[ImGuiCol_ButtonHovered] = ImColor(0xe0c06090);
+		colors[ImGuiCol_ButtonActive] = ImColor(0xffc09060);
+		colors[ImGuiCol_Header] = ImColor(0xc0c09060);
+		colors[ImGuiCol_HeaderHovered] = ImColor(0xe0c06090);
+		colors[ImGuiCol_HeaderActive] = ImColor(0xffc06090);
+		colors[ImGuiCol_Separator] = ImColor(0x50ffffff);
+		colors[ImGuiCol_SeparatorHovered] = ImColor(0xc8ffffff);
+		colors[ImGuiCol_SeparatorActive] = ImColor(0xffffffff);
+		colors[ImGuiCol_ResizeGrip] = ImColor(0x30c09060);
+		colors[ImGuiCol_ResizeGripHovered] = ImColor(0xc8c06090);
+		colors[ImGuiCol_ResizeGripActive] = ImColor(0xffc06090);
+		colors[ImGuiCol_Tab] = ImColor(0x70c09060);
+		colors[ImGuiCol_TabActive] = ImColor(0xffc09060);
+		colors[ImGuiCol_TabHovered] = colors[ImGuiCol_ButtonHovered];
+		colors[ImGuiCol_TabUnfocused] = ImColor(0x80c09060);
+		colors[ImGuiCol_TabUnfocusedActive] = ImColor(0xc0c09060);
+		colors[ImGuiCol_DockingPreview] = colors[ImGuiCol_Header] * ImVec4(1.0f, 1.0f, 1.0f, 0.7f);
+		colors[ImGuiCol_DockingEmptyBg] = ImColor(0xff303030);
+		colors[ImGuiCol_PlotLines] = ImColor(0xfffff0e0);
+		colors[ImGuiCol_PlotLinesHovered] = ImColor(0xffc09060);
+		colors[ImGuiCol_PlotHistogram] = ImColor(0xa0d0a050);
+		colors[ImGuiCol_PlotHistogramHovered] = ImColor(0xffc06090);
+		colors[ImGuiCol_TextSelectedBg] = ImColor(0x70c09060);
 		break;
 	case 1:
-		ImGui::StyleColorsLight(&_imgui_context->Style);
+		ImGui::StyleColorsDark(&_imgui_context->Style);
 		break;
 	case 2:
+		ImGui::StyleColorsLight(&_imgui_context->Style);
+		break;
+	case 3:
 		colors[ImGuiCol_Text] = ImVec4(0.862745f, 0.862745f, 0.862745f, 1.00f);
 		colors[ImGuiCol_TextDisabled] = ImVec4(0.862745f, 0.862745f, 0.862745f, 0.58f);
 		colors[ImGuiCol_WindowBg] = ImVec4(0.117647f, 0.117647f, 0.117647f, 1.00f);
@@ -562,7 +608,7 @@ void reshade::runtime::load_custom_style()
 		colors[ImGuiCol_PlotHistogramHovered] = ImVec4(0.392157f, 0.588235f, 0.941176f, 1.00f);
 		colors[ImGuiCol_TextSelectedBg] = ImVec4(0.392157f, 0.588235f, 0.941176f, 0.43f);
 		break;
-	case 5:
+	case 6:
 		colors[ImGuiCol_Text] = ImColor(0xff969483);
 		colors[ImGuiCol_TextDisabled] = ImColor(0xff756e58);
 		colors[ImGuiCol_WindowBg] = ImColor(0xff362b00);
@@ -614,7 +660,7 @@ void reshade::runtime::load_custom_style()
 		colors[ImGuiCol_NavWindowingDimBg] = ImColor(0x20e3f6fd); // Customized
 		colors[ImGuiCol_ModalWindowDimBg] = ImColor(0x20e3f6fd); // Customized
 		break;
-	case 6:
+	case 7:
 		colors[ImGuiCol_Text] = ImColor(0xff837b65);
 		colors[ImGuiCol_TextDisabled] = ImColor(0xffa1a193);
 		colors[ImGuiCol_WindowBg] = ImColor(0xffe3f6fd);
@@ -776,13 +822,13 @@ void reshade::runtime::save_custom_style() const
 {
 	ini_file &config = ini_file::load_cache(_config_path);
 
-	if (_style_index == 3 || _style_index == 4) // Custom Simple, Custom Advanced
+	if (_style_index == 4 || _style_index == 5) // Custom Simple, Custom Advanced
 	{
 		for (ImGuiCol i = 0; i < ImGuiCol_COUNT; i++)
 			config.set("STYLE", ImGui::GetStyleColorName(i), (const float(&)[4])_imgui_context->Style.Colors[i]);
 	}
 
-	if (_editor_style_index == 2) // Custom
+	if (_editor_style_index == 3) // Custom
 	{
 		ImVec4 value;
 		for (ImGuiCol i = 0; i < imgui::code_editor::color_palette_max; i++)
@@ -2432,17 +2478,18 @@ void reshade::runtime::draw_gui_settings()
 #endif
 
 		#pragma region Style
-		if (ImGui::Combo(_("Global style"), &_style_index, "Dark\0Light\0Default\0Custom Simple\0Custom Advanced\0Solarized Dark\0Solarized Light\0"))
+		if (ImGui::Combo(_("Global style"), &_style_index, "AuroraShade\0Dark\0Light\0Default\0Custom Simple\0Custom Advanced\0Solarized Dark\0Solarized Light\0"))
 		{
 			modified = true;
 			load_custom_style();
 		}
 
-		if (_style_index == 3) // Custom Simple
+		if (_style_index == 4) // Custom Simple
 		{
 			ImVec4 *const colors = _imgui_context->Style.Colors;
 
-			if (ImGui::BeginChild("##colors", ImVec2(0, 105), ImGuiChildFlags_Border, ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NavFlattened))
+			const auto height = 8.0f * _imgui_context->Style.FramePadding.y + 4.0f * _font_size + 7.0f * _imgui_context->Style.ItemSpacing.y;
+			if (ImGui::BeginChild("##colors", ImVec2(0, height), ImGuiChildFlags_Border, ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NavFlattened))
 			{
 				ImGui::PushItemWidth(-160);
 				modified_custom_style |= ImGui::ColorEdit3("Background", &colors[ImGuiCol_WindowBg].x);
@@ -2502,9 +2549,10 @@ void reshade::runtime::draw_gui_settings()
 				colors[ImGuiCol_DockingEmptyBg] = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
 			}
 		}
-		if (_style_index == 4) // Custom Advanced
+		if (_style_index == 5) // Custom Advanced
 		{
-			if (ImGui::BeginChild("##colors", ImVec2(0, 300), ImGuiChildFlags_Border, ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NavFlattened))
+			const auto height = 20.0f * _imgui_context->Style.FramePadding.y + 10.0f * _font_size + 12.0f * _imgui_context->Style.ItemSpacing.y;
+			if (ImGui::BeginChild("##colors", ImVec2(0, height), ImGuiChildFlags_Border, ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NavFlattened))
 			{
 				ImGui::PushItemWidth(-160);
 				for (ImGuiCol i = 0; i < ImGuiCol_COUNT; i++)

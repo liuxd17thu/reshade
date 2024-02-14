@@ -502,7 +502,7 @@ namespace reshade
 		std::string _selected_language, _current_language;
 		int _font_size = 0;
 		int _editor_font_size = 0;
-		int _style_index = 2;
+		int _style_index = 0;
 		int _editor_style_index = 0;
 		std::filesystem::path _font_path, _default_font_path;
 		std::filesystem::path _latin_font_path;
