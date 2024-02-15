@@ -1138,6 +1138,18 @@ void reshade::runtime::load_current_preset()
 	std::vector<std::string> sorted_technique_list;
 	preset.get({}, "TechniqueSorting", sorted_technique_list);
 
+	// load preset description
+	if (preset.get({}, "Description", _description)) {
+		int pos = _description.find("\\n");
+		while (pos != -1) {
+			_description.replace(pos, 2, "\n");
+			pos = _description.find("\\n");
+		}
+	}
+	else{
+		_description.clear();
+	}
+
 	std::unordered_map<std::string, std::vector<std::pair<std::string, std::string>>> preset_preprocessor_definitions;
 	preset.get({}, "PreprocessorDefinitions", preset_preprocessor_definitions[{}]);
 
@@ -1461,6 +1473,18 @@ void reshade::runtime::save_current_preset() const
 		preset.set({}, "TechniqueSorting", std::move(sorted_technique_list));
 
 	preset.set({}, "Techniques", std::move(technique_list));
+
+	// Save preset description
+	if (preset.has({}, "Description") || !_description.empty())
+	{
+		std::string desc =  _description;
+		int pos = desc.find("\n");
+		while (pos != -1) {
+			desc.replace(pos, 1, "\\n");
+			pos = desc.find("\n");
+		}
+		preset.set({}, "Description", desc);
+	}
 
 	if (const auto preset_it = _preset_preprocessor_definitions.find({});
 		preset_it != _preset_preprocessor_definitions.end() && !preset_it->second.empty())
@@ -3698,7 +3722,11 @@ void reshade::runtime::load_effects(bool force_load_all)
 
 	// Now that we have a list of files, load them in parallel
 	// Split workload into batches instead of launching a thread for every file to avoid launch overhead and stutters due to too many threads being in flight
-	const size_t num_splits = std::min<size_t>(effect_files.size(), std::max<size_t>(std::thread::hardware_concurrency(), 2u) - 1);
+	size_t num_splits = std::min<size_t>(effect_files.size(), std::max<size_t>(std::thread::hardware_concurrency(), 2u) - 1);
+#ifndef _WIN64
+	// Limit number of threads in 32-bit due to the limited about of address space being available there and compilation being memory hungry
+	num_splits = std::min<size_t>(num_splits, 4);
+#endif
 
 	// Keep track of the spawned threads, so the runtime cannot be destroyed while they are still running
 	for (size_t n = 0; n < num_splits; ++n)

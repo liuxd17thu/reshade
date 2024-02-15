@@ -13,7 +13,7 @@
       <Label Margin="10" Padding="0" VerticalAlignment="Top" Foreground="#FF003399" FontSize="16" Content="选择要安装的插件：" />
     </DockPanel>
     <TextBlock DockPanel.Dock="Top" Margin="10,5" TextWrapping="Wrap">
-      勾选你想要安装或更新的插件。未勾选的插件不会被安装或改动。
+      勾选你想要安装或更新的插件。请注意只勾选你需要的，否则可能会因为插件不兼容导致崩溃或性能损失。
     </TextBlock>
     <ListBox x:Name="ItemsListBox" x:FieldModifier="private" Margin="10,5" HorizontalContentAlignment="Stretch" ItemsSource="{Binding Items}">
       <ListBox.ItemTemplate>
@@ -32,7 +32,7 @@
               <Hyperlink NavigateUri="{Binding RepositoryUrl, Mode=OneTime}" RequestNavigate="OnHyperlinkRequestNavigate">
                 <TextBlock Text="{Binding Name, Mode=OneTime}" />
                 <Hyperlink.ToolTip>
-                  <TextBlock Text="{Binding RepositoryUrl, Mode=OneTime}" />                  
+                  <TextBlock Text="{Binding RepositoryUrl, Mode=OneTime}" />
                 </Hyperlink.ToolTip>
               </Hyperlink>
             </TextBlock>

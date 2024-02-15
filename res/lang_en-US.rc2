@@ -139,6 +139,7 @@ BEGIN
 55802 "Show clock"
 37831 "Show FPS"
 2747 "Show frame time"
+33061 "Show present name"
 12411 "Check to always show, fill out to only show while overlay is open."
 37459 "Clock format"
 8868 "OSD text size"
@@ -200,6 +201,8 @@ BEGIN
 42682 "Yes"
 35957 "No"
 25121 "Off\nOn\n"
+52993 "Preset Description"
+34048 "Show preset description"
 
 END
 

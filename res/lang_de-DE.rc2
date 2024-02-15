@@ -139,6 +139,7 @@ BEGIN
 55802 "Zeige Uhr"
 37831 "Zeige FPS"
 2747 "Zeige Bildzeit"
+33061 "Zeige Preset-Name"
 12411 "Häkchen, um immer angezeigt zu werden oder Kästchen, um nur angezeigt zu werden, wenn das Konfigurationsmenü offen ist."
 37459 "Uhrformat"
 8868 "OSD Textgröße"
@@ -200,6 +201,8 @@ BEGIN
 42682 "Ja"
 35957 "Nein"
 25121 "Aus\nAn\n"
+52993 "Voreingestellte Beschreibung"
+34048 "Voreingestellte Beschreibung anzeigen"
 
 END
 

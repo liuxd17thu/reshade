@@ -1543,7 +1543,7 @@ namespace ReShade.Setup
 		{
 			UpdateStatus("从" + package.Name + "下载" + package.DownloadUrl + " ...");
 
-			string downloadPath = Path.GetTempFileName();
+			string downloadPath = Path.Combine(Path.GetTempPath(), "ReShadeSetupDownload.tmp");
 
 			using (var client = new WebClient())
 			{
@@ -1813,7 +1813,7 @@ namespace ReShade.Setup
 		{
 			UpdateStatus("从" + addon.Name + "下载" + addon.DownloadUrl + " ...");
 
-			string downloadPath = Path.GetTempFileName();
+			string downloadPath = Path.Combine(Path.GetTempPath(), "ReShadeSetupDownload.tmp");
 
 			String tempPath = (addon.DownloadUrl);
 			if (tempPath[0] == '@')
@@ -2038,6 +2038,13 @@ namespace ReShade.Setup
 				return;
 			}
 		}
+		void OnBackButtonClick(object sender, RoutedEventArgs e)
+		{
+			if (currentOperation == InstallOperation.Finished)
+			{
+				ResetStatus();
+			}
+		}
 
 		void OnCancelButtonClick(object sender, RoutedEventArgs e)
 		{
@@ -2052,12 +2059,6 @@ namespace ReShade.Setup
 				return;
 			}
 
-			if (currentOperation == InstallOperation.Finished)
-			{
-				ResetStatus();
-				return;
-			}
-
 			Close();
 		}
 
@@ -2066,9 +2067,10 @@ namespace ReShade.Setup
 			bool isFinished = currentOperation == InstallOperation.Finished;
 
 			NextButton.Content = isFinished ? "完成(_F)" : "下一步(_N)";
-			CancelButton.Content = isFinished ? "返回(_B)" : (e.Content is SelectEffectsPage) ? "跳过(_S)" : (e.Content is SelectAppPage) ? "关闭(_C)" : "取消(_C)";
+			CancelButton.Content = (e.Content is SelectEffectsPage) ? "跳过(_S)" : (e.Content is SelectAppPage) ? "关闭(_C)" : "取消(_C)";
 
-			CancelButton.IsEnabled = !(e.Content is StatusPage) || isFinished;
+			BackButton.IsEnabled = isFinished;
+			CancelButton.IsEnabled = !(e.Content is StatusPage);
 
 			if (!(e.Content is SelectAppPage))
 			{

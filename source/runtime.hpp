@@ -313,6 +313,7 @@ namespace reshade
 
 		std::vector<std::string> _flairs;
 		std::string _current_flair = u8"—";
+		std::string _description;
 		std::vector<effect> _effects;
 		std::vector<texture> _textures;
 		std::vector<technique> _techniques;
@@ -446,9 +447,11 @@ namespace reshade
 		unsigned int _show_fps = 2;
 		unsigned int _show_clock = false;
 		unsigned int _show_frametime = false;
+		unsigned int _show_preset_name = false;
 		bool _show_screenshot_message = true;
 #if RESHADE_FX
 		bool _show_preset_transition_message = true;
+		bool _show_preset_description = true;
 		unsigned int _reload_count = 0;
 #endif
 
