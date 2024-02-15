@@ -46,7 +46,7 @@ BEGIN
 27867 "AuroraShade Feature Setting"
 1204 "ON"
 17794 "OFF"
-59910 "UI_BIND Support: "
+59910 "UI_BIND: "
 25372 "ReShade\n  Nothing"
 23458 "GShade 3\n  Shader Cloning"
 5172 "GShade 4+\n  Preset Template/Variation"
