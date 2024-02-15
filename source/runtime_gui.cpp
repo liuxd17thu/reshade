@@ -1733,7 +1733,7 @@ void reshade::runtime::draw_gui_home()
 			ImGui::SameLine(0, button_spacing);
 		}
 
-		if (ImGui::Button("A", ImVec2(button_size, 0)))
+		if (ImGui::Button(ICON_FK_AURORA, ImVec2(button_size, 0)))
 			ImGui::OpenPopup("##Feature Level");
 		if (ImGui::BeginPopup("##Feature Level"))
 		{
@@ -4522,7 +4522,7 @@ void reshade::runtime::draw_technique_editor()
 				if (_aurora_feature == 3)
 				{
 					ImGui::SameLine(9.8f * _font_size);
-					if (ImGui::Button(ICON_FK_PLUS "DUP", ImVec2(4.0f * _font_size, 0)))
+					if (ImGui::Button(ICON_FK_PLUS ICON_FK_COPY, ImVec2(4.0f * _font_size, 0)))
 						ImGui::OpenPopup("##Create Duplicate");
 					if (ImGui::BeginPopup("##Create Duplicate"))
 					{
@@ -4541,7 +4541,7 @@ void reshade::runtime::draw_technique_editor()
 					ImGui::SameLine(14.0f * _font_size);
 					if (effect.dup_id.empty())
 						ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-					if (ImGui::Button(ICON_FK_MINUS "DUP", ImVec2(4.0f * _font_size, 0)))
+					if (ImGui::Button(ICON_FK_MINUS ICON_FK_COPY, ImVec2(4.0f * _font_size, 0)))
 					{
 						remove_effect_dup = tech.effect_index;
 						ImGui::CloseCurrentPopup();

@@ -4,12 +4,15 @@
 #pragma once
 
 #define FONT_ICON_BUFFER_NAME_FK FK_compressed_data_base85
-#define FONT_ICON_BUFFER_SIZE_FK 0xc26
+#define FONT_ICON_BUFFER_SIZE_FK 0xf96
 
 #define ICON_MIN_FK 0xf002
-#define ICON_MAX_FK 0xf1c9
+#define ICON_MAX_FK 0xf360
 
+#define ICON_FK_AURORA u8"\uf360"
 #define ICON_FK_CANCEL u8"\uf00d"
+#define ICON_FK_COPY u8"\uf0c5"
+#define ICON_FK_DETACH u8"\uf127"
 #define ICON_FK_FILE u8"\uf016"
 #define ICON_FK_FILE_CODE u8"\uf1c9"
 #define ICON_FK_FILE_IMAGE u8"\uf1c5"

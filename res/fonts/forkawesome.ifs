@@ -1,6 +1,6 @@
 <config>
 	<project>
-		<font name="forkawesome-webfont.ttf">
+		<font name="forkawesomepatched.ttf">
 			<glyphs>
 				<glyph orgId="61442" newId="61442" orgName="search" newName="search"/>
 				<glyph orgId="61452" newId="61452" orgName="check" newName="ok"/>
@@ -11,15 +11,18 @@
 				<glyph orgId="61543" newId="61543" orgName="plus" newName="plus"/>
 				<glyph orgId="61544" newId="61544" orgName="minus" newName="minus"/>
 				<glyph orgId="61553" newId="61553" orgName="exclamation-triangle" newName="warning"/>
+                <glyph orgId="61637" newId="61637" orgName="files-o" newName="copy"/>
 				<glyph orgId="61639" newId="61639" orgName="floppy-o" newName="floppy"/>
 				<glyph orgId="61666" newId="61666" orgName="undo" newName="undo"/>
 				<glyph orgId="61716" newId="61716" orgName="folder-o" newName="folder"/>
 				<glyph orgId="61717" newId="61717" orgName="folder-open-o" newName="folder-open"/>
+                <glyph orgId="61735" newId="61735" orgName="chain-broken" newName="detach"/>
 				<glyph orgId="61893" newId="61893" orgName="file-image-o" newName="file-image"/>
 				<glyph orgId="61897" newId="61897" orgName="file-code-o" newName="file-code"/>
+                <glyph orgId="62304" newId="62304" orgName="aurora" newName="aurora"/>
 			</glyphs>
 			<prefix>FK</prefix>
-			<pathfilename>forkawesome-webfont.ttf</pathfilename>
+			<pathfilename>forkawesomepatched.ttf</pathfilename>
 			<oversample>1</oversample>
 			<fontsize>32</fontsize>
 		</font>
