@@ -54,7 +54,7 @@ END
 // Icon with lowest ID value placed first to ensure application icon
 // remains consistent on all systems.
 #if defined(RESHADE_FXC) || defined(RESHADE_TEST_APPLICATION) || defined(APSTUDIO_INVOKED)
-MAIN_ICON               ICON                    "main_icon.ico"
+MAIN_ICON               ICON                    "aurora.ico"
 #endif
 
 
@@ -64,7 +64,7 @@ MAIN_ICON               ICON                    "main_icon.ico"
 //
 
 #if !defined(RESHADE_FXC)
-IDB_MAIN_ICON           RCDATA                  "main_icon_small.png"
+IDB_MAIN_ICON           RCDATA                  "aurora_small.png"
 
 IDR_COPY_PS             RCDATA                  "shaders\\copy_ps.cso"
 
