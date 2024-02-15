@@ -291,6 +291,9 @@ namespace reshade
 		bool _effect_load_skipping = false;
 		unsigned int _reload_key_data[4] = {};
 		unsigned int _performance_mode_key_data[4] = {};
+		bool _ui_bind_support = true;
+		int _aurora_feature = 1;
+		bool _aurora_auto_feature = false;
 
 		std::vector<std::pair<std::string, std::string>> _global_preprocessor_definitions;
 		std::unordered_map<std::string, std::vector<std::pair<std::string, std::string>>> _preset_preprocessor_definitions;
@@ -478,9 +481,6 @@ namespace reshade
 		char _effect_filter[32] = {};
 		bool _variable_editor_tabs = false;
 		bool _auto_save_preset = true;
-		bool _ui_bind_support = true;
-		int _xshade_feature = 1;
-		bool _xshade_auto_feature = false;
 		size_t _uniform_binding_updated = std::numeric_limits<size_t>::max();
 		bool _preset_is_modified = false;
 		bool _inherit_current_preset = false;

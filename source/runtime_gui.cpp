@@ -21,6 +21,7 @@
 #include "fonts/glyph_ranges.hpp"
 #include <fstream>
 #include <algorithm>
+#include <stb_image.h>
 
 static bool filter_text(const std::string_view text, const std::string_view filter)
 {
@@ -1136,16 +1137,16 @@ void reshade::runtime::draw_gui()
 
 		ImGui::Text("AuroraShade %s (Based on ReShade %s)", VERSION_STRING_CN2, VERSION_STRING_PRODUCT);
 
-		if ((s_latest_version[0] > VERSION_MAJOR) ||
-			(s_latest_version[0] == VERSION_MAJOR && s_latest_version[1] > VERSION_MINOR) ||
-			(s_latest_version[0] == VERSION_MAJOR && s_latest_version[1] == VERSION_MINOR && s_latest_version[2] > VERSION_REVISION))
-		{
-			ImGui::TextColored(COLOR_YELLOW, _(
-				"An update is available! Please visit %s and install the new version (v%u.%u.%u)."),
-				"https://reshade.me",
-				s_latest_version[0], s_latest_version[1], s_latest_version[2]);
-		}
-		else
+		//if ((s_latest_version[0] > VERSION_MAJOR) ||
+		//	(s_latest_version[0] == VERSION_MAJOR && s_latest_version[1] > VERSION_MINOR) ||
+		//	(s_latest_version[0] == VERSION_MAJOR && s_latest_version[1] == VERSION_MINOR && s_latest_version[2] > VERSION_REVISION))
+		//{
+		//	ImGui::TextColored(COLOR_YELLOW, _(
+		//		"An update is available! Please visit %s and install the new version (v%u.%u.%u)."),
+		//		"https://reshade.me",
+		//		s_latest_version[0], s_latest_version[1], s_latest_version[2]);
+		//}
+		//else
 		{
 			// ImGui::Text(_("Visit %s for news, updates, effects and discussion."), "https://reshade.me");
 			ImGui::Text("Developed by BarricadeMKXX.");
@@ -1181,7 +1182,7 @@ void reshade::runtime::draw_gui()
 #if RESHADE_FX
 			else if (_tutorial_index == 0)
 			{
-				const std::string label = _("ReShade is now installed successfully! Press '%s' to start the tutorial.");
+				const std::string label = _("AuroraShade is now installed successfully! Press '%s' to start the tutorial.");
 				const size_t key_offset = label.find("%s");
 
 				ImGui::TextUnformatted(label.substr(0, key_offset).c_str());
@@ -1712,34 +1713,34 @@ void reshade::runtime::draw_gui_home()
 			ImGui::SameLine(0, button_spacing);
 		}
 
-		if (ImGui::Button("X", ImVec2(button_size, 0)))
+		if (ImGui::Button("A", ImVec2(button_size, 0)))
 			ImGui::OpenPopup("##Feature Level");
 		if (ImGui::BeginPopup("##Feature Level"))
 		{
 			bool modified = false;
-			ImGui::TextUnformatted("AuroraShade Feature Setting");
+			ImGui::TextUnformatted(_("AuroraShade Feature Setting"));
 			ImGui::Spacing();
 			ImGui::Separator();
-			std::string status = _ui_bind_support ? " ON" : "OFF";
-			const std::string toggle_str = "UI_BIND Support: " + status;
+			std::string status = _ui_bind_support ? _("ON") : _("OFF");
+			const std::string toggle_str = _("UI_BIND Support: ") + status;
 			if (imgui::toggle_button(toggle_str.c_str(), _ui_bind_support, 18.0f * _font_size))
 				save_config();
-			const std::string feature_string[3] {"ReShade\n  Nothing", "GShade 3\n  Shader Cloning", "GShade 4+ \n  Preset Template/Variation"};
+			const std::string feature_string[3] {_("ReShade\n  Nothing"), _("GShade 3\n  Shader Cloning"), _("GShade 4+\n  Preset Template/Variation")};
 			const int feature_id[3] = {1, 3, 4};
-			bool feature_is_using = check_preset_feature(_xshade_feature);
+			bool feature_is_using = check_preset_feature(_aurora_feature);
 			ImGui::Separator();
 			if (feature_is_using)
 			{
-				ImGui::TextColored(ImColor(255, 255, 100), "Feature In Use:");
+				ImGui::TextColored(ImColor(255, 255, 100), _("Feature In Use:"));
 			}
 			for (auto i = 0; i < 3; i++) {
-				if (feature_is_using && feature_id[i] != _xshade_feature)
+				if (feature_is_using && feature_id[i] != _aurora_feature)
 					continue;
-				if (ImGui::RadioButton(feature_string[i].c_str(), &_xshade_feature, feature_id[i]))
+				if (ImGui::RadioButton(feature_string[i].c_str(), &_aurora_feature, feature_id[i]))
 					modified = true;
 			}
 			ImGui::Separator();
-			ImGui::Checkbox("Auto select when loading", &_xshade_auto_feature);
+			ImGui::Checkbox(_("Auto detect"), &_aurora_auto_feature);
 			if (modified) {
 				save_config();
 				ImGui::CloseCurrentPopup();
@@ -1879,7 +1880,7 @@ void reshade::runtime::draw_gui_home()
 				flair_it = _flairs.begin();
 			return flair_it;
 		};
-		if (_xshade_feature == 4)
+		if (_aurora_feature == 4)
 		{
 			ImGui::BeginDisabled(_reload_remaining_effects != std::numeric_limits<size_t>::max());
 			if (ImGui::ArrowButtonEx("<##prev_flair", ImGuiDir_Left, ImVec2(button_size, button_size), ImGuiButtonFlags_NoNavFocus)
@@ -1888,7 +1889,7 @@ void reshade::runtime::draw_gui_home()
 				auto flair_it = get_flair_it();
 				next_flair = *(flair_it == _flairs.begin() ? std::prev(_flairs.end()) : std::prev(flair_it));
 			}
-			ImGui::SetItemTooltip("Previous variation");
+			ImGui::SetItemTooltip(_("Previous variation"));
 			ImGui::SameLine(0, button_spacing);
 
 			if (ImGui::ArrowButtonEx(">##next_flair", ImGuiDir_Right, ImVec2(button_size, button_size), ImGuiButtonFlags_NoNavFocus)
@@ -1897,7 +1898,7 @@ void reshade::runtime::draw_gui_home()
 				auto flair_it = get_flair_it();
 				next_flair = *(std::next(flair_it) == _flairs.end() ? _flairs.begin() : std::next(flair_it));
 			}
-			ImGui::SetItemTooltip("Next variation");
+			ImGui::SetItemTooltip(_("Next variation"));
 			ImGui::SameLine(0, 2 * button_spacing);
 
 			const auto flair_button_pos = ImGui::GetCursorScreenPos();
@@ -1915,7 +1916,7 @@ void reshade::runtime::draw_gui_home()
 			if (ImGui::BeginPopup("##Add Flair"))
 			{
 				char flair_name[260] = "";
-				if (ImGui::InputText("Variation Name", flair_name, sizeof(flair_name), ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCharFilter, filter_name_plus)
+				if (ImGui::InputText(_("Variation Name"), flair_name, sizeof(flair_name), ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCharFilter, filter_name_plus)
 					&& flair_name[0] != '\0')
 				{
 					if (std::find(_flairs.begin(), _flairs.end(), flair_name) == _flairs.end())
@@ -1927,7 +1928,7 @@ void reshade::runtime::draw_gui_home()
 				}
 				ImGui::EndPopup();
 			}
-			ImGui::SetItemTooltip("Create new variation");
+			ImGui::SetItemTooltip(_("Create new variation"));
 			ImGui::SameLine(0, button_spacing);
 
 			ImGui::BeginDisabled(_current_flair == u8"\u2014");
@@ -1942,7 +1943,7 @@ void reshade::runtime::draw_gui_home()
 					next_flair = *flair_it;
 				}
 			}
-			ImGui::SetItemTooltip("Remove this variation");
+			ImGui::SetItemTooltip(_("Remove this variation"));
 			ImGui::EndDisabled();
 			ImGui::SameLine(0, 2 * button_spacing);
 
@@ -1976,7 +1977,7 @@ void reshade::runtime::draw_gui_home()
 	else
 	{
 		tutorial_text = _(
-			"Welcome! Since this is the first time you start ReShade, we'll go through a quick tutorial covering the most important features.\n\n"
+			"Welcome! Since this is the first time you start AuroraShade, we'll go through a quick tutorial covering the most important features.\n\n"
 			"If you have difficulties reading this text, press the 'Ctrl' key and adjust the font size with your mouse wheel. "
 			"The window size is variable as well, just grab the right edge and move it around.\n\n"
 			"You can also use the keyboard for navigation in case mouse input does not work. Use the arrow keys to navigate, space bar to confirm an action or enter a control and the 'Esc' key to leave a control. "
@@ -2013,7 +2014,7 @@ void reshade::runtime::draw_gui_home()
 				if (label.empty())
 					label = tech.name;
 
-				tech.hidden = tech.annotation_as_int("hidden") != 0 || !(filter_text(label, _effect_filter) || filter_text(_effects[tech.effect_index].source_file.filename().u8string() + build_postfix(_effects[tech.effect_index], _xshade_feature), _effect_filter));
+				tech.hidden = tech.annotation_as_int("hidden") != 0 || !(filter_text(label, _effect_filter) || filter_text(_effects[tech.effect_index].source_file.filename().u8string() + build_postfix(_effects[tech.effect_index], _aurora_feature), _effect_filter));
 			}
 		}
 
@@ -3181,36 +3182,41 @@ void reshade::runtime::draw_gui_log()
 }
 void reshade::runtime::draw_gui_about()
 {
-	ImGui::TextUnformatted("AuroraShade" VERSION_STRING_CN2);
+	ImGui::TextUnformatted("AuroraShade " VERSION_STRING_CN2);
 	ImGui::TextUnformatted("Based on ReShade " VERSION_STRING_PRODUCT);
 
-	ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 7.3f * _font_size);
-	if (ImGui::SmallButton(_(" Open website ")))
+	if (_current_language == "zh-CN")
+		ImGui::TextWrapped(
+			"AuroraShade是路障MKXX基于ReShade制作的修改版本，尝试复刻了GShade 3/4的部分特性。\n"
+			"这是一个第三方改版，未经ReShade原版作者 Patrick Mours (crosire) 或其他ReShade项目贡献者认可或推广。");
+	else
+		ImGui::TextWrapped(
+			"AuroraShade is a modified version of ReShade by BarricadeMKXX, which tried to reproduce some features in GShade 3/4.\n"
+			"This is a third-party ReShade fork, and is not endorsed / promoted by Patrick Mours (a.k.a. crosire) or other ReShade contributers.");
+	const auto total_width = ImGui::GetContentRegionAvail().x;
+	const auto button_spacing = ImGui::GetStyle().ItemInnerSpacing.x;
+	if (ImGui::Button("ReShade Website", ImVec2(total_width * 0.5f - button_spacing, 0.0f)))
 		utils::execute_command("https://reshade.me");
+	ImGui::SameLine(0.0f, button_spacing);
+	if (ImGui::Button("AuroraShade GitHub", ImVec2(total_width * 0.5f - button_spacing, 0.0f)))
+		utils::execute_command("https://github.com/liuxd17thu/reshade");
 
 	if (_current_language == "zh-CN")
 	{
-		ImGui::TextUnformatted("作者：路障MKXX");
-		ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 7.3f * _font_size);
-		if (ImGui::SmallButton(" 改版源码 "))
-			utils::execute_command("https://github.com/liuxd17thu/reshade");
-		ImGui::PushTextWrapPos();
-		ImGui::TextUnformatted("联系方式：[微博同名] | 路障MKXX @FF14-宇宙和音 | wujingluren @NGA | liuxd17thu @github");
-		ImGui::TextUnformatted("感谢【印度神油君】【粒粒梦想】【白玉为何物】等人提供的帮助，以及各位用户的支持！");
+		ImGui::TextWrapped("联系方式：[微博同名] | 路障MKXX @FF14-宇宙和音 | wujingluren @NGA | liuxd17thu @github");
+		ImGui::TextWrapped("感谢【粒粒梦想】【白玉为何物】等人提供的帮助，以及各位用户的支持！");
 	}
 	else
 	{
-		ImGui::TextUnformatted("This is a modified version by BarricadeMKXX.");
-		ImGui::SameLine((ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) - 7.3f * _font_size);
-		if (ImGui::SmallButton(" Fork Repo "))
-			utils::execute_command("https://github.com/liuxd17thu/reshade");
+		ImGui::TextWrapped("BarricadeMKXX | liuxd17thu @github | barricademkxx @Discord");
+		ImGui::TextWrapped("Thanks to Lilidream, PolarisX, and all AuroraShade users!");
 	}
 
 	ImGui::Separator();
 
 	ImGui::PushTextWrapPos();
 
-	ImGui::TextUnformatted(_("Developed and maintained by crosire."));
+	//ImGui::TextUnformatted(_("Developed and maintained by crosire."));
 	ImGui::TextUnformatted(_("This project makes use of several open source libraries, licenses of which are listed below:"));
 
 	if (ImGui::CollapsingHeader("ReShade", ImGuiTreeNodeFlags_DefaultOpen))
@@ -3576,7 +3582,7 @@ void reshade::runtime::draw_variable_editor()
 		bool force_reload_effect = false;
 		const bool is_focused = _focused_effect == effect_index;
 		const std::string raw_effect_name = effect.source_file.filename().u8string();
-		const std::string effect_name = raw_effect_name	+ build_postfix(effect, _xshade_feature);
+		const std::string effect_name = raw_effect_name	+ build_postfix(effect, _aurora_feature);
 
 		// Create separate tab for every effect file
 		if (_variable_editor_tabs)
@@ -4071,7 +4077,7 @@ void reshade::runtime::draw_variable_editor()
 			// A value has changed, so save the current preset
 			if (modified && !variable.annotation_as_uint("nosave"))
 			{
-				if (_xshade_feature == 4 && _current_flair != u8"\u2014" && !effect.flair_touched)
+				if (_aurora_feature == 4 && _current_flair != u8"\u2014" && !effect.flair_touched)
 					effect.flair_touched = true;
 				if (_auto_save_preset)
 					save_current_preset();
@@ -4433,10 +4439,10 @@ void reshade::runtime::draw_technique_editor()
 				std::string label(get_localized_annotation(tech, "ui_label", _current_language));
 				if (label.empty())
 					label = tech.name;
-				if (_xshade_feature == 4 && _effects[tech.effect_index].flair_touched)
+				if (_aurora_feature == 4 && _effects[tech.effect_index].flair_touched)
 					label = ((_current_flair == "" || _current_flair == u8"\u2014") ? "" : ("{" + _current_flair + "} ")) + label;
-				if (_xshade_feature == 3)
-					label += build_postfix(_effects[tech.effect_index], _xshade_feature);
+				if (_aurora_feature == 3)
+					label += build_postfix(_effects[tech.effect_index], _aurora_feature);
 				label += " [" + effect.source_file.filename().u8string() + ']';
 
 				if (bool status = tech.enabled;
@@ -4477,15 +4483,15 @@ void reshade::runtime::draw_technique_editor()
 			if (ImGui::BeginPopupContextItem("##context"))
 			{
 				ImGui::Text(tech.name.c_str());
-				if (_xshade_feature == 3)
+				if (_aurora_feature == 3)
 				{
 					ImGui::SameLine(9.8f * _font_size);
-					if (ImGui::Button("+ DUP", ImVec2(4.0f * _font_size, 0)))
+					if (ImGui::Button(ICON_FK_PLUS "DUP", ImVec2(4.0f * _font_size, 0)))
 						ImGui::OpenPopup("##Create Duplicate");
 					if (ImGui::BeginPopup("##Create Duplicate"))
 					{
 						char dup_name[260] = "";
-						if (ImGui::InputText("Duplicate Name", dup_name, sizeof(dup_name), ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCharFilter, filter_name_plus)
+						if (ImGui::InputText(_("Duplicate name"), dup_name, sizeof(dup_name), ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCharFilter, filter_name_plus)
 							&& dup_name[0] != '\0')
 						{
 							make_effect_dup = tech.effect_index;
@@ -4499,7 +4505,7 @@ void reshade::runtime::draw_technique_editor()
 					ImGui::SameLine(14.0f * _font_size);
 					if (effect.dup_id.empty())
 						ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-					if (ImGui::Button("- DUP", ImVec2(4.0f * _font_size, 0)))
+					if (ImGui::Button(ICON_FK_MINUS "DUP", ImVec2(4.0f * _font_size, 0)))
 					{
 						remove_effect_dup = tech.effect_index;
 						ImGui::CloseCurrentPopup();
@@ -4550,9 +4556,9 @@ void reshade::runtime::draw_technique_editor()
 
 					ImGui::CloseCurrentPopup();
 				}
-				if (_xshade_feature == 4 && _current_flair != u8"\u2014" && _effects[tech.effect_index].flair_touched)
+				if (_aurora_feature == 4 && _current_flair != u8"\u2014" && _effects[tech.effect_index].flair_touched)
 				{
-					if (is_not_bottom && ImGui::Button("Remove Variation", ImVec2(18.0f * _font_size, 0)))
+					if (is_not_bottom && ImGui::Button(_("Remove variation"), ImVec2(18.0f * _font_size, 0)))
 					{
 						_effects[tech.effect_index].flair_touched = false;
 						auto &preset = ini_file::load_cache(_current_preset_path);
@@ -4655,7 +4661,7 @@ void reshade::runtime::draw_technique_editor()
 			}
 		}
 	}
-	if (_xshade_feature == 3) {
+	if (_aurora_feature == 3) {
 		// Build effect duplication
 		auto size = _effects.size();
 		if (make_effect_dup < size)
@@ -4684,7 +4690,7 @@ void reshade::runtime::draw_technique_editor()
 		{
 			ini_file &preset = ini_file::load_cache(_current_preset_path);
 			const std::string name = _effects[remove_effect_dup].source_file.filename().u8string()
-				+ build_postfix(_effects[remove_effect_dup], _xshade_feature);
+				+ build_postfix(_effects[remove_effect_dup], _aurora_feature);
 			preset.remove_section(name);
 
 			std::vector<std::string> keys;

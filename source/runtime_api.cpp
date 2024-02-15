@@ -878,7 +878,7 @@ void reshade::runtime::get_technique_effect_name([[maybe_unused]] api::effect_te
 	if (const auto tech = reinterpret_cast<const technique *>(handle.handle))
 	{
 		const std::string effect_name = _effects[tech->effect_index].source_file.filename().u8string()
-			+ build_postfix(_effects[tech->effect_index], _xshade_feature);
+			+ build_postfix(_effects[tech->effect_index], _aurora_feature);
 
 		if (value == nullptr)
 		{

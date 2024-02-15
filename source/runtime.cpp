@@ -871,7 +871,9 @@ void reshade::runtime::on_present(api::command_queue *present_queue)
 		_input_gamepad->next_frame();
 
 	// Save modified INI files
+#if RESHADE_GUI
 	if(_auto_save_preset)
+#endif
 		if (!ini_file::flush_cache())
 			_preset_save_successful = false;
 
@@ -954,8 +956,8 @@ void reshade::runtime::load_config()
 	config_get("GENERAL", "PresetTransitionDuration", _preset_transition_duration);
 
 	config_get("GENERAL", "UIBindSupport", _ui_bind_support);
-	config_get("GENERAL", "XShadeFeature", _xshade_feature);
-	config_get("GENERAL", "XShadeAutoFeature", _xshade_auto_feature);
+	config_get("GENERAL", "XShadeFeature", _aurora_feature);
+	config_get("GENERAL", "XShadeAutoFeature", _aurora_auto_feature);
 
 	// Fall back to temp directory if cache path does not exist
 	std::error_code ec;
@@ -1041,8 +1043,8 @@ void reshade::runtime::save_config() const
 	config.set("GENERAL", "PresetTransitionDuration", _preset_transition_duration);
 
 	config.set("GENERAL", "UIBindSupport", _ui_bind_support);
-	config.set("GENERAL", "XShadeFeature", _xshade_feature);
-	config.set("GENERAL", "XShadeAutoFeature", _xshade_auto_feature);
+	config.set("GENERAL", "XShadeFeature", _aurora_feature);
+	config.set("GENERAL", "XShadeAutoFeature", _aurora_auto_feature);
 
 	std::vector<unsigned int> preset_key_data;
 	std::vector<std::filesystem::path> preset_shortcut_paths;
@@ -1147,8 +1149,8 @@ void reshade::runtime::load_current_preset()
 	_flairs.clear(); _flairs.push_back(u8"\u2014");
 	_flairs.insert(_flairs.end(), std::make_move_iterator(tmp_flair.begin()), std::make_move_iterator(tmp_flair.end()));
 
-	if (_xshade_auto_feature)
-		_xshade_feature = [&]() -> int {
+	if (_aurora_auto_feature)
+		_aurora_feature = [&]() -> int {
 			// gshade 4 check
 			if (_flairs.size() > 1)
 				return 4;
@@ -1162,7 +1164,7 @@ void reshade::runtime::load_current_preset()
 			return 1;
 		}();
 
-	if (_xshade_feature == 3)
+	if (_aurora_feature == 3)
 	{
 		auto &check_tech_list = sorted_technique_list.empty() ? technique_list : sorted_technique_list;
 		for (auto &tech : check_tech_list)
@@ -1281,12 +1283,12 @@ void reshade::runtime::load_current_preset()
 			const technique &rhs = _techniques[rhs_technique_index];
 
 			const std::string lhs_unique = lhs.name + '@' + _effects[lhs.effect_index].source_file.filename().u8string()
-				+ (_xshade_feature == 3 ? build_postfix(_effects[lhs.effect_index], _xshade_feature) : "");
+				+ (_aurora_feature == 3 ? build_postfix(_effects[lhs.effect_index], _aurora_feature) : "");
 			auto lhs_it = std::find(sorted_technique_list.cbegin(), sorted_technique_list.cend(), lhs_unique);
 			lhs_it = (lhs_it == sorted_technique_list.cend()) ? std::find(sorted_technique_list.cbegin(), sorted_technique_list.cend(), lhs.name) : lhs_it;
 
 			const std::string rhs_unique = rhs.name + '@' + _effects[rhs.effect_index].source_file.filename().u8string()
-				+ (_xshade_feature == 3 ? build_postfix(_effects[rhs.effect_index], _xshade_feature) : "");
+				+ (_aurora_feature == 3 ? build_postfix(_effects[rhs.effect_index], _aurora_feature) : "");
 			auto rhs_it = std::find(sorted_technique_list.cbegin(), sorted_technique_list.cend(), rhs_unique);
 			rhs_it = (rhs_it == sorted_technique_list.cend()) ? std::find(sorted_technique_list.cbegin(), sorted_technique_list.cend(), rhs.name) : rhs_it;
 
@@ -1330,8 +1332,8 @@ void reshade::runtime::load_current_preset()
 	for (effect &effect : _effects)
 	{
 		const std::string raw_effect_name = effect.source_file.filename().u8string();
-		std::string effect_name = raw_effect_name + build_postfix(effect, _xshade_feature);
-		if (_xshade_feature == 4)
+		std::string effect_name = raw_effect_name + build_postfix(effect, _aurora_feature);
+		if (_aurora_feature == 4)
 		{
 			if (preset.has(effect_name))
 				effect.flair_touched = true;
@@ -1395,7 +1397,7 @@ void reshade::runtime::load_current_preset()
 	for (technique &tech : _techniques)
 	{
 		const std::string unique_name = tech.name + '@' + _effects[tech.effect_index].source_file.filename().u8string()
-			+ build_postfix(_effects[tech.effect_index], _xshade_feature == 3 ? 3 : 0);
+			+ build_postfix(_effects[tech.effect_index], _aurora_feature == 3 ? 3 : 0);
 
 		// Ignore preset if "enabled" annotation is set
 		if (tech.annotation_as_int("enabled") ||
@@ -1406,7 +1408,7 @@ void reshade::runtime::load_current_preset()
 			disable_technique(tech);
 
 		preset.get({}, "Key" + unique_name, tech.toggle_key_data);
-		preset.get({}, "Key" + tech.name + build_postfix(_effects[tech.effect_index], _xshade_feature), tech.toggle_key_data);
+		preset.get({}, "Key" + tech.name + build_postfix(_effects[tech.effect_index], _aurora_feature), tech.toggle_key_data);
 	}
 
 	// Reverse queue so that effects are enabled in the order they are defined in the preset (since the queue is worked from back to front)
@@ -1423,7 +1425,7 @@ void reshade::runtime::save_current_preset() const
 	std::vector<std::string> sorted_technique_list;
 	sorted_technique_list.reserve(_technique_sorting.size());
 
-	if (_xshade_feature == 4)
+	if (_aurora_feature == 4)
 	{
 		auto save_flair = std::vector(_flairs.begin() + 1, _flairs.end());
 		preset.set({}, "Flairs", save_flair);
@@ -1439,7 +1441,7 @@ void reshade::runtime::save_current_preset() const
 			continue;
 
 		std::string unique_name = tech.name + '@' + _effects[tech.effect_index].source_file.filename().u8string()
-			+ build_postfix(_effects[tech.effect_index], _xshade_feature == 3 ? 3 : 0);
+			+ build_postfix(_effects[tech.effect_index], _aurora_feature == 3 ? 3 : 0);
 
 		if (tech.enabled)
 			technique_list.push_back(unique_name);
@@ -1475,7 +1477,7 @@ void reshade::runtime::save_current_preset() const
 		const effect &effect = _effects[effect_index];
 
 		const std::string raw_effect_name = effect.source_file.filename().u8string();
-		const std::string effect_name = effect.flair_touched ? (raw_effect_name + build_postfix(effect, _xshade_feature)) : raw_effect_name;
+		const std::string effect_name = effect.flair_touched ? (raw_effect_name + build_postfix(effect, _aurora_feature)) : raw_effect_name;
 
 		if (!_ui_bind_support)
 		{
