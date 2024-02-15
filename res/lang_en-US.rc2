@@ -188,6 +188,8 @@ BEGIN
 42682 "Yes"
 35957 "No"
 25121 "Off\nOn\n"
+52993 "Preset Description"
+34048 "Show preset description"
 
 END
 

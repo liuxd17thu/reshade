@@ -188,6 +188,8 @@ BEGIN
 42682 "Oui"
 35957 "Non"
 25121 "Désactivé\nActivé\n"
+52993 "Description des presets"
+34048 "Afficher la description des presets"
 
 END
 

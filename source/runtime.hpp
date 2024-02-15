@@ -306,6 +306,7 @@ namespace reshade
 		std::atomic<size_t> _reload_remaining_effects = std::numeric_limits<size_t>::max();
 		void *_d3d_compiler_module = nullptr;
 
+		std::string _description;
 		std::vector<effect> _effects;
 		std::vector<texture> _textures;
 		std::vector<technique> _techniques;
@@ -442,6 +443,7 @@ namespace reshade
 		bool _show_screenshot_message = true;
 #if RESHADE_FX
 		bool _show_preset_transition_message = true;
+		bool _show_preset_description = true;
 		unsigned int _reload_count = 0;
 #endif
 
