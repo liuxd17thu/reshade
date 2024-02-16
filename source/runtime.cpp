@@ -795,6 +795,32 @@ void reshade::runtime::on_present(api::command_queue *present_queue)
 				}
 			}
 
+			if (_aurora_feature == 4)
+			{
+				if (const bool reversed = _input->is_key_pressed(_prev_flair_key_data, _force_shortcut_modifiers);
+					reversed || _input->is_key_pressed(_next_flair_key_data, _force_shortcut_modifiers))
+				{
+					auto flair_it = [&]() -> std::vector<std::string>::iterator {
+						auto flair_it = std::find(_flairs.begin(), _flairs.end(), _current_flair);
+						if (flair_it == _flairs.end())
+							flair_it = _flairs.begin();
+						return flair_it;
+					}();
+					auto next_flair = reversed ? *(flair_it == _flairs.begin() ? std::prev(_flairs.end()) : std::prev(flair_it))
+						: *(flair_it == _flairs.begin() ? std::prev(_flairs.end()) : std::prev(flair_it));
+					if (next_flair != _current_flair)
+					{
+						_last_preset_switching_time = _last_present_time;
+						_is_in_preset_transition = true;
+						
+						save_current_preset();
+						auto &preset = ini_file::load_cache(_current_preset_path);
+						preset.set({}, "CurrentFlair", next_flair);
+						load_current_preset();
+					}
+				}
+			}
+
 			// Continuously update preset values while a transition is in progress
 			if (_is_in_preset_transition)
 				load_current_preset();
@@ -939,6 +965,8 @@ void reshade::runtime::load_config()
 	config_get("INPUT", "KeyPerformanceMode", _performance_mode_key_data);
 	config_get("INPUT", "KeyPreviousPreset", _prev_preset_key_data);
 	config_get("INPUT", "KeyReload", _reload_key_data);
+	config_get("INPUT", "KeyNextFlair", _next_flair_key_data);
+	config_get("INPUT", "KeyPreviousFlair", _prev_flair_key_data);
 
 	config_get("GENERAL", "NoDebugInfo", _no_debug_info);
 	config_get("GENERAL", "NoEffectCache", _no_effect_cache);
@@ -956,8 +984,8 @@ void reshade::runtime::load_config()
 	config_get("GENERAL", "PresetTransitionDuration", _preset_transition_duration);
 
 	config_get("GENERAL", "UIBindSupport", _ui_bind_support);
-	config_get("GENERAL", "XShadeFeature", _aurora_feature);
-	config_get("GENERAL", "XShadeAutoFeature", _aurora_auto_feature);
+	config_get("GENERAL", "AuroraFeature", _aurora_feature);
+	config_get("GENERAL", "AuroraAutoFeature", _aurora_auto_feature);
 
 	// Fall back to temp directory if cache path does not exist
 	std::error_code ec;
@@ -1025,6 +1053,8 @@ void reshade::runtime::save_config() const
 	config.set("INPUT", "KeyPerformanceMode", _performance_mode_key_data);
 	config.set("INPUT", "KeyPreviousPreset", _prev_preset_key_data);
 	config.set("INPUT", "KeyReload", _reload_key_data);
+	config.set("INPUT", "KeyNextFlair", _next_flair_key_data);
+	config.set("INPUT", "KeyPreviousFlair", _prev_flair_key_data);
 
 	config.set("GENERAL", "NoDebugInfo", _no_debug_info);
 	config.set("GENERAL", "NoEffectCache", _no_effect_cache);
@@ -1043,8 +1073,8 @@ void reshade::runtime::save_config() const
 	config.set("GENERAL", "PresetTransitionDuration", _preset_transition_duration);
 
 	config.set("GENERAL", "UIBindSupport", _ui_bind_support);
-	config.set("GENERAL", "XShadeFeature", _aurora_feature);
-	config.set("GENERAL", "XShadeAutoFeature", _aurora_auto_feature);
+	config.set("GENERAL", "AuroraFeature", _aurora_feature);
+	config.set("GENERAL", "AuroraAutoFeature", _aurora_auto_feature);
 
 	std::vector<unsigned int> preset_key_data;
 	std::vector<std::filesystem::path> preset_shortcut_paths;

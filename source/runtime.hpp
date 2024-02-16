@@ -389,6 +389,8 @@ namespace reshade
 #if RESHADE_FX
 		unsigned int _prev_preset_key_data[4] = {};
 		unsigned int _next_preset_key_data[4] = {};
+		unsigned int _prev_flair_key_data[4] = {};
+		unsigned int _next_flair_key_data[4] = {};
 		unsigned int _preset_transition_duration = 1000;
 		std::filesystem::path _startup_preset_path;
 		std::filesystem::path _current_preset_path;

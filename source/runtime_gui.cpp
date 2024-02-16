@@ -1276,7 +1276,8 @@ void reshade::runtime::draw_gui()
 #if RESHADE_FX
 		else if (show_preset_transition_message)
 		{
-			ImGui::Text(_("Switching preset to %s ..."), _current_preset_path.stem().u8string().c_str());
+			const std::string postfix = (_current_flair == "" || _current_flair == u8"\u2014") ? "" : (" - " + _current_flair);
+			ImGui::Text(_("Switching preset to %s ..."), (_current_preset_path.stem().u8string() + postfix).c_str());
 		}
 #endif
 
@@ -1993,10 +1994,11 @@ void reshade::runtime::draw_gui_home()
 
 			if (next_flair != _current_flair)
 			{
+				_last_preset_switching_time = _last_present_time;
+				_is_in_preset_transition = true;
 				save_current_preset();
 				auto &preset = ini_file::load_cache(_current_preset_path);
 				preset.set({}, "CurrentFlair", next_flair);
-				//preset.set({}, "Flairs", );
 				load_current_preset();
 			}
 
@@ -2320,6 +2322,11 @@ void reshade::runtime::draw_gui_settings()
 
 			modified |= imgui::key_input_box(_("Previous preset key"), _prev_preset_key_data, *_input);
 			modified |= imgui::key_input_box(_("Next preset key"), _next_preset_key_data, *_input);
+
+			ImGui::BeginDisabled(_aurora_feature != 4);
+			modified |= imgui::key_input_box("Previous variation key", _prev_flair_key_data, *_input);
+			modified |= imgui::key_input_box("Next variation key", _next_flair_key_data, *_input);
+			ImGui::EndDisabled();
 
 			modified |= ImGui::SliderInt(_("Preset transition duration"), reinterpret_cast<int *>(&_preset_transition_duration), 0, 10 * 1000);
 			ImGui::SetItemTooltip(_(
