@@ -1733,8 +1733,12 @@ void reshade::runtime::draw_gui_home()
 			ImGui::SameLine(0, button_spacing);
 		}
 
+		ImGui::PushStyleColor(ImGuiCol_Text, ImU32(0xffff90c0));
+		ImGui::PushStyleColor(ImGuiCol_Button, ImU32(0x70c09060));
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImU32(0xe0c09060));
 		if (ImGui::Button(ICON_FK_AURORA, ImVec2(button_size, 0)))
 			ImGui::OpenPopup("##Feature Level");
+		ImGui::PopStyleColor(3);
 		if (ImGui::BeginPopup("##Feature Level"))
 		{
 			bool modified = false;
@@ -4516,13 +4520,16 @@ void reshade::runtime::draw_technique_editor()
 				hovered_technique_index = index;
 
 			// Create context menu
+			//_imgui_context->Style.padd
+			ImGui::SetNextWindowSize(ImVec2(18.0f * _font_size + 2 * _imgui_context->Style.WindowPadding.x, 0));
 			if (ImGui::BeginPopupContextItem("##context"))
 			{
+				const auto button_size = _font_size * 3.0f;
 				ImGui::TextUnformatted(tech.name.c_str()), tech.name.c_str() + tech.name.size();
 				if (_aurora_feature == 3)
 				{
-					ImGui::SameLine(9.8f * _font_size);
-					if (ImGui::Button(ICON_FK_PLUS ICON_FK_COPY, ImVec2(4.0f * _font_size, 0)))
+					ImGui::SameLine(ImGui::GetContentRegionAvail().x - 2 * button_size);
+					if (ImGui::Button(ICON_FK_PLUS ICON_FK_COPY, ImVec2(button_size, 0)))
 						ImGui::OpenPopup("##Create Duplicate");
 					if (ImGui::BeginPopup("##Create Duplicate"))
 					{
@@ -4538,10 +4545,10 @@ void reshade::runtime::draw_technique_editor()
 					}
 					if (make_effect_dup != std::numeric_limits<size_t>::max())
 						ImGui::CloseCurrentPopup();
-					ImGui::SameLine(14.0f * _font_size);
+					ImGui::SameLine(ImGui::GetContentRegionAvail().x - button_size + _imgui_context->Style.ItemSpacing.x);
 					if (effect.dup_id.empty())
 						ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-					if (ImGui::Button(ICON_FK_MINUS ICON_FK_COPY, ImVec2(4.0f * _font_size, 0)))
+					if (ImGui::Button(ICON_FK_MINUS ICON_FK_COPY, ImVec2(button_size, 0)))
 					{
 						remove_effect_dup = tech.effect_index;
 						ImGui::CloseCurrentPopup();
