@@ -877,8 +877,9 @@ void reshade::runtime::get_technique_effect_name([[maybe_unused]] api::effect_te
 #if RESHADE_FX
 	if (const auto tech = reinterpret_cast<const technique *>(handle.handle))
 	{
-		const std::string effect_name = _effects[tech->effect_index].source_file.filename().u8string()
-			+ build_postfix(_effects[tech->effect_index], _aurora_feature);
+		std::string effect_name = _effects[tech->effect_index].source_file.filename().u8string();
+		if (_aurora_feature == 3 && _effects[tech->effect_index].dup_id != "")
+			effect_name += "+" + _effects[tech->effect_index].dup_id;
 
 		if (value == nullptr)
 		{
