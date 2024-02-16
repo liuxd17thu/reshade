@@ -1747,7 +1747,7 @@ void reshade::runtime::draw_gui_home()
 			ImGui::Spacing();
 			ImGui::Separator();
 			std::string status = _ui_bind_support ? _("ON") : _("OFF");
-			const std::string toggle_str = _("UI_BIND Support: ") + status;
+			const std::string toggle_str = _("UI_BIND: ") + status;
 			if (imgui::toggle_button(toggle_str.c_str(), _ui_bind_support, 18.0f * _font_size))
 				save_config();
 			const std::string feature_string[3] {_("ReShade\n  Nothing"), _("GShade 3\n  Shader Cloning"), _("GShade 4+\n  Preset Template/Variation")};
@@ -2324,8 +2324,8 @@ void reshade::runtime::draw_gui_settings()
 			modified |= imgui::key_input_box(_("Next preset key"), _next_preset_key_data, *_input);
 
 			ImGui::BeginDisabled(_aurora_feature != 4);
-			modified |= imgui::key_input_box("Previous variation key", _prev_flair_key_data, *_input);
-			modified |= imgui::key_input_box("Next variation key", _next_flair_key_data, *_input);
+			modified |= imgui::key_input_box(_("Previous variation key"), _prev_flair_key_data, *_input);
+			modified |= imgui::key_input_box(_("Next variation key"), _next_flair_key_data, *_input);
 			ImGui::EndDisabled();
 
 			modified |= ImGui::SliderInt(_("Preset transition duration"), reinterpret_cast<int *>(&_preset_transition_duration), 0, 10 * 1000);
