@@ -59,8 +59,14 @@ public:
 		const auto it1 = _sections.find(section);
 		return it1 != _sections.end();
 	}
-
-	bool get_section_name(const std::string &section, std::vector<std::string> &data)
+	bool get_section_names(std::vector<std::string> &data)
+	{
+		data.clear();
+		for (auto &sect : _sections)
+			data.push_back(sect.first);
+		return true;
+	}
+	bool get_section_keynames(const std::string &section, std::vector<std::string> &data)
 	{
 		const auto it1 = _sections.find(section);
 		if (it1 == _sections.end())
@@ -71,7 +77,17 @@ public:
 			data.push_back(kv.first);
 		return true;
 	}
-	/// <summary>s
+
+	bool get(const std::string &section, std::unordered_map<std::string, std::vector<std::string>> &data)
+	{
+		const auto it1 = _sections.find(section);
+		if (it1 == _sections.end())
+			return false;
+		data.clear();
+		data = it1->second;
+		return true;
+	}
+	/// <summary>
 	/// Gets the value of the specified <paramref name="section"/> and <paramref name="key"/> from the INI.
 	/// </summary>
 	/// <param name="value">Reference filled with the data of this INI entry.</param>
@@ -147,6 +163,14 @@ public:
 		return get<bool>(section, key, value) && value;
 	}
 
+	void set(const std::string &section, std::unordered_map<std::string, std::vector<std::string>> &data)
+	{
+		const auto it = _sections.find(section);
+		if (it == _sections.end())
+			_sections.insert(std::pair(section, data));
+		else
+			it->second = data;
+	}
 	/// <summary>
 	/// Sets the value of the specified <paramref name="section"/> and <paramref name="key"/> to a new <paramref name="value"/>.
 	/// </summary>

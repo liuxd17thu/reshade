@@ -1577,6 +1577,58 @@ void reshade::runtime::save_current_preset() const
 	}
 }
 
+void reshade::runtime::detach_current_flair() const
+{
+	const auto new_preset_name = _current_preset_path.stem().u8string() + " - " + _current_flair;
+	std::filesystem::path new_preset_path = _current_preset_path.parent_path() / std::filesystem::u8path(new_preset_name);
+	if (new_preset_path.extension() != L".ini" && new_preset_path.extension() != L".txt")
+		new_preset_path += L".ini";
+
+	std::error_code ec;
+	if (const std::filesystem::file_type file_type = std::filesystem::status(new_preset_path, ec).type();
+		file_type != std::filesystem::file_type::directory)
+	{
+		auto &preset = ini_file::load_cache(_current_preset_path);
+		auto &detach = ini_file::load_cache(new_preset_path);
+
+		std::vector<std::string> sections;
+		preset.get_section_names(sections);
+
+		std::unordered_map<std::string, std::vector<std::string>> tmp_section;
+		preset.get({}, tmp_section);
+		detach.set({}, tmp_section);
+		detach.remove_key({}, "Flairs");
+		detach.remove_key({}, "CurrentFlair");
+
+		// pass 1: base
+		for (auto &sect : sections)
+		{
+			if (sect != "" && sect.find('|') == std::string::npos)
+			{
+				preset.get(sect, tmp_section);
+				detach.set(sect, tmp_section);
+			}
+		}
+		// pass 2: variation data
+		for (auto &sect : sections)
+		{
+			auto vpos = sect.find('|');
+			if (sect != "" && vpos < sect.length())
+			{
+				auto base = sect.substr(0, vpos);
+				auto variation = sect.substr(vpos + 1);
+				if (variation != _current_flair)
+					continue;
+				preset.get(sect, tmp_section);
+				for (auto &kv : tmp_section)
+					detach.set(base, kv.first, kv.second);
+			}
+		}
+
+		detach.save();
+	}
+}
+
 bool reshade::runtime::switch_to_next_preset(std::filesystem::path filter_path, bool reversed)
 {
 	std::error_code ec; // This is here to ignore file system errors below

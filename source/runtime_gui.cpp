@@ -1971,7 +1971,15 @@ void reshade::runtime::draw_gui_home()
 			ImGui::EndDisabled();
 			ImGui::SameLine(0, 2 * button_spacing);
 
-			ImGui::ButtonEx("[WIP] Nothing Here Yet", ImVec2(12.5f * _font_size, button_size), ImGuiButtonFlags_NoNavFocus | ImGuiButtonFlags_PressedOnClick);
+			ImGui::BeginDisabled(_current_flair == u8"\u2014");
+
+			std::string detach_label = ICON_FK_DETACH;
+			detach_label += _(" Detach to standalone");
+			if (ImGui::ButtonEx(detach_label.c_str(), ImVec2(12.5f * _font_size, button_size), ImGuiButtonFlags_NoNavFocus | ImGuiButtonFlags_PressedOnClick))
+			{
+				detach_current_flair();
+			}
+			ImGui::EndDisabled();
 
 			ImGui::SetNextWindowPos(flair_button_pos + ImVec2(button_spacing - _imgui_context->Style.WindowPadding.x, ImGui::GetFrameHeightWithSpacing()));
 			ImGui::SetNextWindowSize(ImVec2(browse_button_width + button_size + 2 * button_spacing, 0));
@@ -4737,7 +4745,7 @@ void reshade::runtime::draw_technique_editor()
 			preset.remove_section(name);
 
 			std::vector<std::string> keys;
-			preset.get_section_name("", keys);
+			preset.get_section_keynames("", keys);
 			for (auto & iter : keys)
 				if (iter.substr(0, 3) == "Key" && iter.find(name))
 					preset.remove_key("", iter);
