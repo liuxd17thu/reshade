@@ -1276,7 +1276,7 @@ void reshade::runtime::draw_gui()
 #if RESHADE_FX
 		else if (show_preset_transition_message)
 		{
-			const std::string postfix = (_current_flair == "" || _current_flair == u8"\u2014") ? "" : (" - " + _current_flair);
+			const std::string postfix = (_current_flair == "" || _current_flair == ":") ? "" : (" - " + _current_flair);
 			ImGui::Text(_("Switching preset to %s ..."), (_current_preset_path.stem().u8string() + postfix).c_str());
 		}
 #endif
@@ -1956,7 +1956,7 @@ void reshade::runtime::draw_gui_home()
 			ImGui::SetItemTooltip(_("Create new variation"));
 			ImGui::SameLine(0, button_spacing);
 
-			ImGui::BeginDisabled(_current_flair == u8"\u2014");
+			ImGui::BeginDisabled(_current_flair == ":");
 			if (ImGui::ButtonEx(ICON_FK_MINUS "###remove_flair", ImVec2(button_size, button_size), ImGuiButtonFlags_NoNavFocus | ImGuiButtonFlags_PressedOnClick))
 			{
 				auto flair_it = std::find(_flairs.begin(), _flairs.end(), _current_flair);
@@ -1972,7 +1972,7 @@ void reshade::runtime::draw_gui_home()
 			ImGui::EndDisabled();
 			ImGui::SameLine(0, 2 * button_spacing);
 
-			ImGui::BeginDisabled(_current_flair == u8"\u2014");
+			ImGui::BeginDisabled(_current_flair == ":");
 
 			std::string detach_label = ICON_FK_DETACH;
 			detach_label += _(" Detach to standalone");
@@ -1998,7 +1998,7 @@ void reshade::runtime::draw_gui_home()
 				_is_in_preset_transition = true;
 				save_current_preset();
 				auto &preset = ini_file::load_cache(_current_preset_path);
-				preset.set({}, "CurrentFlair", next_flair);
+				preset.set({}, "CurrentFlair", next_flair == ":" ? u8"\u2014" : next_flair);
 				load_current_preset();
 			}
 
@@ -4132,7 +4132,7 @@ void reshade::runtime::draw_variable_editor()
 			// A value has changed, so save the current preset
 			if (modified && !variable.annotation_as_uint("nosave"))
 			{
-				if (_aurora_feature == 4 && _current_flair != u8"\u2014" && !effect.flair_touched)
+				if (_aurora_feature == 4 && _current_flair != ":" && !effect.flair_touched)
 					effect.flair_touched = true;
 				if (_auto_save_preset)
 					save_current_preset();
@@ -4495,7 +4495,7 @@ void reshade::runtime::draw_technique_editor()
 				if (label.empty())
 					label = tech.name;
 				if (_aurora_feature == 4 && _effects[tech.effect_index].flair_touched)
-					label = ((_current_flair == "" || _current_flair == u8"\u2014") ? "" : ("{" + _current_flair + "} ")) + label;
+					label = ((_current_flair == "" || _current_flair == ":") ? "" : ("{" + _current_flair + "} ")) + label;
 				if (_aurora_feature == 3)
 					label += build_postfix(_effects[tech.effect_index], _aurora_feature);
 				label += " [" + effect.source_file.filename().u8string() + ']';
@@ -4614,7 +4614,7 @@ void reshade::runtime::draw_technique_editor()
 
 					ImGui::CloseCurrentPopup();
 				}
-				if (_aurora_feature == 4 && _current_flair != u8"\u2014" && _effects[tech.effect_index].flair_touched)
+				if (_aurora_feature == 4 && _current_flair != ":" && _effects[tech.effect_index].flair_touched)
 				{
 					if (is_not_bottom && ImGui::Button(_("Remove variation"), ImVec2(18.0f * _font_size, 0)))
 					{

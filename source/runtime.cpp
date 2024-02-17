@@ -1127,7 +1127,7 @@ std::string reshade::runtime::build_postfix(const effect & effect, int feature) 
 		break;
 	}
 	case 4: {
-		ret = (_current_flair == "" || _current_flair == u8"\u2014") ? "" : ("|" + _current_flair);
+		ret = (_current_flair == "" || _current_flair == ":") ? "" : ("|" + _current_flair);
 		break;
 	}
 	default:
@@ -1186,9 +1186,9 @@ void reshade::runtime::load_current_preset()
 	std::vector<std::string> tmp_flair;
 	preset.get({}, "Flairs", tmp_flair);
 	preset.get({}, "CurrentFlair", _current_flair);
-	if (_current_flair.empty())
-		_current_flair = u8"\u2014";
-	_flairs.clear(); _flairs.push_back(u8"\u2014");
+	if (_current_flair.empty() || _current_flair == u8"\u2014")
+		_current_flair = ":";
+	_flairs.clear(); _flairs.push_back(":");
 	_flairs.insert(_flairs.end(), std::make_move_iterator(tmp_flair.begin()), std::make_move_iterator(tmp_flair.end()));
 
 	if (_aurora_auto_feature)
@@ -1472,7 +1472,7 @@ void reshade::runtime::save_current_preset() const
 		auto save_flair = std::vector(_flairs.begin() + 1, _flairs.end());
 		preset.set({}, "Flairs", save_flair);
 		if (!_current_flair.empty())
-			preset.set({}, "CurrentFlair", _current_flair);
+			preset.set({}, "CurrentFlair", _current_flair == ":" ? u8"\u2014" : _current_flair);
 	}
 
 	for (size_t technique_index : _technique_sorting)
