@@ -1692,6 +1692,23 @@ void reshade::runtime::draw_gui_home()
 			ImGui::EndPopup();
 		}
 
+				ImGui::SameLine(0, button_spacing);
+		if (ImGui::ButtonEx(ICON_FK_PLUS, ImVec2(button_size, 0), ImGuiButtonFlags_NoNavFocus | ImGuiButtonFlags_PressedOnClick))
+		{
+			_inherit_current_preset = false;
+			_template_preset_path.clear();
+			_file_selection_path = _current_preset_path.parent_path();
+			ImGui::OpenPopup("##create");
+		}
+
+		ImGui::SetItemTooltip(_("Add a new preset"));
+
+		if (was_loading)
+		{
+			ImGui::PopStyleColor();
+			ImGui::PopItemFlag();
+		}
+
 		ImGui::SameLine(0, button_spacing);
 
 		if (ImGui::Button(ICON_FK_FOLDER, ImVec2(button_size, button_size)))
@@ -1705,7 +1722,7 @@ void reshade::runtime::draw_gui_home()
 		std::string auto_save_button_label = was_auto_save_preset ? _("Auto Save on") : _("Auto Save");
 		auto_save_button_label += "###auto_save";
 
-		if (imgui::toggle_button(auto_save_button_label.c_str(), _auto_save_preset, (was_auto_save_preset ? 0.0f : auto_save_button_spacing) + (12.5f * _font_size) - 0.5f * button_spacing - (button_spacing + button_size) * (was_auto_save_preset ? 3 : 4)))
+		if (imgui::toggle_button(auto_save_button_label.c_str(), _auto_save_preset, (12.5f * _font_size) - (button_spacing + button_size) * (was_auto_save_preset ? 3 : 4)))
 		{
 			_preset_is_modified = false;
 
@@ -1714,14 +1731,9 @@ void reshade::runtime::draw_gui_home()
 
 		ImGui::SetItemTooltip(_("Save current preset automatically on every modification"));
 
-		if (was_auto_save_preset)
+		ImGui::SameLine(0, button_spacing);
+		if (!was_auto_save_preset)
 		{
-			ImGui::SameLine(0, button_spacing + auto_save_button_spacing);
-		}
-		else
-		{
-			ImGui::SameLine(0, button_spacing);
-
 			ImGui::BeginDisabled(!_preset_is_modified);
 
 			if (imgui::confirm_button(ICON_FK_UNDO, button_size, _("Do you really want to reset all techniques and values?")))
@@ -1734,10 +1746,28 @@ void reshade::runtime::draw_gui_home()
 			ImGui::SameLine(0, button_spacing);
 		}
 
+		// Cannot save in performance mode, since there are no variables to retrieve values from then
+		ImGui::BeginDisabled(_performance_mode || _is_in_preset_transition);
+
+		const auto button_height = (_aurora_feature == 4) ? (2 * button_size + _imgui_context->Style.ItemSpacing.y) : button_size;
+		if (ImGui::ButtonEx(ICON_FK_FLOPPY, ImVec2(button_size, button_height), ImGuiButtonFlags_NoNavFocus))
+		{
+			ini_file::load_cache(_current_preset_path).clear();
+			save_current_preset();
+			ini_file::flush_cache(_current_preset_path);
+
+			_preset_is_modified = false;
+		}
+
+		ImGui::SetItemTooltip(_("Clean up and save the current preset (removes all values for disabled techniques)"));
+
+		ImGui::EndDisabled();
+
+		ImGui::SameLine(0, button_spacing);
 		ImGui::PushStyleColor(ImGuiCol_Text, ImU32(0xffff90c0));
 		ImGui::PushStyleColor(ImGuiCol_Button, ImU32(0x70c09060));
 		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImU32(0xe0c09060));
-		if (ImGui::Button(ICON_FK_AURORA, ImVec2(button_size, 0)))
+		if (ImGui::Button(ICON_FK_AURORA, ImVec2(button_size, button_height)))
 			ImGui::OpenPopup("##Feature Level");
 		ImGui::PopStyleColor(3);
 		if (ImGui::BeginPopup("##Feature Level"))
@@ -1750,8 +1780,8 @@ void reshade::runtime::draw_gui_home()
 			const std::string toggle_str = _("UI_BIND: ") + status;
 			if (imgui::toggle_button(toggle_str.c_str(), _ui_bind_support, 18.0f * _font_size))
 				save_config();
-			const std::string feature_string[3] {_("ReShade\n  Nothing"), _("GShade 3\n  Shader Cloning"), _("GShade 4+\n  Preset Template/Variation")};
-			const int feature_id[3] = {1, 3, 4};
+			const std::string feature_string[3] { _("ReShade\n  Nothing"), _("GShade 3\n  Shader Cloning"), _("GShade 4+\n  Preset Template/Variation") };
+			const int feature_id[3] = { 1, 3, 4 };
 			bool feature_is_using = check_preset_feature(_aurora_feature);
 			ImGui::Separator();
 			if (feature_is_using)
@@ -1771,40 +1801,6 @@ void reshade::runtime::draw_gui_home()
 				ImGui::CloseCurrentPopup();
 			}
 			ImGui::EndPopup();
-		}
-		ImGui::SameLine(0, button_spacing);
-
-		// Cannot save in performance mode, since there are no variables to retrieve values from then
-		ImGui::BeginDisabled(_performance_mode || _is_in_preset_transition);
-
-		if (ImGui::ButtonEx(ICON_FK_FLOPPY, ImVec2(button_size, 0), ImGuiButtonFlags_NoNavFocus))
-		{
-			ini_file::load_cache(_current_preset_path).clear();
-			save_current_preset();
-			ini_file::flush_cache(_current_preset_path);
-
-			_preset_is_modified = false;
-		}
-
-		ImGui::SetItemTooltip(_("Clean up and save the current preset (removes all values for disabled techniques)"));
-
-		ImGui::EndDisabled();
-
-		ImGui::SameLine(0, button_spacing);
-		if (ImGui::ButtonEx(ICON_FK_PLUS, ImVec2(button_size, 0), ImGuiButtonFlags_NoNavFocus | ImGuiButtonFlags_PressedOnClick))
-		{
-			_inherit_current_preset = false;
-			_template_preset_path.clear();
-			_file_selection_path = _current_preset_path.parent_path();
-			ImGui::OpenPopup("##create");
-		}
-
-		ImGui::SetItemTooltip(_("Add a new preset"));
-
-		if (was_loading)
-		{
-			ImGui::PopStyleColor();
-			ImGui::PopItemFlag();
 		}
 
 		ImGui::SetNextWindowPos(browse_button_pos + ImVec2(-_imgui_context->Style.WindowPadding.x, ImGui::GetFrameHeightWithSpacing()));
@@ -1907,6 +1903,8 @@ void reshade::runtime::draw_gui_home()
 		};
 		if (_aurora_feature == 4)
 		{
+			const auto cursor_pos = ImGui::GetCursorPos() - ImVec2(0, button_height - button_size);
+			ImGui::SetCursorPos(cursor_pos);
 			ImGui::BeginDisabled(_reload_remaining_effects != std::numeric_limits<size_t>::max());
 			if (ImGui::ArrowButtonEx("<##prev_flair", ImGuiDir_Left, ImVec2(button_size, button_size), ImGuiButtonFlags_NoNavFocus)
 				&& _flairs.size() > 1)
@@ -1929,7 +1927,7 @@ void reshade::runtime::draw_gui_home()
 			const auto flair_button_pos = ImGui::GetCursorScreenPos();
 			const std::string cur_flair_label = _current_flair + "##flair";
 			ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-			if (ImGui::ButtonEx(cur_flair_label.c_str(), ImVec2(browse_button_width - button_size - button_spacing, 0), ImGuiButtonFlags_NoNavFocus))
+			if (ImGui::ButtonEx(cur_flair_label.c_str(), ImVec2(browse_button_width, 0), ImGuiButtonFlags_NoNavFocus))
 			{
 				ImGui::OpenPopup("##select_flair");
 			}
@@ -1976,7 +1974,7 @@ void reshade::runtime::draw_gui_home()
 
 			std::string detach_label = ICON_FK_DETACH;
 			detach_label += _(" Detach to standalone");
-			if (ImGui::ButtonEx(detach_label.c_str(), ImVec2(12.5f * _font_size, button_size), ImGuiButtonFlags_NoNavFocus | ImGuiButtonFlags_PressedOnClick))
+			if (ImGui::ButtonEx(detach_label.c_str(), ImVec2(12.5f * _font_size - 3 * (button_size + button_spacing), button_size), ImGuiButtonFlags_NoNavFocus | ImGuiButtonFlags_PressedOnClick))
 			{
 				detach_current_flair();
 			}
