@@ -1973,7 +1973,7 @@ void reshade::runtime::draw_gui_home()
 			ImGui::BeginDisabled(_current_flair == ":");
 
 			std::string detach_label = ICON_FK_DETACH;
-			detach_label += _(" Detach to standalone");
+			detach_label += _(" Detach");
 			if (ImGui::ButtonEx(detach_label.c_str(), ImVec2(12.5f * _font_size - 3 * (button_size + button_spacing), button_size), ImGuiButtonFlags_NoNavFocus | ImGuiButtonFlags_PressedOnClick))
 			{
 				detach_current_flair();
@@ -2528,7 +2528,7 @@ void reshade::runtime::draw_gui_settings()
 #endif
 
 		#pragma region Style
-		if (ImGui::Combo(_("Global style"), &_style_index, "AuroraShade\0Dark\0Light\0Default\0Custom Simple\0Custom Advanced\0Solarized Dark\0Solarized Light\0"))
+		if (ImGui::Combo(_("Global style"), &_style_index, "AuroraShade\0Dark\0Light\0ReShade Default\0Custom Simple\0Custom Advanced\0Solarized Dark\0Solarized Light\0"))
 		{
 			modified = true;
 			load_custom_style();
