@@ -1531,7 +1531,7 @@ void reshade::runtime::save_current_preset() const
 		const effect &effect = _effects[effect_index];
 
 		const std::string raw_effect_name = effect.source_file.filename().u8string();
-		const std::string effect_name = effect.flair_touched ? (raw_effect_name + build_postfix(effect, _aurora_feature)) : raw_effect_name;
+		const std::string effect_name = (_aurora_feature == 3 || (_aurora_feature == 4 && effect.flair_touched)) ? (raw_effect_name + build_postfix(effect, _aurora_feature)) : raw_effect_name;
 
 		if (!_ui_bind_support)
 		{
