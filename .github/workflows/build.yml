@@ -1,0 +1,30 @@
+name: Build AuroraShade
+on: [push, pull_request, workflow_dispatch]
+
+jobs:
+  build:
+    name: Build AuroraShade
+    runs-on: windows-2022
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v1.0.2
+
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.10"
+
+      - name: Build
+        run: msbuild /p:Configuration=Release /p:Platform=64-bit ./ReShade.sln
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: AuroraShade
+          path: ./bin/x64/Release/ReShade64.dll
