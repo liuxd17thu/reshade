@@ -1206,6 +1206,7 @@ void reshade::runtime::load_current_preset()
 			return 1;
 		}();
 
+	bool aurora3_reload = false;
 	if (_aurora_feature == 3)
 	{
 		auto &check_tech_list = sorted_technique_list.empty() ? technique_list : sorted_technique_list;
@@ -1234,6 +1235,7 @@ void reshade::runtime::load_current_preset()
 			dup_effect.source_file = base_effect_it->source_file;
 			dup_effect.included_files = base_effect_it->included_files;
 			_effects.emplace_back(dup_effect);
+			aurora3_reload = true;
 			load_effect(dup_effect.source_file, ini_file::load_cache(_current_preset_path), _effects.size() - 1, true, true);
 		}
 
@@ -1287,7 +1289,7 @@ void reshade::runtime::load_current_preset()
 	}
 
 	// Recompile effects if preprocessor definitions have changed or running in performance mode (in which case all preset values are compile-time constants)
-	if (_reload_remaining_effects != 0 && (!_is_in_preset_transition || _last_preset_switching_time == _last_present_time)) // ... unless this is the 'load_current_preset' call in 'update_effects' or the call every frame during preset transition
+	if (aurora3_reload || _reload_remaining_effects != 0 && (!_is_in_preset_transition || _last_preset_switching_time == _last_present_time)) // ... unless this is the 'load_current_preset' call in 'update_effects' or the call every frame during preset transition
 	{
 		if (_performance_mode || preset_preprocessor_definitions != _preset_preprocessor_definitions)
 		{
@@ -1296,14 +1298,19 @@ void reshade::runtime::load_current_preset()
 			return; // Preset values are loaded in 'update_effects' during effect loading
 		}
 
+		auto aurora_feature = _aurora_feature;
 		if (std::find_if(technique_list.cbegin(), technique_list.cend(),
-				[this](const std::string &technique_name) {
+				[aurora_feature, this](const std::string &technique_name) {
 					const size_t at_pos = technique_name.find('@');
 					if (at_pos == std::string::npos)
 						return true;
 					const auto it = std::find_if(_effects.cbegin(), _effects.cend(),
-						[effect_name = std::filesystem::u8path(technique_name.substr(at_pos + 1))](const effect &effect) {
-							return effect_name == effect.source_file.filename();
+						[aurora_feature, effect_name = std::filesystem::u8path(technique_name.substr(at_pos + 1))](const effect &effect) {
+							if (aurora_feature == 3)
+								return effect_name.u8string()
+									== effect.source_file.filename().u8string() + (effect.dup_id.empty() ? "" : ("+" + effect.dup_id));
+							else
+								return effect_name == effect.source_file.filename();
 						});
 					return it != _effects.cend() && it->skipped;
 				}) != technique_list.cend())
@@ -1499,7 +1506,8 @@ void reshade::runtime::save_current_preset() const
 			preset.remove_key({}, "Key" + unique_name);
 	}
 
-	if (preset.has({}, "TechniqueSorting") || !std::equal(technique_list.cbegin(), technique_list.cend(), sorted_technique_list.cbegin()))
+	if (preset.has({}, "TechniqueSorting") || !std::equal(technique_list.cbegin(), technique_list.cend(), sorted_technique_list.cbegin())
+		|| _aurora_feature == 3 && check_preset_feature(3))
 		preset.set({}, "TechniqueSorting", std::move(sorted_technique_list));
 
 	preset.set({}, "Techniques", std::move(technique_list));

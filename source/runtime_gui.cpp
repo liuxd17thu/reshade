@@ -4759,6 +4759,9 @@ void reshade::runtime::draw_technique_editor()
 #if RESHADE_ADDON
 			invoke_addon_event<addon_event::reshade_reloaded_effects>(this);
 #endif
+			for (auto &tech : _techniques)
+				if (tech.effect_index > remove_effect_dup)
+					tech.effect_index -= 1;
 			_effects.erase(_effects.begin() + remove_effect_dup);
 		}
 		if (make_effect_dup < size || remove_effect_dup < size)
