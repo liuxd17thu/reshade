@@ -49,6 +49,7 @@ bool D3D12GraphicsCommandList::check_and_upgrade_interface(REFIID riid)
 		__uuidof(ID3D12GraphicsCommandList7),
 		__uuidof(ID3D12GraphicsCommandList8),
 		__uuidof(ID3D12GraphicsCommandList9),
+		__uuidof(ID3D12GraphicsCommandList10),
 	};
 
 	for (unsigned short version = 0; version < ARRAYSIZE(iid_lookup); ++version)
@@ -667,12 +668,13 @@ void STDMETHODCALLTYPE D3D12GraphicsCommandList::SetComputeRootShaderResourceVie
 		return;
 	buffer_range.size = UINT64_MAX;
 
+	// TODO: Get a working 'resource_view' handle for the SRV that can be passed as descriptor update, when it is not an acceleration structure
 	reshade::invoke_addon_event<reshade::addon_event::push_descriptors>(
 		this,
 		reshade::api::shader_stage::all_compute | reshade::api::shader_stage::all_ray_tracing,
 		to_handle(_current_root_signature[1]),
 		RootParameterIndex,
-		reshade::api::descriptor_table_update { {}, 0, 0, 1, acceleration_structure ? reshade::api::descriptor_type::acceleration_structure : reshade::api::descriptor_type::shader_resource_view, acceleration_structure ? static_cast<void *>(&BufferLocation) : static_cast<void *>(&buffer_range) });
+		reshade::api::descriptor_table_update { {}, 0, 0, 1, acceleration_structure ? reshade::api::descriptor_type::acceleration_structure : reshade::api::descriptor_type::buffer_shader_resource_view, &BufferLocation });
 #endif
 }
 void STDMETHODCALLTYPE D3D12GraphicsCommandList::SetGraphicsRootShaderResourceView(UINT RootParameterIndex, D3D12_GPU_VIRTUAL_ADDRESS BufferLocation)
@@ -680,20 +682,13 @@ void STDMETHODCALLTYPE D3D12GraphicsCommandList::SetGraphicsRootShaderResourceVi
 	_orig->SetGraphicsRootShaderResourceView(RootParameterIndex, BufferLocation);
 
 #if RESHADE_ADDON >= 2
-	if (!reshade::has_addon_event<reshade::addon_event::push_descriptors>())
-		return;
-
-	reshade::api::buffer_range buffer_range;
-	if (!_device_impl->resolve_gpu_address(BufferLocation, &buffer_range.buffer, &buffer_range.offset))
-		return;
-	buffer_range.size = UINT64_MAX;
-
+	// TODO: Get a working 'resource_view' handle for the SRV that can be passed as descriptor update
 	reshade::invoke_addon_event<reshade::addon_event::push_descriptors>(
 		this,
 		reshade::api::shader_stage::all_graphics,
 		to_handle(_current_root_signature[0]),
 		RootParameterIndex,
-		reshade::api::descriptor_table_update { {}, 0, 0, 1, reshade::api::descriptor_type::shader_resource_view, &buffer_range });
+		reshade::api::descriptor_table_update { {}, 0, 0, 1, reshade::api::descriptor_type::buffer_shader_resource_view, &BufferLocation });
 #endif
 }
 void STDMETHODCALLTYPE D3D12GraphicsCommandList::SetComputeRootUnorderedAccessView(UINT RootParameterIndex, D3D12_GPU_VIRTUAL_ADDRESS BufferLocation)
@@ -701,20 +696,13 @@ void STDMETHODCALLTYPE D3D12GraphicsCommandList::SetComputeRootUnorderedAccessVi
 	_orig->SetComputeRootUnorderedAccessView(RootParameterIndex, BufferLocation);
 
 #if RESHADE_ADDON >= 2
-	if (!reshade::has_addon_event<reshade::addon_event::push_descriptors>())
-		return;
-
-	reshade::api::buffer_range buffer_range;
-	if (!_device_impl->resolve_gpu_address(BufferLocation, &buffer_range.buffer, &buffer_range.offset))
-		return;
-	buffer_range.size = UINT64_MAX;
-
+	// TODO: Get a working 'resource_view' handle for the UAV that can be passed as descriptor update
 	reshade::invoke_addon_event<reshade::addon_event::push_descriptors>(
 		this,
 		reshade::api::shader_stage::all_compute | reshade::api::shader_stage::all_ray_tracing,
 		to_handle(_current_root_signature[1]),
 		RootParameterIndex,
-		reshade::api::descriptor_table_update { {}, 0, 0, 1, reshade::api::descriptor_type::unordered_access_view, &buffer_range });
+		reshade::api::descriptor_table_update { {}, 0, 0, 1, reshade::api::descriptor_type::buffer_unordered_access_view, &BufferLocation });
 #endif
 }
 void STDMETHODCALLTYPE D3D12GraphicsCommandList::SetGraphicsRootUnorderedAccessView(UINT RootParameterIndex, D3D12_GPU_VIRTUAL_ADDRESS BufferLocation)
@@ -722,20 +710,13 @@ void STDMETHODCALLTYPE D3D12GraphicsCommandList::SetGraphicsRootUnorderedAccessV
 	_orig->SetGraphicsRootUnorderedAccessView(RootParameterIndex, BufferLocation);
 
 #if RESHADE_ADDON >= 2
-	if (!reshade::has_addon_event<reshade::addon_event::push_descriptors>())
-		return;
-
-	reshade::api::buffer_range buffer_range;
-	if (!_device_impl->resolve_gpu_address(BufferLocation, &buffer_range.buffer, &buffer_range.offset))
-		return;
-	buffer_range.size = UINT64_MAX;
-
+	// TODO: Get a working 'resource_view' handle for the UAV that can be passed as descriptor update
 	reshade::invoke_addon_event<reshade::addon_event::push_descriptors>(
 		this,
 		reshade::api::shader_stage::all_graphics,
 		to_handle(_current_root_signature[0]),
 		RootParameterIndex,
-		reshade::api::descriptor_table_update { {}, 0, 0, 1, reshade::api::descriptor_type::unordered_access_view, &buffer_range });
+		reshade::api::descriptor_table_update { {}, 0, 0, 1, reshade::api::descriptor_type::buffer_unordered_access_view, &BufferLocation });
 #endif
 }
 void STDMETHODCALLTYPE D3D12GraphicsCommandList::IASetIndexBuffer(const D3D12_INDEX_BUFFER_VIEW *pView)
@@ -1228,4 +1209,15 @@ void   STDMETHODCALLTYPE D3D12GraphicsCommandList::IASetIndexBufferStripCutValue
 {
 	assert(_interface_version >= 9);
 	static_cast<ID3D12GraphicsCommandList9 *>(_orig)->IASetIndexBufferStripCutValue(IBStripCutValue);
+}
+
+void   STDMETHODCALLTYPE D3D12GraphicsCommandList::SetProgram(const D3D12_SET_PROGRAM_DESC *pDesc)
+{
+	assert(_interface_version >= 10);
+	static_cast<ID3D12GraphicsCommandList10 *>(_orig)->SetProgram(pDesc);
+}
+void   STDMETHODCALLTYPE D3D12GraphicsCommandList::DispatchGraph(const D3D12_DISPATCH_GRAPH_DESC *pDesc)
+{
+	assert(_interface_version >= 10);
+	static_cast<ID3D12GraphicsCommandList10 *>(_orig)->DispatchGraph(pDesc);
 }

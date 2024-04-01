@@ -976,14 +976,14 @@ void reshade::d3d12::convert_input_layout_desc(uint32_t count, const api::input_
 		internal_element.InstanceDataStepRate = element.instance_step_rate;
 	}
 }
-std::vector<reshade::api::input_element> reshade::d3d12::convert_input_layout_desc(UINT count, const D3D12_INPUT_ELEMENT_DESC *internal_elements)
+std::vector<reshade::api::input_element> reshade::d3d12::convert_input_layout_desc(const D3D12_INPUT_LAYOUT_DESC &internal_desc)
 {
 	std::vector<api::input_element> elements;
-	elements.reserve(count);
+	elements.reserve(internal_desc.NumElements);
 
-	for (UINT i = 0; i < count; ++i)
+	for (UINT i = 0; i < internal_desc.NumElements; ++i)
 	{
-		const D3D12_INPUT_ELEMENT_DESC &internal_element = internal_elements[i];
+		const D3D12_INPUT_ELEMENT_DESC &internal_element = internal_desc.pInputElementDescs[i];
 
 		api::input_element &element = elements.emplace_back();
 		element.semantic = internal_element.SemanticName;
@@ -1010,10 +1010,22 @@ reshade::api::stream_output_desc reshade::d3d12::convert_stream_output_desc(cons
 void reshade::d3d12::convert_blend_desc(const api::blend_desc &desc, D3D12_BLEND_DESC &internal_desc)
 {
 	internal_desc.AlphaToCoverageEnable = desc.alpha_to_coverage_enable;
-	internal_desc.IndependentBlendEnable = TRUE;
+	internal_desc.IndependentBlendEnable = FALSE;
 
 	for (UINT i = 0; i < 8; ++i)
 	{
+		if (desc.blend_enable[i] != desc.blend_enable[0] ||
+			desc.logic_op_enable[i] != desc.logic_op_enable[0] ||
+			desc.source_color_blend_factor[i] != desc.source_color_blend_factor[0] ||
+			desc.dest_color_blend_factor[i] != desc.dest_color_blend_factor[0] ||
+			desc.color_blend_op[i] != desc.color_blend_op[0] ||
+			desc.source_alpha_blend_factor[i] != desc.source_alpha_blend_factor[0] ||
+			desc.dest_alpha_blend_factor[i] != desc.dest_alpha_blend_factor[0] ||
+			desc.alpha_blend_op[i] != desc.alpha_blend_op[0] ||
+			desc.logic_op[i] != desc.logic_op[0] ||
+			desc.render_target_write_mask[i] != desc.render_target_write_mask[0])
+			internal_desc.IndependentBlendEnable = TRUE;
+
 		internal_desc.RenderTarget[i].BlendEnable = desc.blend_enable[i];
 		internal_desc.RenderTarget[i].LogicOpEnable = desc.logic_op_enable[i];
 		internal_desc.RenderTarget[i].SrcBlend = convert_blend_factor(desc.source_color_blend_factor[i]);
@@ -1050,6 +1062,8 @@ reshade::api::blend_desc reshade::d3d12::convert_blend_desc(const D3D12_BLEND_DE
 		}
 		if (target.LogicOpEnable)
 		{
+			assert(!target.BlendEnable && !internal_desc.IndependentBlendEnable);
+
 			desc.logic_op[i] = convert_logic_op(target.LogicOp);
 		}
 
@@ -1614,18 +1628,20 @@ auto reshade::d3d12::convert_descriptor_type(api::descriptor_type type) -> D3D12
 {
 	switch (type)
 	{
+	case api::descriptor_type::sampler:
+		return D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
 	default:
 		assert(false);
 		[[fallthrough]];
-	case api::descriptor_type::shader_resource_view:
+	case api::descriptor_type::buffer_shader_resource_view:
+	case api::descriptor_type::texture_shader_resource_view:
 	case api::descriptor_type::acceleration_structure:
 		return D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-	case api::descriptor_type::unordered_access_view:
+	case api::descriptor_type::buffer_unordered_access_view:
+	case api::descriptor_type::texture_unordered_access_view:
 		return D3D12_DESCRIPTOR_RANGE_TYPE_UAV;
 	case api::descriptor_type::constant_buffer:
 		return D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
-	case api::descriptor_type::sampler:
-		return D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER;
 	}
 }
 auto reshade::d3d12::convert_descriptor_type(D3D12_DESCRIPTOR_RANGE_TYPE type) -> api::descriptor_type
@@ -1636,9 +1652,9 @@ auto reshade::d3d12::convert_descriptor_type(D3D12_DESCRIPTOR_RANGE_TYPE type) -
 		assert(false);
 		[[fallthrough]];
 	case D3D12_DESCRIPTOR_RANGE_TYPE_SRV:
-		return api::descriptor_type::shader_resource_view;
+		return api::descriptor_type::texture_shader_resource_view;
 	case D3D12_DESCRIPTOR_RANGE_TYPE_UAV:
-		return api::descriptor_type::unordered_access_view;
+		return api::descriptor_type::texture_unordered_access_view;
 	case D3D12_DESCRIPTOR_RANGE_TYPE_CBV:
 		return api::descriptor_type::constant_buffer;
 	case D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER:
@@ -1649,16 +1665,18 @@ auto reshade::d3d12::convert_descriptor_type_to_heap_type(api::descriptor_type t
 {
 	switch (type)
 	{
+	case api::descriptor_type::sampler:
+		return D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
 	default:
 		assert(false);
 		[[fallthrough]];
+	case api::descriptor_type::buffer_shader_resource_view:
+	case api::descriptor_type::buffer_unordered_access_view:
+	case api::descriptor_type::texture_shader_resource_view:
+	case api::descriptor_type::texture_unordered_access_view:
 	case api::descriptor_type::constant_buffer:
-	case api::descriptor_type::shader_resource_view:
-	case api::descriptor_type::unordered_access_view:
 	case api::descriptor_type::acceleration_structure:
 		return D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	case api::descriptor_type::sampler:
-		return D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
 	}
 }
 

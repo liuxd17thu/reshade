@@ -48,6 +48,7 @@ void reshade::d3d10::device_impl::barrier(uint32_t count, const api::resource *r
 
 	if (transitions_away_from_shader_resource_usage != 0)
 	{
+#if 1
 #define UNBIND_SHADER_RESOURCE_VIEWS(stage) \
 		bool update_##stage = false; \
 		com_ptr<ID3D10ShaderResourceView> srvs_##stage[D3D10_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT]; \
@@ -67,6 +68,11 @@ void reshade::d3d10::device_impl::barrier(uint32_t count, const api::resource *r
 		} \
 		if (update_##stage) \
 			_orig->stage##SetShaderResources(0, D3D10_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, reinterpret_cast<ID3D10ShaderResourceView *const *>(srvs_##stage));
+#else
+#define UNBIND_SHADER_RESOURCE_VIEWS(stage) \
+		ID3D10ShaderResourceView *null_srvs_##stage[D3D10_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT] = {}; \
+		_orig->stage##SetShaderResources(0, D3D10_COMMONSHADER_INPUT_RESOURCE_SLOT_COUNT, null_srvs_##stage);
+#endif
 
 		UNBIND_SHADER_RESOURCE_VIEWS(VS);
 		UNBIND_SHADER_RESOURCE_VIEWS(GS);
@@ -372,7 +378,8 @@ void reshade::d3d10::device_impl::push_descriptors(api::shader_stage stages, api
 	case api::descriptor_type::sampler:
 		bind_samplers(stages, first, update.count, static_cast<const api::sampler *>(update.descriptors));
 		break;
-	case api::descriptor_type::shader_resource_view:
+	case api::descriptor_type::buffer_shader_resource_view:
+	case api::descriptor_type::texture_shader_resource_view:
 		bind_shader_resource_views(stages, first, update.count, static_cast<const api::resource_view *>(update.descriptors));
 		break;
 	case api::descriptor_type::constant_buffer:

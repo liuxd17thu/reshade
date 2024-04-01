@@ -11,10 +11,6 @@ namespace reshade::vulkan
 
 	class swapchain_impl : public api::api_object_impl<VkSwapchainKHR, api::swapchain>
 	{
-		friend VkResult VKAPI_CALL ::vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkSwapchainKHR *pSwapchain);
-		friend VkResult VKAPI_CALL ::vkAcquireNextImageKHR(VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout, VkSemaphore semaphore, VkFence fence, uint32_t *pImageIndex);
-		friend VkResult VKAPI_CALL ::vkAcquireNextImage2KHR(VkDevice device, const VkAcquireNextImageInfoKHR *pAcquireInfo, uint32_t *pImageIndex);
-
 	public:
 		swapchain_impl(device_impl *device, VkSwapchainKHR swapchain, const VkSwapchainCreateInfoKHR &create_info, HWND hwnd);
 
@@ -46,5 +42,11 @@ namespace reshade::vulkan
 		using Handle = VkSwapchainKHR;
 
 		object_data(device_impl *device, VkSwapchainKHR swapchain, const VkSwapchainCreateInfoKHR &create_info, HWND hwnd) : swapchain_impl(device, swapchain, create_info, hwnd) {}
+
+		using swapchain_impl::_create_info;
+		using swapchain_impl::_hwnd;
+		using swapchain_impl::_swap_index;
+
+		HMONITOR hmonitor = nullptr;
 	};
 }

@@ -260,6 +260,19 @@ HRESULT STDMETHODCALLTYPE DXGISwapChain::SetFullscreenState(BOOL Fullscreen, IDX
 {
 	LOG(INFO) << "Redirecting " << "IDXGISwapChain::SetFullscreenState" << '(' << "this = " << this << ", Fullscreen = " << (Fullscreen ? "TRUE" : "FALSE") << ", pTarget = " << pTarget << ')' << " ...";
 
+#if RESHADE_ADDON
+	HMONITOR hmonitor = nullptr;
+	if (pTarget != nullptr)
+	{
+		DXGI_OUTPUT_DESC output_desc = {};
+		pTarget->GetDesc(&output_desc);
+		hmonitor = output_desc.Monitor;
+	}
+
+	if (reshade::invoke_addon_event<reshade::addon_event::set_fullscreen_state>(_impl, Fullscreen != FALSE, hmonitor))
+		return S_OK;
+#endif
+
 	if (_force_windowed)
 		Fullscreen = FALSE;
 	if (_force_fullscreen)
@@ -504,7 +517,20 @@ HRESULT STDMETHODCALLTYPE DXGISwapChain::SetColorSpace1(DXGI_COLOR_SPACE_TYPE Co
 	else
 		LOG(INFO) << "Redirecting " << "IDXGISwapChain3::SetColorSpace1" << '(' << "ColorSpace = " << ColorSpace << ')' << " ...";
 
-	on_reset();
+	// Only supported in Direct3D 11 and 12 (see https://docs.microsoft.com/windows/win32/direct3darticles/high-dynamic-range)
+	DXGI_COLOR_SPACE_TYPE prev_color_space = ColorSpace;
+	switch (_direct3d_version)
+	{
+	case 11:
+		prev_color_space = static_cast<reshade::d3d11::swapchain_impl *>(_impl)->get_color_space_native();
+		break;
+	case 12:
+		prev_color_space = static_cast<reshade::d3d12::swapchain_impl *>(_impl)->get_color_space_native();
+		break;
+	}
+
+	if (ColorSpace != prev_color_space)
+		on_reset();
 
 	assert(_interface_version >= 3);
 	assert(!g_in_dxgi_runtime);
@@ -513,7 +539,6 @@ HRESULT STDMETHODCALLTYPE DXGISwapChain::SetColorSpace1(DXGI_COLOR_SPACE_TYPE Co
 	g_in_dxgi_runtime = false;
 	if (SUCCEEDED(hr))
 	{
-		// Only supported in Direct3D 11 and 12 (see https://docs.microsoft.com/windows/win32/direct3darticles/high-dynamic-range)
 		switch (_direct3d_version)
 		{
 		case 11:
@@ -525,7 +550,8 @@ HRESULT STDMETHODCALLTYPE DXGISwapChain::SetColorSpace1(DXGI_COLOR_SPACE_TYPE Co
 		}
 	}
 
-	on_init();
+	if (ColorSpace != prev_color_space)
+		on_init();
 
 	return hr;
 }
@@ -646,6 +672,20 @@ void DXGISwapChain::on_init()
 
 #if RESHADE_ADDON
 	reshade::invoke_addon_event<reshade::addon_event::init_swapchain>(_impl);
+
+	BOOL fullscreen = FALSE;
+	com_ptr<IDXGIOutput> output;
+	GetFullscreenState(&fullscreen, &output);
+
+	HMONITOR hmonitor = nullptr;
+	if (output != nullptr)
+	{
+		DXGI_OUTPUT_DESC output_desc = {};
+		output->GetDesc(&output_desc);
+		hmonitor = output_desc.Monitor;
+	}
+
+	reshade::invoke_addon_event<reshade::addon_event::set_fullscreen_state>(_impl, fullscreen != FALSE, hmonitor);
 #endif
 
 	reshade::init_effect_runtime(_impl);

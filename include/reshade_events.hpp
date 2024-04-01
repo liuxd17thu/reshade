@@ -700,6 +700,19 @@ namespace reshade
 		init_pipeline_layout,
 
 		/// <summary>
+		/// Called on pipeline layout creation, before:
+		/// <list type="bullet">
+		/// <item><description>ID3D12Device::CreateRootSignature</description></item>
+		/// <item><description>vkCreatePipelineLayout</description></item>
+		/// </list>
+		/// <para>Callback function signature: <c>bool (api::device *device, uint32_t &amp;param_count, api::pipeline_layout_param *&amp;params)</c></para>
+		/// </summary>
+		/// <remarks>
+		/// Is not called in D3D9, D3D10, D3D11 or OpenGL.
+		/// </remarks>
+		create_pipeline_layout,
+
+		/// <summary>
 		/// Called on pipeline layout destruction, before:
 		/// <list type="bullet">
 		/// <item><description>ID3D12RootSignature::Release</description></item>
@@ -707,7 +720,7 @@ namespace reshade
 		/// </list>
 		/// <para>Callback function signature: <c>void (api::device *device, api::pipeline_layout layout)</c></para>
 		/// </summary>
-		destroy_pipeline_layout = 31,
+		destroy_pipeline_layout,
 
 		/// <summary>
 		/// Called before:
@@ -776,7 +789,7 @@ namespace reshade
 		/// </list>
 		/// <para>Callback function signature: <c>bool (api::device *device, api::query_heap heap, uint32_t first, uint32_t count, void *results, uint32_t stride)</c></para>
 		/// </summary>
-		get_query_heap_results = 37,
+		get_query_heap_results,
 
 		/// <summary>
 		/// Called after:
@@ -788,7 +801,7 @@ namespace reshade
 		/// </list>
 		/// <para>Callback function signature: <c>void (api::command_list *cmd_list, uint32_t count, const api::resource *resources, const api::resource_usage *old_states, const api::resource_usage *new_states)</c></para>
 		/// </summary>
-		barrier = 38,
+		barrier,
 
 		/// <summary>
 		/// Called before:
@@ -1552,10 +1565,24 @@ namespace reshade
 		present,
 
 		/// <summary>
+		/// Called before:
+		/// <list type="bullet">
+		/// <item><description>IDXGISwapChain::SetFullscreenState</description></item>
+		/// <item><description>vkAcquireFullScreenExclusiveModeEXT</description></item>
+		/// <item><description>vkReleaseFullScreenExclusiveModeEXT</description></item>
+		/// </list>
+		/// <para>Callback function signature: <c>bool (api::swapchain *swapchain, bool fullscreen, void *hmonitor)</c></para>
+		/// </summary>
+		/// <remarks>
+		/// To prevent the fullscreen state from being changed, return <see langword="true"/>, otherwise return <see langword="false"/>.
+		/// </remarks>
+		set_fullscreen_state = 93,
+
+		/// <summary>
 		/// Called after ReShade has rendered its overlay.
 		/// <para>Callback function signature: <c>void (api::effect_runtime *runtime)</c></para>
 		/// </summary>
-		reshade_present,
+		reshade_present = 75,
 
 		/// <summary>
 		/// Called right before ReShade effects are rendered.
@@ -1663,7 +1690,7 @@ namespace reshade
 		reshade_overlay_technique,
 
 #if RESHADE_ADDON
-		max = 93 // Last value used internally by ReShade to determine number of events in this enum
+		max = 94 // Last value used internally by ReShade to determine number of events in this enum
 #endif
 	};
 
@@ -1718,6 +1745,7 @@ namespace reshade
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::destroy_pipeline, void, api::device *device, api::pipeline pipeline);
 
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::init_pipeline_layout, void, api::device *device, uint32_t param_count, const api::pipeline_layout_param *params, api::pipeline_layout layout);
+	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::create_pipeline_layout, bool, api::device *device, uint32_t &param_count, api::pipeline_layout_param *&params);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::destroy_pipeline_layout, void, api::device *device, api::pipeline_layout layout);
 
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::copy_descriptor_tables, bool, api::device *device, uint32_t count, const api::descriptor_table_copy *copies);
@@ -1781,6 +1809,7 @@ namespace reshade
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::execute_secondary_command_list, void, api::command_list *cmd_list, api::command_list *secondary_cmd_list);
 
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::present, void, api::command_queue *queue, api::swapchain *swapchain, const api::rect *source_rect, const api::rect *dest_rect, uint32_t dirty_rect_count, const api::rect *dirty_rects);
+	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::set_fullscreen_state, bool, api::swapchain *swapchain, bool fullscreen, void *hmonitor);
 
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::reshade_present, void, api::effect_runtime *runtime);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::reshade_begin_effects, void, api::effect_runtime *runtime, api::command_list *cmd_list, api::resource_view rtv, api::resource_view rtv_srgb);

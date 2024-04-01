@@ -22,6 +22,9 @@ static bool s_disable_intz = false;
 static unsigned int s_preserve_depth_buffers = 0;
 // Enable or disable the aspect ratio check from 'check_aspect_ratio' in the detection heuristic
 static unsigned int s_use_aspect_ratio_heuristics = 1;
+// Enable or disable the format check from 'check_depth_format' in the detection heuristic
+static unsigned int s_use_format_filtering = 0;
+static unsigned int s_custom_resolution_filtering[2] = {};
 
 enum class clear_op
 {
@@ -189,7 +192,6 @@ struct __declspec(uuid("e006e162-33ac-4b9f-b10f-0e15335c7bdb")) generic_depth_de
 	depth_stencil_backup *track_depth_stencil_for_backup(device *device, resource resource, resource_desc desc)
 	{
 		assert(resource != 0);
-		assert(depth_stencil_resources.find(resource) != depth_stencil_resources.end());
 
 		const auto it = std::find_if(depth_stencil_backups.begin(), depth_stencil_backups.end(),
 			[resource](const depth_stencil_backup &existing) { return existing.depth_stencil_resource == resource; });
@@ -204,6 +206,10 @@ struct __declspec(uuid("e006e162-33ac-4b9f-b10f-0e15335c7bdb")) generic_depth_de
 		const device_api api = device->get_api();
 		if (api <= device_api::d3d12)
 		{
+			std::shared_lock<std::shared_mutex> lock(s_mutex);
+			if (depth_stencil_resources.find(resource) == depth_stencil_resources.end())
+				return nullptr;
+
 			// Add reference to the resource so that it is not destroyed while it is being copied to the backup texture
 			reinterpret_cast<IUnknown *>(resource.handle)->AddRef();
 		}
@@ -247,11 +253,18 @@ struct __declspec(uuid("e006e162-33ac-4b9f-b10f-0e15335c7bdb")) generic_depth_de
 		backup.depth_stencil_resource = resource;
 
 		if (device->create_resource(desc, nullptr, resource_usage::copy_dest, &backup.backup_texture))
+		{
 			device->set_resource_name(backup.backup_texture, "ReShade depth backup texture");
+
+			return &backup;
+		}
 		else
+		{
+			depth_stencil_backups.pop_back();
 			reshade::log_message(reshade::log_level::error, "Failed to create backup depth-stencil texture!");
 
-		return &backup;
+			return nullptr;
+		}
 	}
 
 	void untrack_depth_stencil(device *device, resource resource)
@@ -279,14 +292,38 @@ struct __declspec(uuid("e006e162-33ac-4b9f-b10f-0e15335c7bdb")) generic_depth_de
 	}
 };
 
+static bool check_depth_format(format format)
+{
+	switch (s_use_format_filtering)
+	{
+	default:
+		return false;
+	case 1:
+		return format == format::d16_unorm || format == format::r16_typeless;
+	case 2:
+		return format == format::d16_unorm_s8_uint;
+	case 3:
+		return format == format::d24_unorm_x8_uint;
+	case 4:
+		return format == format::d24_unorm_s8_uint || format == format::r24_g8_typeless;
+	case 5:
+		return format == format::d32_float || format == format::r32_float || format == format::r32_typeless;
+	case 6:
+		return format == format::d32_float_s8_uint || format == format::r32_g8_typeless;
+	case 7:
+		return format == format::intz;
+	}
+}
 // Checks whether the aspect ratio of the two sets of dimensions is similar or not
 static bool check_aspect_ratio(float width_to_check, float height_to_check, float width, float height)
 {
 	if (width_to_check == 0.0f || height_to_check == 0.0f)
 		return true;
 
-	if (s_use_aspect_ratio_heuristics == 3)
+	if (s_use_aspect_ratio_heuristics == 3 || (s_use_aspect_ratio_heuristics == 4 && s_custom_resolution_filtering[0] == 0 && s_custom_resolution_filtering[1] == 0))
 		return width_to_check == width && height_to_check == height;
+	if (s_use_aspect_ratio_heuristics == 4)
+		return width_to_check == s_custom_resolution_filtering[0] && width_to_check == s_custom_resolution_filtering[1];
 
 	float w_ratio = width / width_to_check;
 	float h_ratio = height / height_to_check;
@@ -321,16 +358,21 @@ static void on_clear_depth_impl(command_list *cmd_list, state_tracking &state, r
 	if (counters.current_stats.drawcalls == 0 && (device->get_api() != device_api::vulkan))
 		return;
 
+	const draw_stats current_stats = counters.current_stats;
+
+	// Reset draw call stats for clears
+	counters.current_stats = { 0, 0 };
+
 	// Ignore clears when the last viewport rendered to only affected a small subset of the depth-stencil (fixes flickering in some games)
 	switch (op)
 	{
 	case clear_op::clear_depth_stencil_view:
 		// Mirror's Edge and Portal occasionally render something into a small viewport (16x16 in Mirror's Edge, 512x512 in Portal to render underwater geometry)
-		do_copy = counters.current_stats.last_viewport.width > 1024 || (counters.current_stats.last_viewport.width == 0 || depth_stencil_backup->frame_width <= 1024);
+		do_copy = current_stats.last_viewport.width > 1024 || (current_stats.last_viewport.width == 0 || depth_stencil_backup->frame_width <= 1024);
 		break;
 	case clear_op::fullscreen_draw:
 		// Mass Effect 3 in Mass Effect Legendary Edition sometimes uses a larger common depth buffer for shadow map and scene rendering, where the former uses a 1024x1024 viewport and the latter uses a viewport matching the render resolution
-		do_copy = check_aspect_ratio(counters.current_stats.last_viewport.width, counters.current_stats.last_viewport.height, static_cast<float>(depth_stencil_backup->frame_width), static_cast<float>(depth_stencil_backup->frame_height));
+		do_copy = check_aspect_ratio(current_stats.last_viewport.width, current_stats.last_viewport.height, static_cast<float>(depth_stencil_backup->frame_width), static_cast<float>(depth_stencil_backup->frame_height));
 		break;
 	case clear_op::unbind_depth_stencil_view:
 		break;
@@ -344,38 +386,39 @@ static void on_clear_depth_impl(command_list *cmd_list, state_tracking &state, r
 			if (depth_stencil_backup->force_clear_index == 0)
 			{
 				// Use greater equals operator here to handle case where the same scene is first rendered into a shadow map and then for real (e.g. Mirror's Edge main menu)
-				do_copy = counters.current_stats.vertices >= state.best_copy_stats.vertices || (op == clear_op::fullscreen_draw && counters.current_stats.drawcalls >= state.best_copy_stats.drawcalls);
+				do_copy = current_stats.vertices >= state.best_copy_stats.vertices || (op == clear_op::fullscreen_draw && current_stats.drawcalls >= state.best_copy_stats.drawcalls);
 			}
 			else
 			if (depth_stencil_backup->force_clear_index == std::numeric_limits<uint32_t>::max())
 			{
 				// Special case for Garry's Mod which chooses the last clear operation that has a high workload
-				do_copy = counters.current_stats.vertices >= 5000;
+				do_copy = current_stats.vertices >= 5000;
 			}
 			else
 			{
 				do_copy = (depth_stencil_backup->current_clear_index++) == (depth_stencil_backup->force_clear_index - 1);
 			}
 
-			counters.clears.push_back({ counters.current_stats, op, do_copy });
+			counters.clears.push_back({ current_stats, op, do_copy });
 		}
 
 		// Make a backup copy of the depth texture before it is cleared
 		if (do_copy)
 		{
-			state.best_copy_stats = counters.current_stats;
+			state.best_copy_stats = current_stats;
+
+			counters.copied_during_frame = true;
+
+			// Unlock before calling into the device, since e.g. in D3D11 this can cause delayed destruction of resources (calls 'CDevice::FlushDeletionPool'), which calls 'on_destroy_resource' below, which tries to lock the same mutex
+			if (state.is_queue)
+				lock.unlock();
 
 			// A resource has to be in this state for a clear operation, so can assume it here
 			cmd_list->barrier(depth_stencil, resource_usage::depth_stencil_write, resource_usage::copy_source);
 			cmd_list->copy_resource(depth_stencil, depth_stencil_backup->backup_texture);
 			cmd_list->barrier(depth_stencil, resource_usage::copy_source, resource_usage::depth_stencil_write);
-
-			counters.copied_during_frame = true;
 		}
 	}
-
-	// Reset draw call stats for clears
-	counters.current_stats = { 0, 0 };
 }
 
 static void update_effect_runtime(effect_runtime *runtime)
@@ -400,7 +443,11 @@ static void on_init_device(device *device)
 	reshade::get_config_value(nullptr, "DEPTH", "DepthCopyBeforeClears", s_preserve_depth_buffers);
 	reshade::get_config_value(nullptr, "DEPTH", "UseAspectRatioHeuristics", s_use_aspect_ratio_heuristics);
 
-	if (s_use_aspect_ratio_heuristics > 3)
+	reshade::get_config_value(nullptr, "DEPTH", "FilterFormat", s_use_format_filtering);
+	reshade::get_config_value(nullptr, "DEPTH", "FilterResolutionWidth", s_custom_resolution_filtering[0]);
+	reshade::get_config_value(nullptr, "DEPTH", "FilterResolutionHeight", s_custom_resolution_filtering[1]);
+
+	if (s_use_aspect_ratio_heuristics > 4)
 		s_use_aspect_ratio_heuristics = 1;
 }
 static void on_init_command_list(command_list *cmd_list)
@@ -842,6 +889,8 @@ static void on_begin_render_effects(effect_runtime *runtime, command_list *cmd_l
 		if (desc.texture.samples > 1 && (!device->check_capability(device_caps::resolve_depth_stencil) || s_preserve_depth_buffers != 0))
 			continue; // Ignore MSAA textures, since they would need to be resolved first
 
+		if (s_use_format_filtering && !check_depth_format(desc.texture.format))
+			continue;
 		if (s_use_aspect_ratio_heuristics && !check_aspect_ratio(static_cast<float>(desc.texture.width), static_cast<float>(desc.texture.height), static_cast<float>(frame_width), static_cast<float>(frame_height)))
 			continue; // Not a good fit
 
@@ -898,8 +947,9 @@ static void on_begin_render_effects(effect_runtime *runtime, command_list *cmd_l
 				depth_stencil_backup = device_data.track_depth_stencil_for_backup(device, best_match, best_match_desc);
 
 				// Abort in case backup texture creation failed
-				if (depth_stencil_backup->backup_texture == 0)
+				if (depth_stencil_backup == nullptr)
 					break;
+				assert(depth_stencil_backup->backup_texture != 0);
 
 				depth_stencil_backup->frame_width = frame_width;
 				depth_stencil_backup->frame_height = frame_height;
@@ -1058,11 +1108,38 @@ static void draw_settings_overlay(effect_runtime *runtime)
 		"None",
 		"Similar aspect ratio",
 		"Multiples of resolution (for DLSS or resolution scaling)",
-		"Match resolution exactly"
+		"Match resolution exactly",
+		"Match custom width and height exactly"
 	};
 	if (ImGui::Combo("Aspect ratio heuristics", reinterpret_cast<int *>(&s_use_aspect_ratio_heuristics), heuristic_items, static_cast<int>(std::size(heuristic_items))))
 	{
 		reshade::set_config_value(nullptr, "DEPTH", "UseAspectRatioHeuristics", s_use_aspect_ratio_heuristics);
+		force_reset = true;
+	}
+
+	if (s_use_aspect_ratio_heuristics == 4)
+	{
+		if (ImGui::InputInt2("Filter by width and height", reinterpret_cast<int *>(s_custom_resolution_filtering)))
+		{
+			reshade::set_config_value(nullptr, "DEPTH", "FilterResolutionWidth", s_custom_resolution_filtering[0]);
+			reshade::set_config_value(nullptr, "DEPTH", "FilterResolutionHeight", s_custom_resolution_filtering[1]);
+			force_reset = true;
+		}
+	}
+
+	const char *const depth_format_items[] = { // Needs to match switch in 'check_depth_format' above
+		"All",
+		"D16  ",
+		"D16S8",
+		"D24X8",
+		"D24S8",
+		"D32  ",
+		"D32S8",
+		"INTZ "
+	};
+	if (ImGui::Combo("Filter by depth buffer format", reinterpret_cast<int *>(&s_use_format_filtering), depth_format_items, static_cast<int>(std::size(depth_format_items))))
+	{
+		reshade::set_config_value(nullptr, "DEPTH", "FilterFormat", s_use_format_filtering);
 		force_reset = true;
 	}
 
@@ -1144,7 +1221,9 @@ static void draw_settings_overlay(effect_runtime *runtime)
 			has_msaa_depth_stencil = disabled = true;
 
 		const bool selected = item.resource == data.selected_depth_stencil;
-		const bool candidate = !s_use_aspect_ratio_heuristics || check_aspect_ratio(static_cast<float>(item.desc.texture.width), static_cast<float>(item.desc.texture.height), static_cast<float>(frame_width), static_cast<float>(frame_height));
+		const bool candidate =
+			(!s_use_format_filtering || check_depth_format(item.desc.texture.format)) &&
+			(!s_use_aspect_ratio_heuristics || check_aspect_ratio(static_cast<float>(item.desc.texture.width), static_cast<float>(item.desc.texture.height), static_cast<float>(frame_width), static_cast<float>(frame_height)));
 
 		char label[512] = "";
 		sprintf_s(label, "%c 0x%016llx", (selected ? '>' : ' '), item.resource.handle);

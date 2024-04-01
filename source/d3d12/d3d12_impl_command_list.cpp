@@ -9,6 +9,9 @@
 #include "dll_log.hpp"
 #include <algorithm>
 
+// IID_ID3D12GraphicsCommandListExt
+static constexpr GUID s_command_list_ex_guid = { 0x77a86b09, 0x2bea, 0x4801, { 0xb8, 0x9a, 0x37, 0x64, 0x8e, 0x10, 0x4a, 0xf1 } };
+
 void encode_pix3blob(UINT64(&pix3blob)[64], const char *label, const float color[4])
 {
 	pix3blob[0] = (0x2ull /* PIXEvent_BeginEvent_NoArgs */ << 10);
@@ -24,6 +27,25 @@ reshade::d3d12::command_list_impl::command_list_impl(device_impl *device, ID3D12
 	api_object_impl(cmd_list),
 	_device_impl(device)
 {
+	if (_orig != nullptr)
+		on_init();
+}
+
+void reshade::d3d12::command_list_impl::on_init()
+{
+	com_ptr<ID3D12GraphicsCommandList4> cmd_list4;
+	com_ptr<IUnknown> cmd_list_ex;
+	if (SUCCEEDED(_orig->QueryInterface(&cmd_list4)))
+	{
+		_orig->Release();
+		_orig = cmd_list4.release();
+		_supports_ray_tracing = true;
+
+		// VKD3D does not implement 'ID3D12GraphicsCommandList4::BeginRenderPass' despite anouncing support for the 'ID3D12GraphicsCommandList4' interface as of VKD3D v2.6
+		// This means we cannot use the 'BeginRenderPass' code path if we are running VKD3D, which next line tries to detect by querying for 'IID_ID3D12GraphicsCommandListExt' support
+		if (_orig->QueryInterface(s_command_list_ex_guid, reinterpret_cast<void **>(&cmd_list_ex)) != S_OK)
+			_supports_render_passes = true;
+	}
 }
 
 reshade::api::device *reshade::d3d12::command_list_impl::get_device()
@@ -91,21 +113,13 @@ void reshade::d3d12::command_list_impl::barrier(uint32_t count, const api::resou
 	_orig->ResourceBarrier(k, barriers.p);
 }
 
-// IID_ID3D12GraphicsCommandListExt
-static constexpr GUID s_command_list_ex_guid = { 0x77a86b09, 0x2bea, 0x4801, { 0xb8, 0x9a, 0x37, 0x64, 0x8e, 0x10, 0x4a, 0xf1 } };
-
 void reshade::d3d12::command_list_impl::begin_render_pass(uint32_t count, const api::render_pass_render_target_desc *rts, const api::render_pass_depth_stencil_desc *ds)
 {
 	_has_commands = true;
 
 	assert(count <= D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT);
 
-	com_ptr<ID3D12GraphicsCommandList4> cmd_list4;
-	com_ptr<IUnknown> cmd_list_ex;
-	if (SUCCEEDED(_orig->QueryInterface(&cmd_list4)) &&
-		// VKD3D does not implement 'ID3D12GraphicsCommandList4::BeginRenderPass' despite anouncing support for the 'ID3D12GraphicsCommandList4' interface as of VKD3D v2.6
-		// This means we cannot use the 'BeginRenderPass' code path if we are running VKD3D, which next line tries to detect by querying for 'IID_ID3D12GraphicsCommandListExt' support
-		_orig->QueryInterface(s_command_list_ex_guid, reinterpret_cast<void **>(&cmd_list_ex)) != S_OK)
+	if (_supports_render_passes)
 	{
 		temp_mem<D3D12_RENDER_PASS_RENDER_TARGET_DESC, D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT> rt_desc(count);
 		for (uint32_t i = 0; i < count; ++i)
@@ -142,7 +156,7 @@ void reshade::d3d12::command_list_impl::begin_render_pass(uint32_t count, const 
 			}
 		}
 
-		cmd_list4->BeginRenderPass(count, rt_desc.p, ds != nullptr && ds->view.handle != 0 ? &depth_stencil_desc : nullptr, D3D12_RENDER_PASS_FLAG_NONE);
+		static_cast<ID3D12GraphicsCommandList4 *>(_orig)->BeginRenderPass(count, rt_desc.p, ds != nullptr && ds->view.handle != 0 ? &depth_stencil_desc : nullptr, D3D12_RENDER_PASS_FLAG_NONE);
 	}
 	else
 	{
@@ -171,12 +185,9 @@ void reshade::d3d12::command_list_impl::end_render_pass()
 {
 	assert(_has_commands);
 
-	com_ptr<ID3D12GraphicsCommandList4> cmd_list4;
-	com_ptr<IUnknown> cmd_list_ex;
-	if (SUCCEEDED(_orig->QueryInterface(&cmd_list4)) &&
-		_orig->QueryInterface(s_command_list_ex_guid, reinterpret_cast<void **>(&cmd_list_ex)) != S_OK)
+	if (_supports_render_passes)
 	{
-		cmd_list4->EndRenderPass();
+		static_cast<ID3D12GraphicsCommandList4 *>(_orig)->EndRenderPass();
 	}
 }
 void reshade::d3d12::command_list_impl::bind_render_targets_and_depth_stencil(uint32_t count, const api::resource_view *rtvs, api::resource_view dsv)
@@ -205,9 +216,8 @@ void reshade::d3d12::command_list_impl::bind_pipeline(api::pipeline_stage stages
 	{
 		const auto pipeline_object = reinterpret_cast<ID3D12StateObject *>(pipeline.handle);
 
-		com_ptr<ID3D12GraphicsCommandList4> cmd_list4;
-		if (SUCCEEDED(_orig->QueryInterface(&cmd_list4)))
-			cmd_list4->SetPipelineState1(pipeline_object);
+		if (_supports_ray_tracing)
+			static_cast<ID3D12GraphicsCommandList4 *>(_orig)->SetPipelineState1(pipeline_object);
 		else
 			assert(false);
 	}
@@ -244,6 +254,16 @@ void reshade::d3d12::command_list_impl::bind_pipeline_states(uint32_t count, con
 		}
 		case api::dynamic_state::front_stencil_reference_value:
 			_orig->OMSetStencilRef(values[i]);
+			break;
+		case api::dynamic_state::back_stencil_reference_value:
+			// OMSetFrontAndBackStencilRef
+			assert(false);
+			break;
+		case api::dynamic_state::depth_bias:
+		case api::dynamic_state::depth_bias_clamp:
+		case api::dynamic_state::depth_bias_slope_scaled:
+			// RSSetDepthBias
+			assert(false);
 			break;
 		case api::dynamic_state::ray_tracing_pipeline_stack_size:
 			// ID3D12StateObjectProperties *props = ...;
@@ -304,7 +324,68 @@ void reshade::d3d12::command_list_impl::push_constants(api::shader_stage stages,
 }
 void reshade::d3d12::command_list_impl::push_descriptors(api::shader_stage stages, api::pipeline_layout layout, uint32_t layout_param, const api::descriptor_table_update &update)
 {
+	const auto root_signature = reinterpret_cast<ID3D12RootSignature *>(layout.handle);
+
+	if ((stages & (api::shader_stage::all_compute | api::shader_stage::all_ray_tracing)) != 0)
+	{
+		if (root_signature != _current_root_signature[1])
+		{
+			_current_root_signature[1] = root_signature;
+			_orig->SetComputeRootSignature(root_signature);
+		}
+	}
+	if ((stages & api::shader_stage::all_graphics) != 0)
+	{
+		if (root_signature != _current_root_signature[0])
+		{
+			_current_root_signature[0] = root_signature;
+			_orig->SetGraphicsRootSignature(root_signature);
+		}
+	}
+
 	assert(update.table.handle == 0 && update.array_offset == 0);
+
+	const D3D12_DESCRIPTOR_HEAP_TYPE heap_type = convert_descriptor_type_to_heap_type(update.type);
+
+	if (update.binding == 0 && update.count == 1 &&
+		heap_type == D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV &&
+		update.type != api::descriptor_type::texture_shader_resource_view &&
+		update.type != api::descriptor_type::texture_unordered_access_view)
+	{
+		if (update.type == api::descriptor_type::constant_buffer)
+		{
+			const auto &view_range = *static_cast<const api::buffer_range *>(update.descriptors);
+
+			const D3D12_GPU_VIRTUAL_ADDRESS view_address = reinterpret_cast<ID3D12Resource *>(view_range.buffer.handle)->GetGPUVirtualAddress() + view_range.offset;
+			assert(view_address != 0);
+
+			if ((stages & (api::shader_stage::all_compute | api::shader_stage::all_ray_tracing)) != 0)
+				_orig->SetComputeRootConstantBufferView(layout_param, view_address);
+			if ((stages & api::shader_stage::all_graphics) != 0)
+				_orig->SetGraphicsRootConstantBufferView(layout_param, view_address);
+		}
+		else if (update.type == api::descriptor_type::buffer_shader_resource_view || update.type == api::descriptor_type::acceleration_structure)
+		{
+			const D3D12_GPU_VIRTUAL_ADDRESS view_address = _device_impl->get_resource_view_gpu_address(*static_cast<const api::resource_view *>(update.descriptors));
+			assert(view_address != 0);
+
+			if ((stages & (api::shader_stage::all_compute | api::shader_stage::all_ray_tracing)) != 0)
+				_orig->SetComputeRootShaderResourceView(layout_param, view_address);
+			if ((stages & api::shader_stage::all_graphics) != 0)
+				_orig->SetGraphicsRootShaderResourceView(layout_param, view_address);
+		}
+		else if (update.type == api::descriptor_type::buffer_unordered_access_view)
+		{
+			const D3D12_GPU_VIRTUAL_ADDRESS view_address = _device_impl->get_resource_view_gpu_address(*static_cast<const api::resource_view *>(update.descriptors));
+			assert(view_address != 0);
+
+			if ((stages & (api::shader_stage::all_compute | api::shader_stage::all_ray_tracing)) != 0)
+				_orig->SetComputeRootUnorderedAccessView(layout_param, view_address);
+			if ((stages & api::shader_stage::all_graphics) != 0)
+				_orig->SetGraphicsRootShaderResourceView(layout_param, view_address);
+		}
+		return;
+	}
 
 	D3D12_CPU_DESCRIPTOR_HANDLE base_handle;
 	D3D12_GPU_DESCRIPTOR_HANDLE base_handle_gpu;
@@ -316,8 +397,6 @@ void reshade::d3d12::command_list_impl::push_descriptors(api::shader_stage stage
 		return;
 	}
 
-	const D3D12_DESCRIPTOR_HEAP_TYPE heap_type = convert_descriptor_type_to_heap_type(update.type);
-
 	// Add base descriptor offset (these descriptors stay unusued)
 	base_handle = _device_impl->offset_descriptor_handle(base_handle, update.binding, heap_type);
 
@@ -325,17 +404,20 @@ void reshade::d3d12::command_list_impl::push_descriptors(api::shader_stage stage
 	{
 		for (uint32_t k = 0; k < update.count; ++k, base_handle = _device_impl->offset_descriptor_handle(base_handle, 1, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV))
 		{
-			const api::buffer_range &buffer_range = static_cast<const api::buffer_range *>(update.descriptors)[k];
-			ID3D12Resource *buffer_resource = reinterpret_cast<ID3D12Resource *>(buffer_range.buffer.handle);
+			const auto &view_range = static_cast<const api::buffer_range *>(update.descriptors)[k];
 
 			D3D12_CONSTANT_BUFFER_VIEW_DESC view_desc;
-			view_desc.BufferLocation = buffer_resource->GetGPUVirtualAddress() + buffer_range.offset;
-			view_desc.SizeInBytes = static_cast<UINT>(buffer_range.size == UINT64_MAX ? buffer_resource->GetDesc().Width - buffer_range.offset : buffer_range.size);
+			view_desc.BufferLocation = reinterpret_cast<ID3D12Resource *>(view_range.buffer.handle)->GetGPUVirtualAddress() + view_range.offset;
+			view_desc.SizeInBytes = static_cast<UINT>(view_range.size == UINT64_MAX ? reinterpret_cast<ID3D12Resource *>(view_range.buffer.handle)->GetDesc().Width - view_range.offset : view_range.size);
 
 			_device_impl->_orig->CreateConstantBufferView(&view_desc, base_handle);
 		}
 	}
-	else if (update.type == api::descriptor_type::sampler || update.type == api::descriptor_type::shader_resource_view || update.type == api::descriptor_type::unordered_access_view)
+	else if (update.type == api::descriptor_type::sampler ||
+		update.type == api::descriptor_type::buffer_shader_resource_view ||
+		update.type == api::descriptor_type::buffer_unordered_access_view ||
+		update.type == api::descriptor_type::texture_shader_resource_view ||
+		update.type == api::descriptor_type::texture_unordered_access_view)
 	{
 #ifndef _WIN64
 		temp_mem<D3D12_CPU_DESCRIPTOR_HANDLE> src_handles(update.count);
@@ -378,8 +460,6 @@ void reshade::d3d12::command_list_impl::push_descriptors(api::shader_stage stage
 		_orig->SetDescriptorHeaps(2, heaps);
 	}
 
-	const auto root_signature = reinterpret_cast<ID3D12RootSignature *>(layout.handle);
-
 #ifndef NDEBUG
 	pipeline_layout_extra_data extra_data;
 	UINT extra_data_size = sizeof(extra_data);
@@ -391,25 +471,9 @@ void reshade::d3d12::command_list_impl::push_descriptors(api::shader_stage stage
 #endif
 
 	if ((stages & (api::shader_stage::all_compute | api::shader_stage::all_ray_tracing)) != 0)
-	{
-		if (root_signature != _current_root_signature[1])
-		{
-			_current_root_signature[1] = root_signature;
-			_orig->SetComputeRootSignature(root_signature);
-		}
-
 		_orig->SetComputeRootDescriptorTable(layout_param, base_handle_gpu);
-	}
 	if ((stages & api::shader_stage::all_graphics) != 0)
-	{
-		if (root_signature != _current_root_signature[0])
-		{
-			_current_root_signature[0] = root_signature;
-			_orig->SetGraphicsRootSignature(root_signature);
-		}
-
 		_orig->SetGraphicsRootDescriptorTable(layout_param, base_handle_gpu);
-	}
 }
 void reshade::d3d12::command_list_impl::bind_descriptor_tables(api::shader_stage stages, api::pipeline_layout layout, uint32_t first, uint32_t count, const api::descriptor_table *tables)
 {
@@ -566,20 +630,15 @@ void reshade::d3d12::command_list_impl::dispatch_mesh(uint32_t group_count_x, ui
 
 	com_ptr<ID3D12GraphicsCommandList6> cmd_list6;
 	if (SUCCEEDED(_orig->QueryInterface(&cmd_list6)))
-	{
 		cmd_list6->DispatchMesh(group_count_x, group_count_y, group_count_z);
-	}
 	else
-	{
 		assert(false);
-	}
 }
 void reshade::d3d12::command_list_impl::dispatch_rays(api::resource raygen, uint64_t raygen_offset, uint64_t raygen_size, api::resource miss, uint64_t miss_offset, uint64_t miss_size, uint64_t miss_stride, api::resource hit_group, uint64_t hit_group_offset, uint64_t hit_group_size, uint64_t hit_group_stride, api::resource callable, uint64_t callable_offset, uint64_t callable_size, uint64_t callable_stride, uint32_t width, uint32_t height, uint32_t depth)
 {
 	_has_commands = true;
 
-	com_ptr<ID3D12GraphicsCommandList4> cmd_list4;
-	if (SUCCEEDED(_orig->QueryInterface(&cmd_list4)))
+	if (_supports_ray_tracing)
 	{
 		D3D12_DISPATCH_RAYS_DESC desc;
 		desc.RayGenerationShaderRecord.StartAddress = (raygen.handle != 0 ? reinterpret_cast<ID3D12Resource *>(raygen.handle)->GetGPUVirtualAddress() : 0) + raygen_offset;
@@ -597,7 +656,7 @@ void reshade::d3d12::command_list_impl::dispatch_rays(api::resource raygen, uint
 		desc.Height = height;
 		desc.Depth = depth;
 
-		cmd_list4->DispatchRays(&desc);
+		static_cast<ID3D12GraphicsCommandList4 *>(_orig)->DispatchRays(&desc);
 	}
 	else
 	{
@@ -1048,22 +1107,16 @@ void reshade::d3d12::command_list_impl::copy_acceleration_structure(api::resourc
 {
 	_has_commands = true;
 
-	com_ptr<ID3D12GraphicsCommandList4> cmd_list4;
-	if (SUCCEEDED(_orig->QueryInterface(&cmd_list4)))
-	{
-		cmd_list4->CopyRaytracingAccelerationStructure(dest.handle, source.handle, convert_acceleration_structure_copy_mode(mode));
-	}
+	if (_supports_ray_tracing)
+		static_cast<ID3D12GraphicsCommandList4 *>(_orig)->CopyRaytracingAccelerationStructure(dest.handle, source.handle, convert_acceleration_structure_copy_mode(mode));
 	else
-	{
 		assert(false);
-	}
 }
 void reshade::d3d12::command_list_impl::build_acceleration_structure(api::acceleration_structure_type type, api::acceleration_structure_build_flags flags, uint32_t input_count, const api::acceleration_structure_build_input *inputs, api::resource scratch, uint64_t scratch_offset, api::resource_view source, api::resource_view dest, api::acceleration_structure_build_mode mode)
 {
 	_has_commands = true;
 
-	com_ptr<ID3D12GraphicsCommandList4> cmd_list4;
-	if (SUCCEEDED(_orig->QueryInterface(&cmd_list4)))
+	if (_supports_ray_tracing)
 	{
 		D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC desc = {};
 		desc.DestAccelerationStructureData = dest.handle;
@@ -1092,7 +1145,7 @@ void reshade::d3d12::command_list_impl::build_acceleration_structure(api::accele
 			desc.Inputs.pGeometryDescs = geometries.data();
 		}
 
-		cmd_list4->BuildRaytracingAccelerationStructure(&desc, 0, nullptr);
+		static_cast<ID3D12GraphicsCommandList4 *>(_orig)->BuildRaytracingAccelerationStructure(&desc, 0, nullptr);
 	}
 	else
 	{

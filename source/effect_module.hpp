@@ -56,7 +56,8 @@ namespace reshadefx
 		min_linear_mag_mip_point = 0x10,
 		min_linear_mag_point_mip_linear = 0x11,
 		min_mag_linear_mip_point = 0x14,
-		min_mag_mip_linear = 0x15
+		min_mag_mip_linear = 0x15,
+		anisotropic = 0x55
 	};
 
 	/// <summary>
@@ -251,9 +252,10 @@ namespace reshadefx
 	/// </summary>
 	enum class shader_type
 	{
-		vs,
-		ps,
-		cs,
+		unknown,
+		vertex,
+		pixel,
+		compute
 	};
 
 	/// <summary>
@@ -278,6 +280,8 @@ namespace reshadefx
 		std::vector<struct_member_info> parameter_list;
 		std::unordered_set<uint32_t> referenced_samplers;
 		std::unordered_set<uint32_t> referenced_storages;
+		shader_type shader_type = shader_type::unknown;
+		int num_threads[3] = {};
 	};
 
 	/// <summary>

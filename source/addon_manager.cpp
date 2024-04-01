@@ -11,7 +11,9 @@
 #include "ini_file.hpp"
 
 extern void register_addon_depth();
+extern void register_addon_effect_runtime_sync();
 extern void unregister_addon_depth();
+extern void unregister_addon_effect_runtime_sync();
 
 extern HMODULE g_module_handle;
 
@@ -53,6 +55,7 @@ static const char *addon_event_to_string(reshade::addon_event ev)
 		CASE(create_pipeline);
 		CASE(destroy_pipeline);
 		CASE(init_pipeline_layout);
+		CASE(create_pipeline_layout);
 		CASE(destroy_pipeline_layout);
 		CASE(copy_descriptor_tables);
 		CASE(update_descriptor_tables);
@@ -101,6 +104,7 @@ static const char *addon_event_to_string(reshade::addon_event ev)
 		CASE(execute_command_list);
 		CASE(execute_secondary_command_list);
 		CASE(present);
+		CASE(set_fullscreen_state);
 		CASE(reshade_present);
 		CASE(reshade_begin_effects);
 		CASE(reshade_finish_effects);
@@ -158,6 +162,19 @@ void reshade::load_addons()
 			info.handle = g_module_handle;
 
 			register_addon_depth();
+		}
+	}
+	{	addon_info &info = addon_loaded_info.emplace_back();
+		info.name = "Effect Runtime Sync";
+		info.description = "Adds preset synchronization between different effect runtime instances, e.g. to have changes in a desktop window reflect in VR.";
+		info.file = g_reshade_dll_path.filename().u8string();
+		info.author = "crosire";
+
+		if (std::find(disabled_addons.cbegin(), disabled_addons.cend(), info.name) == disabled_addons.cend())
+		{
+			info.handle = g_module_handle;
+
+			register_addon_effect_runtime_sync();
 		}
 	}
 #endif
@@ -301,6 +318,7 @@ void reshade::unload_addons()
 
 #if 1
 	unregister_addon_depth();
+	unregister_addon_effect_runtime_sync();
 #endif
 
 #ifndef NDEBUG

@@ -2181,7 +2181,7 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 		// Compile shader modules
 		for (const reshadefx::entry_point &entry_point : effect.module.entry_points)
 		{
-			if (entry_point.type == reshadefx::shader_type::cs && !_device->check_capability(api::device_caps::compute_shader))
+			if (entry_point.type == reshadefx::shader_type::compute && !_device->check_capability(api::device_caps::compute_shader))
 			{
 				effect.errors += "error: " + entry_point.name + ": compute shaders are not supported in D3D9/D3D10\n";
 				effect.compiled = false;
@@ -2229,13 +2229,13 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 				std::string profile;
 				switch (entry_point.type)
 				{
-				case reshadefx::shader_type::vs:
+				case reshadefx::shader_type::vertex:
 					profile = "vs";
 					break;
-				case reshadefx::shader_type::ps:
+				case reshadefx::shader_type::pixel:
 					profile = "ps";
 					break;
-				case reshadefx::shader_type::cs:
+				case reshadefx::shader_type::compute:
 					profile = "cs";
 					break;
 				}
@@ -2292,7 +2292,7 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 					com_ptr<ID3DBlob> d3d_compiled, d3d_errors;
 					const HRESULT hr = D3DCompile(
 						hlsl.data(), hlsl.size(),
-						nullptr, entry_point.type == reshadefx::shader_type::ps ? ps_defines : nullptr, nullptr,
+						nullptr, entry_point.type == reshadefx::shader_type::pixel ? ps_defines : nullptr, nullptr,
 						entry_point.name.c_str(),
 						profile.c_str(),
 						compile_flags, 0,
@@ -2365,7 +2365,7 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 			{
 				std::string glsl = "#version 430\n#define ENTRY_POINT_" + entry_point.name + " 1\n";
 
-				if (entry_point.type != reshadefx::shader_type::ps)
+				if (entry_point.type != reshadefx::shader_type::pixel)
 				{
 					// OpenGL does not allow using 'discard' in the vertex shader profile
 					glsl += "#define discard\n";
@@ -2374,7 +2374,7 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 					glsl += "#define dFdy(y) y\n";
 					glsl += "#define fwidth(p) p\n";
 				}
-				if (entry_point.type != reshadefx::shader_type::cs)
+				if (entry_point.type != reshadefx::shader_type::compute)
 				{
 					// OpenGL does not allow using 'shared' in vertex/fragment shader profile
 					glsl += "#define shared\n";
@@ -2806,7 +2806,7 @@ bool reshade::runtime::create_effect(size_t effect_index)
 				desc.address_v = static_cast<api::texture_address_mode>(info.address_v);
 				desc.address_w = static_cast<api::texture_address_mode>(info.address_w);
 				desc.mip_lod_bias = info.lod_bias;
-				desc.max_anisotropy = 1;
+				desc.max_anisotropy = (desc.filter == api::filter_mode::anisotropic || desc.filter == api::filter_mode::min_mag_anisotropic_mip_point) ? 16.0f : 1.0f;
 				desc.compare_op = api::compare_op::always;
 				desc.border_color[0] = 0.0f;
 				desc.border_color[1] = 0.0f;
@@ -3584,13 +3584,20 @@ bool reshade::runtime::create_texture(texture &tex)
 		flags |= api::resource_flags::generate_mipmaps;
 
 	// Clear texture to zero since by default its contents are undefined
-	std::vector<uint8_t> zero_data(static_cast<size_t>(tex.width) * static_cast<size_t>(tex.height) * static_cast<size_t>(tex.depth) * 16);
-	std::vector<api::subresource_data> initial_data(tex.levels);
-	for (uint32_t level = 0, width = tex.width, height = tex.height; level < tex.levels; ++level, width /= 2, height /= 2)
+	const float clear_color[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+	std::vector<uint8_t> zero_data;
+	std::vector<api::subresource_data> initial_data;
+	if (!tex.render_target)
 	{
-		initial_data[level].data = zero_data.data();
-		initial_data[level].row_pitch = width * 16;
-		initial_data[level].slice_pitch = initial_data[level].row_pitch * height;
+		zero_data.resize(static_cast<size_t>(tex.width) * static_cast<size_t>(tex.height) * static_cast<size_t>(tex.depth) * 16);
+		initial_data.resize(tex.levels);
+		for (uint32_t level = 0, width = tex.width, height = tex.height; level < tex.levels; ++level, width /= 2, height /= 2)
+		{
+			initial_data[level].data = zero_data.data();
+			initial_data[level].row_pitch = width * 16;
+			initial_data[level].slice_pitch = initial_data[level].row_pitch * height;
+		}
 	}
 
 	if (!_device->create_resource(api::resource_desc(type, tex.width, tex.height, tex.depth, tex.levels, format, 1, api::memory_heap::gpu_only, usage, flags), initial_data.data(), api::resource_usage::shader_resource, &tex.resource))
@@ -3636,6 +3643,13 @@ bool reshade::runtime::create_texture(texture &tex)
 			LOG(ERROR) << "Failed to create render target view for texture '" << tex.unique_name << "' (format = " << static_cast<uint32_t>(view_format_srgb) << ")!";
 			return false;
 		}
+
+		api::command_list *const cmd_list = _graphics_queue->get_immediate_command_list();
+		cmd_list->barrier(tex.resource, api::resource_usage::shader_resource, api::resource_usage::render_target);
+		cmd_list->clear_render_target_view(tex.rtv[0], clear_color);
+		cmd_list->barrier(tex.resource, api::resource_usage::render_target, api::resource_usage::shader_resource);
+		if (tex.levels > 1)
+			cmd_list->generate_mipmaps(tex.srv[0]);
 	}
 
 	if (tex.storage_access && _renderer_id >= 0xb000)
@@ -4138,6 +4152,8 @@ void reshade::runtime::update_effects()
 
 		if (!create_effect(effect_index))
 		{
+			_graphics_queue->wait_idle();
+
 			// Destroy all textures belonging to this effect
 			for (texture &tex : _textures)
 				if (tex.effect_index == effect_index && tex.shared.size() <= 1)

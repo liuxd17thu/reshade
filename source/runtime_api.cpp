@@ -1468,32 +1468,35 @@ void reshade::runtime::get_current_preset_path([[maybe_unused]] char *path, size
 void reshade::runtime::set_current_preset_path([[maybe_unused]] const char *path)
 {
 #if RESHADE_FX
-#if RESHADE_ADDON
-	const bool was_is_in_api_call = _is_in_api_call;
-	_is_in_api_call = true;
-#endif
-
 	std::error_code ec;
 	std::filesystem::path preset_path = std::filesystem::u8path(path);
 
 	// Only change preset when this is a valid preset path
 	if (resolve_preset_path(preset_path, ec))
 	{
-		// Stop any preset transition that may still be happening
-		_is_in_preset_transition = false;
+		if (is_loading())
+		{
+			_current_preset_path = std::move(preset_path);
+		}
+		else
+		{
+			// Stop any preset transition that may still be happening
+			_is_in_preset_transition = false;
 
-		// First save current preset, before switching to a new one
-		save_current_preset();
+			// Reload preset even if it is the same as before
+			if (preset_path != _current_preset_path)
+			{
+				// First save current preset, before switching to a new one
+				save_current_preset();
 
-		_current_preset_path = std::move(preset_path);
+				_current_preset_path = std::move(preset_path);
 
-		save_config();
-		load_current_preset();
+				save_config();
+			}
+
+			load_current_preset();
+		}
 	}
-
-#if RESHADE_ADDON
-	_is_in_api_call = was_is_in_api_call;
-#endif
 #endif
 }
 

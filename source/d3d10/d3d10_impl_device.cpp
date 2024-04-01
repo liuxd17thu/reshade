@@ -655,7 +655,12 @@ bool reshade::d3d10::device_impl::create_pipeline(api::pipeline_layout, uint32_t
 				break; // Ignored
 			case api::pipeline_subobject_type::dynamic_pipeline_states:
 				for (uint32_t k = 0; k < subobjects[i].count; ++k)
-					if (static_cast<const api::dynamic_state *>(subobjects[i].data)[k] != api::dynamic_state::primitive_topology)
+					if (const auto state = static_cast<const api::dynamic_state *>(subobjects[i].data)[k];
+						state != api::dynamic_state::primitive_topology &&
+						state != api::dynamic_state::blend_constant &&
+						state != api::dynamic_state::sample_mask &&
+						state != api::dynamic_state::front_stencil_reference_value &&
+						state != api::dynamic_state::back_stencil_reference_value)
 						goto exit_failure;
 				break;
 			case api::pipeline_subobject_type::max_vertex_count:
@@ -953,7 +958,8 @@ bool reshade::d3d10::device_impl::allocate_descriptor_tables(uint32_t count, api
 			switch (table_impl->type)
 			{
 			case api::descriptor_type::sampler:
-			case api::descriptor_type::shader_resource_view:
+			case api::descriptor_type::buffer_shader_resource_view:
+			case api::descriptor_type::texture_shader_resource_view:
 				table_impl->descriptors.resize(table_impl->count * 1);
 				break;
 			case api::descriptor_type::constant_buffer:
@@ -1011,7 +1017,8 @@ void reshade::d3d10::device_impl::copy_descriptor_tables(uint32_t count, const a
 		switch (src_table_impl->type)
 		{
 		case api::descriptor_type::sampler:
-		case api::descriptor_type::shader_resource_view:
+		case api::descriptor_type::buffer_shader_resource_view:
+		case api::descriptor_type::texture_shader_resource_view:
 			std::memcpy(&dst_table_impl->descriptors[dst_binding * 1], &src_table_impl->descriptors[src_binding * 1], copy.count * sizeof(uint64_t) * 1);
 			break;
 		case api::descriptor_type::constant_buffer:
@@ -1040,7 +1047,8 @@ void reshade::d3d10::device_impl::update_descriptor_tables(uint32_t count, const
 		switch (update.type)
 		{
 		case api::descriptor_type::sampler:
-		case api::descriptor_type::shader_resource_view:
+		case api::descriptor_type::buffer_shader_resource_view:
+		case api::descriptor_type::texture_shader_resource_view:
 			std::memcpy(&table_impl->descriptors[update_binding * 1], update.descriptors, update.count * sizeof(uint64_t) * 1);
 			break;
 		case api::descriptor_type::constant_buffer:
