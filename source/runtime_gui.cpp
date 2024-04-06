@@ -1752,8 +1752,16 @@ void reshade::runtime::draw_gui_home()
 		const auto button_height = (_aurora_feature == 4) ? (2 * button_size + _imgui_context->Style.ItemSpacing.y) : button_size;
 		if (ImGui::ButtonEx(ICON_FK_FLOPPY, ImVec2(button_size, button_height), ImGuiButtonFlags_NoNavFocus))
 		{
-			ini_file::load_cache(_current_preset_path).clear();
-			save_current_preset();
+			if (_aurora_feature == 4)
+			{
+				save_current_preset();
+				aurora4_clean_preset();
+			}
+			else
+			{
+				ini_file::load_cache(_current_preset_path).clear();
+				save_current_preset();
+			}
 			ini_file::flush_cache(_current_preset_path);
 
 			_preset_is_modified = false;

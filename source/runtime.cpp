@@ -1411,11 +1411,16 @@ void reshade::runtime::load_current_preset()
 
 			reshadefx::constant values, values_old;
 
+			// Load uniforms with 'ui_bind' annotated from the section of base flair
+			// However these uniforms will still be saved to all flairs when changing. - To avoid potential compatibility issues(?
+			std::string real_name = variable.annotation_as_string("ui_bind").empty() ? effect_name : raw_effect_name;
+			real_name = preset.has(real_name, variable.name) ? real_name : raw_effect_name;
+
 			switch (variable.type.base)
 			{
 			case reshadefx::type::t_int:
 				get_uniform_value(variable, values.as_int, variable.type.components());
-				preset.get(effect_name, variable.name, values.as_int);
+				preset.get(real_name, variable.name, values.as_int);
 				set_uniform_value(variable, values.as_int, variable.type.components());
 				break;
 			case reshadefx::type::t_bool:
@@ -1427,7 +1432,7 @@ void reshade::runtime::load_current_preset()
 			case reshadefx::type::t_float:
 				get_uniform_value(variable, values.as_float, variable.type.components());
 				values_old = values;
-				preset.get(effect_name, variable.name, values.as_float);
+				preset.get(real_name, variable.name, values.as_float);
 				if (_is_in_preset_transition)
 				{
 					// Perform smooth transition on floating point values
@@ -1628,6 +1633,50 @@ void reshade::runtime::save_current_preset() const
 			}
 		}
 	}
+}
+void reshade::runtime::aurora4_clean_preset()
+{
+	ini_file &preset = ini_file::load_cache(_current_preset_path);
+
+	// Build list of active techniques and effects
+	std::set<size_t> effect_list;
+	std::vector<std::string> technique_list;
+	technique_list.reserve(_techniques.size());
+	std::vector<std::string> sorted_technique_list;
+	sorted_technique_list.reserve(_technique_sorting.size());
+
+	for (size_t technique_index : _technique_sorting)
+	{
+		const technique &tech = _techniques[technique_index];
+
+		if (tech.annotation_as_uint("nosave"))
+			continue;
+
+		const std::string unique_name = tech.name + '@' + _effects[tech.effect_index].source_file.filename().u8string();
+
+		if (tech.enabled)
+			technique_list.push_back(unique_name);
+		if (tech.enabled || tech.toggle_key_data[0] != 0)
+			effect_list.insert(tech.effect_index);
+		else
+		{
+			for (auto &flair : _flairs)
+			{
+				const std::string flair_name = _effects[tech.effect_index].source_file.filename().u8string()
+					+ ((flair == "" || flair == ":") ? "" : ("|" + flair));
+				if (preset.has(flair_name))
+					preset.remove_section(flair_name);
+			}
+		}
+		// Keep track of the order of all techniques and not just the enabled ones
+		sorted_technique_list.push_back(unique_name);
+	}
+
+	if ( !(preset.has({}, "TechniqueSorting") || !std::equal(technique_list.cbegin(), technique_list.cend(), sorted_technique_list.cbegin())
+		|| _aurora_feature == 3 && check_preset_feature(3)) )
+		preset.remove_key({}, "TechniqueSorting");
+
+	preset.set({}, "Techniques", std::move(technique_list));
 }
 
 void reshade::runtime::detach_current_flair() const
