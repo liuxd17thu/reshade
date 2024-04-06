@@ -1161,7 +1161,7 @@ void reshade::runtime::load_current_preset()
 {
 	_preset_save_successful = true;
 
-	const ini_file &preset = ini_file::load_cache(_current_preset_path);
+ 	const ini_file &preset = ini_file::load_cache(_current_preset_path);
 
 	std::vector<std::string> technique_list;
 	preset.get({}, "Techniques", technique_list);
@@ -1551,7 +1551,7 @@ void reshade::runtime::save_current_preset() const
 		}
 		else
 		{
-			if (const auto preset_it = _preset_preprocessor_definitions.find(raw_effect_name);
+			if (auto preset_it = _preset_preprocessor_definitions.find(raw_effect_name);
 				preset_it != _preset_preprocessor_definitions.end())
 			{
 				auto pp_with_value { preset_it->second };
@@ -1595,20 +1595,35 @@ void reshade::runtime::save_current_preset() const
 			const unsigned int components = variable.type.components();
 			reshadefx::constant values;
 
+			bool aurora4_broadcast =
+				(_ui_bind_support && _aurora_feature == 4 && !variable.annotation_as_string("ui_bind").empty()) ?
+				true : false;
 			switch (variable.type.base)
 			{
 			case reshadefx::type::t_int:
 				get_uniform_value(variable, values.as_int, components);
 				preset.set(effect_name, variable.name, values.as_int, components);
+				if (aurora4_broadcast)
+					for (auto &flair : _flairs)
+						if (flair != _current_flair)
+							preset.set(raw_effect_name + ((flair == "" ||flair == ":") ? "" : ("|" + flair)), variable.name, values.as_int, components);
 				break;
 			case reshadefx::type::t_bool:
 			case reshadefx::type::t_uint:
 				get_uniform_value(variable, values.as_uint, components);
 				preset.set(effect_name, variable.name, values.as_uint, components);
+				if (aurora4_broadcast)
+					for (auto &flair : _flairs)
+						if (flair != _current_flair)
+							preset.set(raw_effect_name + ((flair == "" || flair == ":") ? "" : ("|" + flair)), variable.name, values.as_uint, components);
 				break;
 			case reshadefx::type::t_float:
 				get_uniform_value(variable, values.as_float, components);
 				preset.set(effect_name, variable.name, values.as_float, components);
+				if (aurora4_broadcast)
+					for (auto &flair : _flairs)
+						if (flair != _current_flair)
+							preset.set(raw_effect_name + ((flair == "" || flair == ":") ? "" : ("|" + flair)), variable.name, values.as_float, components);
 				break;
 			}
 		}
@@ -4926,6 +4941,9 @@ void reshade::runtime::reset_uniform_value(uniform &variable)
 
 void reshade::runtime::reset_uniform_value(uniform &variable, std::string &bind_value)
 {
+	auto &effect = _effects[variable.effect_index];
+	std::vector<std::pair<std::string, std::string>> *pp_scope = nullptr;
+	std::vector<std::pair<std::string, std::string>>::iterator pp_it;
 	if (variable.special != reshade::special_uniform::none)
 	{
 		std::memset(_effects[variable.effect_index].uniform_data_storage.data() + variable.offset, 0, variable.size);
@@ -4962,6 +4980,11 @@ void reshade::runtime::reset_uniform_value(uniform &variable, std::string &bind_
 					bind_value = std::to_string(value.as_float[0]);
 				break;
 			}
+		}
+		if (i == 0)
+		{
+			get_preprocessor_definition(effect.source_file.filename().u8string(), effect.definition_bindings[variable.name].first, 0b001, pp_scope, pp_it);
+			pp_it->second = bind_value;
 		}
 	}
 }

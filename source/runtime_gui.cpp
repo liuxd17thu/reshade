@@ -3702,6 +3702,9 @@ void reshade::runtime::draw_variable_editor()
 				preset_it != _preset_preprocessor_definitions.end() && !preset_it->second.empty())
 			{
 				_preset_preprocessor_definitions.erase(preset_it);
+				if (_ui_bind_support && !effect.definition_bindings.empty())
+					for (auto &bindings : effect.definition_bindings)
+						_preset_preprocessor_definitions[raw_effect_name].push_back(bindings.second);
 				force_reload_effect = true;
 			}
 
@@ -3808,7 +3811,7 @@ void reshade::runtime::draw_variable_editor()
 											force_reload_effect = true;
 										}
 										else
-												reset_uniform_value(variable_it);
+											reset_uniform_value(variable_it);
 									}
 
 								if (_auto_save_preset)
@@ -4047,6 +4050,15 @@ void reshade::runtime::draw_variable_editor()
 						break;
 					}
 				}
+				std::vector<std::pair<std::string, std::string>> *pp_scope = nullptr;
+				std::vector<std::pair<std::string, std::string>>::iterator pp_it;
+				if (modified && _ui_bind_support && effect.definition_bindings.count(variable.name))
+				{
+					if (get_preprocessor_definition(effect.source_file.filename().u8string(), effect.definition_bindings[variable.name].first, 0b001, pp_scope, pp_it))
+						pp_it->second = effect.definition_bindings[variable.name].second;
+					else
+						_preset_preprocessor_definitions[effect.source_file.filename().u8string()].push_back(effect.definition_bindings[variable.name]);
+				}
 
 				ImGui::EndDisabled();
 
@@ -4166,7 +4178,7 @@ void reshade::runtime::draw_variable_editor()
 					std::vector<std::pair<std::string, std::string>>::iterator definition_it;
 
 					char value[256];
-					if (get_preprocessor_definition(effect_name, definition.first, 0b111, definition_scope, definition_it))
+					if (get_preprocessor_definition(raw_effect_name, definition.first, 0b111, definition_scope, definition_it))
 					{
 						if (_ui_bind_support)
 						{
@@ -4250,7 +4262,7 @@ void reshade::runtime::draw_variable_editor()
 
 		if (force_reload_effect)
 		{
-				save_current_preset();
+			save_current_preset();
 
 			const bool reload_successful_before = _last_reload_successful;
 
