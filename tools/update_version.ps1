@@ -8,18 +8,18 @@ Param(
 )
 
 $exists = Test-Path $path
-$version = 0,0,0,0
+$version = 6,1,0,0
 
 # Get version from existing file
-if ($exists -and $(Get-Content $path | Out-String) -match "VERSION_FULL (\d+).(\d+).(\d+).(\d+)") {
-	$version = [int]::Parse($matches[1]), [int]::Parse($matches[2]), [int]::Parse($matches[3]), [int]::Parse($matches[4])
-}
-elseif ($(git describe --tags) -match "v(\d+)\.(\d+)\.(\d+)(-\d+-\w+)?") {
-	$version = [int]::Parse($matches[1]), [int]::Parse($matches[2]), [int]::Parse($matches[3]), 0
-}
+# if ($exists -and $(Get-Content $path | Out-String) -match "VERSION_FULL (\d+).(\d+).(\d+).(\d+)") {
+# 	$version = [int]::Parse($matches[1]), [int]::Parse($matches[2]), [int]::Parse($matches[3]), [int]::Parse($matches[4])
+# }
+# elseif ($(git describe --tags) -match "v(\d+)\.(\d+)\.(\d+)(-\d+-\w+)?") {
+# 	$version = [int]::Parse($matches[1]), [int]::Parse($matches[2]), [int]::Parse($matches[3]), 0
+# }
 
 $build = $(git rev-parse --short HEAD)
-$cn2 = "v1.0.1-Release 6.1"
+$cn2 = "Release 6.2"
 
 # Increment build version for release builds
 if (($config -eq "Release") -or
