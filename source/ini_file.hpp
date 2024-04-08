@@ -41,6 +41,16 @@ public:
 	const std::filesystem::path &path() const { return _path; }
 
 	/// <summary>
+	/// Import <paramref name="lines"/> text and parse <paramref name="data"/>.
+	/// </summary>
+	bool import_section(const std::vector<std::string> &lines, std::unordered_map<std::string, std::vector<std::string>> &data);
+
+	/// <summary>
+	/// Export <paramref name="section"/> data into <paramref name="lines"/>.
+	/// </summary>
+	bool export_section(const std::unordered_map<std::string, std::vector<std::string>> &keys, std::string &lines);
+
+	/// <summary>
 	/// Checks whether the specified <paramref name="section"/> and <paramref name="key"/> currently exist in the INI.
 	/// </summary>
 	bool has(const std::string &section, const std::string &key) const

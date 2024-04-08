@@ -46,6 +46,8 @@ bool ini_file::load()
 		file.seekg(0, std::ios::beg);
 
 	std::string line, section;
+	std::vector<std::string> section_lines;
+	std::unordered_map<std::string, std::vector<std::string>> section_data;
 	while (std::getline(file, line))
 	{
 		trim(line);
@@ -56,11 +58,32 @@ bool ini_file::load()
 		// Read section name
 		if (line[0] == '[')
 		{
+			import_section(section_lines, section_data);
+			_sections.insert({ section, std::move(section_data) });
+			section_data.clear();
+			section_lines.clear();
+
 			section = trim(line.substr(0, line.find(']')), " \t[]");
 			continue;
 		}
 
-		// Read section content
+		section_lines.push_back(line);
+	}
+	import_section(section_lines, section_data);
+	_sections.insert({ section, section_data });
+
+	return true;
+}
+
+bool ini_file::import_section(const std::vector<std::string> &lines, std::unordered_map<std::string, std::vector<std::string>> &data)
+{
+	data.clear();
+	for (const auto &line : lines)
+	{
+		trim(line);
+		
+		if (line.empty() || line[0] == ';' || line[0] == '/' || line[0] == '#') [[unlikely]]
+			continue;
 		const size_t assign_index = line.find('=');
 		if (assign_index != std::string::npos)
 		{
@@ -69,12 +92,12 @@ bool ini_file::load()
 
 			if (value.empty())
 			{
-				_sections[section].insert({ key, {} });
+				data.insert({ key, {} });
 				continue;
 			}
 
 			// Append to key if it already exists
-			ini_file::value_type &elements = _sections[section][key];
+			ini_file::value_type &elements = data[key];
 			for (size_t offset = 0, base = 0, len = value.size(); offset <= len;)
 			{
 				// Treat ",," as an escaped comma and only split on single ","
@@ -103,12 +126,13 @@ bool ini_file::load()
 		}
 		else
 		{
-			_sections[section].insert({ line, {} });
+			data.insert({ line, {} });
 		}
 	}
 
 	return true;
 }
+
 bool ini_file::save()
 {
 	if (!_modified)
@@ -141,55 +165,13 @@ bool ini_file::save()
 	{
 		if (const section_type &keys = _sections.at(section_name); !keys.empty())
 		{
-			key_names.clear();
-			key_names.reserve(keys.size());
-			for (const std::pair<const std::string, value_type> &key : keys)
-				key_names.push_back(key.first);
-
-			std::sort(key_names.begin(), key_names.end(),
-				[](std::string a, std::string b) {
-					std::transform(a.begin(), a.end(), a.begin(), [](std::string::value_type c) { return static_cast<std::string::value_type>(std::toupper(c)); });
-					std::transform(b.begin(), b.end(), b.begin(), [](std::string::value_type c) { return static_cast<std::string::value_type>(std::toupper(c)); });
-					return a < b;
-				});
-
 			// Empty section should have been sorted to the top, so do not need to append it before keys
 			if (!section_name.empty())
 				data << '[' << section_name << ']' << '\n';
 
-			for (const std::string &key_name : key_names)
-			{
-				data << key_name << '=';
-
-				if (const ini_file::value_type &elements = keys.at(key_name); !elements.empty())
-				{
-					std::string value;
-					for (const std::string &element : elements)
-					{
-						// Empty elements mess with escaped commas, so simply skip them
-						if (element.empty())
-							continue;
-
-						value.reserve(value.size() + element.size() + 1);
-						for (const char c : element)
-							value.append(c == ',' ? 2 : 1, c);
-						value += ','; // Separate multiple values with a comma
-					}
-
-					// Remove the last comma
-					if (!value.empty())
-					{
-						assert(value.back() == ',');
-						value.pop_back();
-					}
-
-					data << value;
-				}
-
-				data << '\n';
-			}
-
-			data << '\n';
+			std::string lines; lines.reserve(512);
+			export_section(keys, lines);
+			data << lines;
 		}
 	}
 
@@ -210,6 +192,61 @@ bool ini_file::save()
 	_modified_at = std::filesystem::last_write_time(_path, ec);
 
 	assert(!ec && std::filesystem::file_size(_path, ec) > 0);
+
+	return true;
+}
+
+bool ini_file::export_section(const std::unordered_map<std::string, std::vector<std::string>> &keys, std::string &lines)
+{
+	std::stringstream data;
+
+	std::vector<std::string> key_names;
+	key_names.clear();
+	key_names.reserve(keys.size());
+	for (const std::pair<const std::string, value_type> &key : keys)
+		key_names.push_back(key.first);
+
+	std::sort(key_names.begin(), key_names.end(),
+		[](std::string a, std::string b) {
+			std::transform(a.begin(), a.end(), a.begin(), [](std::string::value_type c) { return static_cast<std::string::value_type>(std::toupper(c)); });
+			std::transform(b.begin(), b.end(), b.begin(), [](std::string::value_type c) { return static_cast<std::string::value_type>(std::toupper(c)); });
+			return a < b;
+		});
+
+	for (const std::string &key_name : key_names)
+	{
+		data << key_name << '=';
+
+		if (const ini_file::value_type &elements = keys.at(key_name); !elements.empty())
+		{
+			std::string value;
+			for (const std::string &element : elements)
+			{
+				// Empty elements mess with escaped commas, so simply skip them
+				if (element.empty())
+					continue;
+
+				value.reserve(value.size() + element.size() + 1);
+				for (const char c : element)
+					value.append(c == ',' ? 2 : 1, c);
+				value += ','; // Separate multiple values with a comma
+			}
+
+			// Remove the last comma
+			if (!value.empty())
+			{
+				assert(value.back() == ',');
+				value.pop_back();
+			}
+
+			data << value;
+		}
+
+		data << '\n';
+	}
+
+	data << '\n';
+	lines = data.str();
 
 	return true;
 }
