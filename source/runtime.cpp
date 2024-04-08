@@ -1631,9 +1631,9 @@ void reshade::runtime::save_current_preset() const
 		}
 	}
 }
-void reshade::runtime::aurora4_clean_preset()
+void reshade::runtime::aurora4_clean_preset(ini_file &preset)
 {
-	ini_file &preset = ini_file::load_cache(_current_preset_path);
+	//ini_file &preset = ini_file::load_cache(_current_preset_path);
 
 	// Build list of active techniques and effects
 	std::set<std::string> effect_name_list;
@@ -1680,8 +1680,7 @@ void reshade::runtime::aurora4_clean_preset()
 			preset.remove_section(record_flair);
 	}
 
-	if ( !(preset.has({}, "TechniqueSorting") || !std::equal(technique_list.cbegin(), technique_list.cend(), sorted_technique_list.cbegin())
-		|| _aurora_feature == 3 && check_preset_feature(3)) )
+	if (preset.has({}, "TechniqueSorting") && std::equal(technique_list.cbegin(), technique_list.cend(), sorted_technique_list.cbegin()))
 		preset.remove_key({}, "TechniqueSorting");
 
 	preset.set({}, "Techniques", std::move(technique_list));

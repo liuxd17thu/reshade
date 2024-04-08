@@ -178,7 +178,7 @@ namespace reshade
 		bool check_preset_feature(int feature) const;
 		void load_current_preset();
 		void save_current_preset() const final;
-		void aurora4_clean_preset();
+		void aurora4_clean_preset(ini_file &preset);
 		void detach_current_flair() const;
 
 		bool switch_to_next_preset(std::filesystem::path filter_path, bool reversed = false);

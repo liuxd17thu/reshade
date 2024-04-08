@@ -1752,14 +1752,15 @@ void reshade::runtime::draw_gui_home()
 		const auto button_height = (_aurora_feature == 4) ? (2 * button_size + _imgui_context->Style.ItemSpacing.y) : button_size;
 		if (ImGui::ButtonEx(ICON_FK_FLOPPY, ImVec2(button_size, button_height), ImGuiButtonFlags_NoNavFocus))
 		{
+			auto &preset = ini_file::load_cache(_current_preset_path);
 			if (_aurora_feature == 4)
 			{
+				aurora4_clean_preset(preset);
 				save_current_preset();
-				aurora4_clean_preset();
 			}
 			else
 			{
-				ini_file::load_cache(_current_preset_path).clear();
+				preset.clear();
 				save_current_preset();
 			}
 			ini_file::flush_cache(_current_preset_path);
@@ -1963,7 +1964,8 @@ void reshade::runtime::draw_gui_home()
 			ImGui::SameLine(0, button_spacing);
 
 			ImGui::BeginDisabled(_current_flair == ":");
-			if (ImGui::ButtonEx(ICON_FK_MINUS "###remove_flair", ImVec2(button_size, button_size), ImGuiButtonFlags_NoNavFocus | ImGuiButtonFlags_PressedOnClick))
+			bool force_remove = _input->is_key_down(0x10 /* VK_SHIFT */);
+			if (ImGui::ButtonEx((force_remove ? ICON_FK_CANCEL"###remove_flair" : ICON_FK_MINUS"###remove_flair"), ImVec2(button_size, button_size), ImGuiButtonFlags_NoNavFocus | ImGuiButtonFlags_PressedOnClick))
 			{
 				auto flair_it = std::find(_flairs.begin(), _flairs.end(), _current_flair);
 				if (flair_it != _flairs.begin() && flair_it != _flairs.end())
@@ -2002,8 +2004,21 @@ void reshade::runtime::draw_gui_home()
 			{
 				_last_preset_switching_time = _last_present_time;
 				_is_in_preset_transition = true;
-				save_current_preset();
 				auto &preset = ini_file::load_cache(_current_preset_path);
+				save_current_preset();
+				if (force_remove)
+				{
+					std::vector<std::string> sections;
+					preset.get_section_names(sections);
+					for (auto &section : sections)
+					{
+						auto pos = section.find('|');
+						if (pos == std::string::npos)
+							continue;
+						if (section.substr(pos + 1) == _current_flair)
+							preset.remove_section(section);
+					}
+				}
 				preset.set({}, "CurrentFlair", next_flair == ":" ? u8"\u2014" : next_flair);
 				load_current_preset();
 			}
