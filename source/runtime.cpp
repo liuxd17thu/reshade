@@ -879,7 +879,7 @@ void reshade::runtime::on_present(api::command_queue *present_queue)
 					{
 						_last_preset_switching_time = _last_present_time;
 						_is_in_preset_transition = true;
-						
+
 						save_current_preset();
 						auto &preset = ini_file::load_cache(_current_preset_path);
 						preset.set({}, "CurrentFlair", next_flair);
@@ -1238,7 +1238,7 @@ void reshade::runtime::load_current_preset()
 	// load preset description
 	if (preset.get({}, "Description", _description)) {
 		auto pos = _description.find("\\n");
-		while (pos != -1) {
+		while (pos != std::string::npos) {
 			_description.replace(pos, 2, "\n");
 			pos = _description.find("\\n");
 		}
