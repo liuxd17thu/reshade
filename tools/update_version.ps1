@@ -19,7 +19,7 @@ $version = 6,1,0,0
 # }
 
 $build = $(git rev-parse --short HEAD)
-$cn2 = "Alpha 6.2"
+$cn2 = "Alpha 6.3"
 
 # Increment build version for release builds
 if (($config -eq "Release") -or
