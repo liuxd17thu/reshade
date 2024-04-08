@@ -1639,7 +1639,7 @@ void reshade::runtime::aurora4_clean_preset()
 	ini_file &preset = ini_file::load_cache(_current_preset_path);
 
 	// Build list of active techniques and effects
-	std::set<size_t> effect_list;
+	std::set<std::string> effect_name_list;
 	std::vector<std::string> technique_list;
 	technique_list.reserve(_techniques.size());
 	std::vector<std::string> sorted_technique_list;
@@ -1657,19 +1657,30 @@ void reshade::runtime::aurora4_clean_preset()
 		if (tech.enabled)
 			technique_list.push_back(unique_name);
 		if (tech.enabled || tech.toggle_key_data[0] != 0)
-			effect_list.insert(tech.effect_index);
-		else
-		{
-			for (auto &flair : _flairs)
-			{
-				const std::string flair_name = _effects[tech.effect_index].source_file.filename().u8string()
-					+ ((flair == "" || flair == ":") ? "" : ("|" + flair));
-				if (preset.has(flair_name))
-					preset.remove_section(flair_name);
-			}
-		}
+			effect_name_list.insert(_effects[tech.effect_index].source_file.filename().u8string());
+
 		// Keep track of the order of all techniques and not just the enabled ones
 		sorted_technique_list.push_back(unique_name);
+	}
+	std::vector<std::string> recorded_effects;
+	preset.get_section_names(recorded_effects);
+	for (auto &record : recorded_effects)
+	{
+		std::string flair;
+		if (record.find(".fx") == std::string::npos)
+			continue;
+		// remove all flairs of the effect which is not active
+		std::string record_flair = record;
+		if (auto pos = record.find_first_of("|"); pos != std::string::npos)
+		{
+			flair = record.substr(pos + 1);
+			record.erase(pos);
+		}
+
+		if (effect_name_list.count(record) == 0)
+			preset.remove_section(record_flair);
+		if (flair != "" && std::find_if(_flairs.begin(), _flairs.end(), [&flair](std::string &f) {return f == flair; }) == _flairs.end())
+			preset.remove_section(record_flair);
 	}
 
 	if ( !(preset.has({}, "TechniqueSorting") || !std::equal(technique_list.cbegin(), technique_list.cend(), sorted_technique_list.cbegin())
