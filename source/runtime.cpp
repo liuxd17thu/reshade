@@ -1607,28 +1607,25 @@ void reshade::runtime::save_current_preset() const
 			{
 			case reshadefx::type::t_int:
 				get_uniform_value(variable, values.as_int, components);
-				preset.set(effect_name, variable.name, values.as_int, components);
 				if (aurora4_broadcast)
-					for (auto &flair : _flairs)
-						if (flair != _current_flair)
-							preset.set(raw_effect_name + ((flair == "" ||flair == ":") ? "" : ("|" + flair)), variable.name, values.as_int, components);
+					preset.set(raw_effect_name, variable.name, values.as_int, components);
+				else
+					preset.set(effect_name, variable.name, values.as_int, components);
 				break;
 			case reshadefx::type::t_bool:
 			case reshadefx::type::t_uint:
 				get_uniform_value(variable, values.as_uint, components);
-				preset.set(effect_name, variable.name, values.as_uint, components);
 				if (aurora4_broadcast)
-					for (auto &flair : _flairs)
-						if (flair != _current_flair)
-							preset.set(raw_effect_name + ((flair == "" || flair == ":") ? "" : ("|" + flair)), variable.name, values.as_uint, components);
+					preset.set(raw_effect_name, variable.name, values.as_uint, components);
+				else
+					preset.set(effect_name, variable.name, values.as_uint, components);
 				break;
 			case reshadefx::type::t_float:
 				get_uniform_value(variable, values.as_float, components);
-				preset.set(effect_name, variable.name, values.as_float, components);
 				if (aurora4_broadcast)
-					for (auto &flair : _flairs)
-						if (flair != _current_flair)
-							preset.set(raw_effect_name + ((flair == "" || flair == ":") ? "" : ("|" + flair)), variable.name, values.as_float, components);
+					preset.set(raw_effect_name, variable.name, values.as_float, components);
+				else
+					preset.set(effect_name, variable.name, values.as_float, components);
 				break;
 			}
 		}
