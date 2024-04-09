@@ -431,6 +431,14 @@ bool reshade::imgui::directory_input_box(const char *name, std::filesystem::path
 	return res;
 }
 
+bool reshade::imgui::multiline_input_box(const char *label, std::string *str, const ImVec2 &size, ImGuiInputTextFlags flags, ImGuiInputTextCallback callback)
+{
+	IM_ASSERT((flags & ImGuiInputTextFlags_CallbackResize) == 0);
+	flags |= ImGuiInputTextFlags_CallbackResize;
+
+	return ImGui::InputTextMultiline(label, (char *)str->c_str(), str->capacity() + 1, size, flags, callback, (void *)str);
+}
+
 bool reshade::imgui::radio_list(const char *label, const std::string_view ui_items, int &v)
 {
 	bool res = false;

@@ -61,6 +61,11 @@ namespace reshade::imgui
 	bool directory_input_box(const char *label, std::filesystem::path &path, std::filesystem::path &dialog_path);
 
 	/// <summary>
+	/// Adds a multiline input box widget.
+	/// </summary>
+	bool multiline_input_box(const char *label, std::string *str, const ImVec2 &size, ImGuiInputTextFlags flags, ImGuiInputTextCallback callback);
+
+	/// <summary>
 	/// Adds a widget which shows a vertical list of radio buttons plus a label to the right.
 	/// </summary>
 	/// <param name="label">Label text describing this widget.</param>
