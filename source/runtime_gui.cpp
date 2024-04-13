@@ -4577,7 +4577,7 @@ void reshade::runtime::draw_technique_editor()
 			if (ImGui::BeginPopupContextItem("##context"))
 			{
 				const auto button_size = _font_size * 3.0f;
-				ImGui::TextUnformatted(tech.name.c_str()), tech.name.c_str() + tech.name.size();
+				ImGui::TextUnformatted(tech.name.c_str(), tech.name.c_str() + tech.name.size());
 				if (_aurora_feature == 3)
 				{
 					ImGui::SameLine(ImGui::GetContentRegionAvail().x - 2 * button_size);
