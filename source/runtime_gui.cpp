@@ -4651,20 +4651,25 @@ void reshade::runtime::draw_technique_editor()
 
 					ImGui::CloseCurrentPopup();
 				}
-				if (_aurora_feature == 4 && _current_flair != ":" && _effects[tech.effect_index].flair_touched)
-				{
-					if (is_not_bottom && ImGui::Button(_("Remove variation"), ImVec2(18.0f * _font_size, 0)))
-					{
-						_effects[tech.effect_index].flair_touched = false;
-						auto &preset = ini_file::load_cache(_current_preset_path);
-						preset.remove_section(_effects[tech.effect_index].source_file.filename().u8string() + "|" + _current_flair);
-						load_current_preset();
-						ImGui::CloseCurrentPopup();
-					}
-				}
 
 				if (is_not_top || is_not_bottom || (_input != nullptr && !force_enabled))
 					ImGui::Separator();
+
+				if (_aurora_feature == 4)
+				{
+					if (_current_flair != ":" && _effects[tech.effect_index].flair_touched)
+					{
+						if (ImGui::Button(_("Remove variation"), ImVec2(18.0f * _font_size, 0)))
+						{
+							_effects[tech.effect_index].flair_touched = false;
+							auto &preset = ini_file::load_cache(_current_preset_path);
+							preset.remove_section(_effects[tech.effect_index].source_file.filename().u8string() + "|" + _current_flair);
+							load_current_preset();
+							ImGui::CloseCurrentPopup();
+						}
+					}
+					ImGui::Separator();
+				}
 
 				std::string open_button_label = ICON_FK_FOLDER " ";
 				open_button_label += _("Open folder in explorer");
