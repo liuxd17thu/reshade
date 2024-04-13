@@ -1662,6 +1662,18 @@ void reshade::runtime::draw_gui_home()
 			_file_selection_path = _current_preset_path;
 			ImGui::OpenPopup("##browse");
 		}
+		if (_show_preset_description && !_description.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+		{
+			ImGui::SetNextWindowPos(browse_button_pos + ImVec2(-_imgui_context->Style.WindowPadding.x, ImGui::GetFrameHeightWithSpacing()));
+			ImGui::SetNextWindowSize(ImVec2(std::max(450.0f, browse_button_width), 0));
+			if (ImGui::BeginTooltip())
+			{
+				ImGui::SeparatorText(_("Preset Description"));
+				ImGui::TextWrapped(_description.c_str());
+				ImGui::EndTooltip();
+			}
+
+		}
 
 		if (_preset_is_modified)
 			ImGui::RenderBullet(ImGui::GetWindowDrawList(), browse_button_pos + ImVec2(browse_button_width - _font_size * 0.5f - _imgui_context->Style.FramePadding.x, ImGui::GetFrameHeight() * 0.5f), ImGui::GetColorU32(ImGuiCol_Text));
@@ -2189,14 +2201,6 @@ void reshade::runtime::draw_gui_home()
 
 			_variable_editor_height = std::max(_variable_editor_height - move_delta.y, 0.0f);
 			save_config();
-		}
-
-		// show preset description before variables editor
-		if (_show_preset_description && !_description.empty()) {
-			if (ImGui::TreeNodeEx(_("Preset Description"), ImGuiTreeNodeFlags_DefaultOpen)) {
-				ImGui::Text(_description.c_str());
-				ImGui::TreePop();
-			}
 		}
 
 		if (_tutorial_index == 3)
