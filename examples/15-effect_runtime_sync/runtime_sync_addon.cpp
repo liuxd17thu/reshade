@@ -82,6 +82,23 @@ static bool on_reshade_set_uniform_value(effect_runtime *runtime, effect_uniform
 
 	return false;
 }
+static bool on_reshade_set_effects_state(effect_runtime *runtime, bool enabled)
+{
+	if (!s_sync)
+		return false;
+
+	const std::shared_lock<std::shared_mutex> lock(s_mutex);
+
+	for (effect_runtime *const synced_runtime : s_runtimes)
+	{
+		if (synced_runtime == runtime)
+			continue;
+
+		synced_runtime->set_effects_state(enabled);
+	}
+
+	return false;
+}
 static bool on_reshade_set_technique_state(effect_runtime *runtime, effect_technique technique, bool enabled)
 {
 	if (!s_sync)
@@ -185,11 +202,13 @@ static void draw_settings_overlay(effect_runtime *runtime)
 	if (ImGui::Button("Apply preset of this effect runtime to all other instances", ImVec2(-1, 0)))
 		apply_preset_to_all(runtime);
 
-	if (ImGui::Checkbox("Synchronize effect runtimes", &s_sync))
+	if (bool sync = s_sync;
+		ImGui::Checkbox("Synchronize effect runtimes", &sync))
 	{
-		reshade::set_config_value(nullptr, "ADDON", "SyncEffectRuntimes", s_sync);
-		if (s_sync)
+		reshade::set_config_value(nullptr, "ADDON", "SyncEffectRuntimes", sync);
+		if (sync)
 			apply_preset_to_all(runtime);
+		s_sync = sync; // Change global value only after applying preset, since it calls the uniform value/technique state events, which would deadlock attempting to lock 's_mutex' again
 	}
 
 	if (!s_sync)
@@ -218,6 +237,7 @@ void register_addon_effect_runtime_sync()
 	reshade::register_event<reshade::addon_event::destroy_effect_runtime>(on_destroy);
 
 	reshade::register_event<reshade::addon_event::reshade_set_uniform_value>(on_reshade_set_uniform_value);
+	reshade::register_event<reshade::addon_event::reshade_set_effects_state>(on_reshade_set_effects_state);
 	reshade::register_event<reshade::addon_event::reshade_set_technique_state>(on_reshade_set_technique_state);
 	reshade::register_event<reshade::addon_event::reshade_set_current_preset_path>(on_reshade_set_current_preset_path);
 	reshade::register_event<reshade::addon_event::reshade_reorder_techniques>(on_reshade_reorder_techniques);
@@ -228,6 +248,7 @@ void unregister_addon_effect_runtime_sync()
 	reshade::unregister_event<reshade::addon_event::destroy_effect_runtime>(on_destroy);
 
 	reshade::unregister_event<reshade::addon_event::reshade_set_uniform_value>(on_reshade_set_uniform_value);
+	reshade::unregister_event<reshade::addon_event::reshade_set_effects_state>(on_reshade_set_effects_state);
 	reshade::unregister_event<reshade::addon_event::reshade_set_technique_state>(on_reshade_set_technique_state);
 	reshade::unregister_event<reshade::addon_event::reshade_set_current_preset_path>(on_reshade_set_current_preset_path);
 	reshade::unregister_event<reshade::addon_event::reshade_reorder_techniques>(on_reshade_reorder_techniques);

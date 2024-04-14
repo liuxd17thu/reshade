@@ -1738,6 +1738,8 @@ void reshade::runtime::draw_gui_home()
 		{
 			_preset_is_modified = false;
 
+			if (!was_auto_save_preset)
+				save_current_preset();
 			save_config();
 		}
 
@@ -1761,26 +1763,28 @@ void reshade::runtime::draw_gui_home()
 		// Cannot save in performance mode, since there are no variables to retrieve values from then
 		ImGui::BeginDisabled(_performance_mode || _is_in_preset_transition);
 
+		const auto save_and_clean_preset = _auto_save_preset || (_imgui_context->IO.KeyCtrl || _imgui_context->IO.KeyShift);
 		const auto button_height = (_aurora_feature == 4) ? (2 * button_size + _imgui_context->Style.ItemSpacing.y) : button_size;
 		if (ImGui::ButtonEx(ICON_FK_FLOPPY, ImVec2(button_size, button_height), ImGuiButtonFlags_NoNavFocus))
 		{
-			auto &preset = ini_file::load_cache(_current_preset_path);
-			if (_aurora_feature == 4)
+			if (save_and_clean_preset)
 			{
-				aurora4_clean_preset(preset);
-				save_current_preset();
+				if (_aurora_feature == 4)
+				{
+					auto &preset = ini_file::load_cache(_current_preset_path);
+					aurora4_clean_preset(preset);
+				}
+				else
+					ini_file::load_cache(_current_preset_path).clear();
 			}
-			else
-			{
-				preset.clear();
-				save_current_preset();
-			}
+			save_current_preset();
 			ini_file::flush_cache(_current_preset_path);
 
 			_preset_is_modified = false;
 		}
 
-		ImGui::SetItemTooltip(_("Clean up and save the current preset (removes all values for disabled techniques)"));
+		ImGui::SetItemTooltip(save_and_clean_preset ?
+			_("Clean up and save the current preset (removes all values for disabled techniques)") : _("Save the current preset"));
 
 		ImGui::EndDisabled();
 
@@ -4252,8 +4256,10 @@ void reshade::runtime::draw_variable_editor()
 						}
 					}
 
-					if (!force_reload_effect && // Cannot compare iterators if definitions were just modified above
-						ImGui::BeginPopupContextItem())
+					if (force_reload_effect) // Cannot compare iterators if definitions were just modified above
+						continue;
+
+					if (ImGui::BeginPopupContextItem())
 					{
 						std::string reset_button_label = ICON_FK_UNDO " ";
 						reset_button_label += _("Reset to default");
@@ -4270,6 +4276,16 @@ void reshade::runtime::draw_variable_editor()
 						}
 
 						ImGui::EndPopup();
+					}
+
+					if (definition_scope == &effect_definitions)
+					{
+						ImGui::SameLine();
+						if (ImGui::SmallButton(ICON_FK_UNDO))
+						{
+							force_reload_effect = true;
+							definition_scope->erase(definition_it);
+						}
 					}
 				}
 			}
