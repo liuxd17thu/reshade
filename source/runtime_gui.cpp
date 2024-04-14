@@ -4207,16 +4207,18 @@ void reshade::runtime::draw_variable_editor()
 				{
 					std::vector<std::pair<std::string, std::string>> *definition_scope = nullptr;
 					std::vector<std::pair<std::string, std::string>>::iterator definition_it;
+					bool ui_bind_managed = false;
 
 					char value[256];
 					if (get_preprocessor_definition(raw_effect_name, definition.first, 0b111, definition_scope, definition_it))
 					{
 						if (_ui_bind_support)
 						{
-							auto match = std::find_if(effect.definition_bindings.begin(), effect.definition_bindings.end(),
+							const auto match = std::find_if(effect.definition_bindings.begin(), effect.definition_bindings.end(),
 								[&](const auto &def_bind) { return definition.first == def_bind.second.first; });
 							if (match != effect.definition_bindings.end())
 							{
+								ui_bind_managed = true;
 								definition.second = match->second.second;
 								value[match->second.second.copy(value, sizeof(value) - 1)] = '\0';
 							}
@@ -4228,7 +4230,8 @@ void reshade::runtime::draw_variable_editor()
 					}
 					else
 						value[0] = '\0';
-
+					if (ui_bind_managed)
+						ImGui::BeginDisabled();
 					if (ImGui::InputTextWithHint(definition.first.c_str(), definition.second.c_str(), value, sizeof(value), ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_EnterReturnsTrue))
 					{
 						if (value[0] == '\0') // An empty value removes the definition
@@ -4278,7 +4281,7 @@ void reshade::runtime::draw_variable_editor()
 						ImGui::EndPopup();
 					}
 
-					if (definition_scope == &effect_definitions)
+					if (!ui_bind_managed && definition_scope == &effect_definitions)
 					{
 						ImGui::SameLine();
 						if (ImGui::SmallButton(ICON_FK_UNDO))
@@ -4287,6 +4290,8 @@ void reshade::runtime::draw_variable_editor()
 							definition_scope->erase(definition_it);
 						}
 					}
+					if (ui_bind_managed)
+						ImGui::EndDisabled();
 				}
 			}
 			if (_ui_bind_support && _uniform_binding_updated == effect_index)
