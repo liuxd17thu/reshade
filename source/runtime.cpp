@@ -1174,7 +1174,7 @@ void reshade::runtime::load_current_preset()
 
 	// load preset description
 	if (preset.get({}, "Description", _description)) {
-		int pos = _description.find("\\n");
+		auto pos = _description.find("\\n");
 		while (pos != -1) {
 			_description.replace(pos, 2, "\n");
 			pos = _description.find("\\n");
@@ -1525,7 +1525,7 @@ void reshade::runtime::save_current_preset() const
 	if (preset.has({}, "Description") || !_description.empty())
 	{
 		std::string desc =  _description;
-		int pos = desc.find("\n");
+		auto pos = desc.find("\n");
 		while (pos != -1) {
 			desc.replace(pos, 1, "\\n");
 			pos = desc.find("\n");
