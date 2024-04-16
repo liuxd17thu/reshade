@@ -1665,7 +1665,7 @@ void reshade::runtime::draw_gui_home()
 		if (_show_preset_description && !_description.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
 		{
 			ImGui::SetNextWindowPos(browse_button_pos + ImVec2(-_imgui_context->Style.WindowPadding.x, ImGui::GetFrameHeightWithSpacing()));
-			ImGui::SetNextWindowSize(ImVec2(std::max(450.0f, browse_button_width), 0));
+			ImGui::SetNextWindowSize(ImVec2(std::max(24.0f * _font_size, browse_button_width), 0));
 			if (ImGui::BeginTooltip())
 			{
 				ImGui::SeparatorText(_("Preset Description"));
@@ -1829,7 +1829,7 @@ void reshade::runtime::draw_gui_home()
 		}
 
 		ImGui::SetNextWindowPos(browse_button_pos + ImVec2(-_imgui_context->Style.WindowPadding.x, ImGui::GetFrameHeightWithSpacing()));
-		if (imgui::file_dialog("##browse", _file_selection_path, std::max(browse_button_width, 450.0f), { L".ini", L".txt" }, { _config_path, global_config().path() }))
+		if (imgui::file_dialog("##browse", _file_selection_path, std::max(browse_button_width, 24.0f * _font_size), { L".ini", L".txt" }, { _config_path, global_config().path() }))
 		{
 			// Check that this is actually a valid preset file
 			if (ini_file::load_cache(_file_selection_path).has({}, "Techniques"))
