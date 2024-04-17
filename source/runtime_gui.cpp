@@ -4258,6 +4258,8 @@ void reshade::runtime::draw_variable_editor()
 							}
 						}
 					}
+					if (ui_bind_managed)
+						ImGui::EndDisabled();
 
 					if (force_reload_effect) // Cannot compare iterators if definitions were just modified above
 						continue;
@@ -4290,8 +4292,6 @@ void reshade::runtime::draw_variable_editor()
 							definition_scope->erase(definition_it);
 						}
 					}
-					if (ui_bind_managed)
-						ImGui::EndDisabled();
 				}
 			}
 			if (_ui_bind_support && _uniform_binding_updated == effect_index)
