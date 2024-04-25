@@ -2018,6 +2018,7 @@ void reshade::runtime::draw_gui_home()
 
 			if (next_flair != _current_flair)
 			{
+				_focused_effect = opened_effect_tab;
 				_last_preset_switching_time = _last_present_time;
 				_is_in_preset_transition = true;
 				auto &preset = ini_file::load_cache(_current_preset_path);
@@ -3677,6 +3678,8 @@ void reshade::runtime::draw_variable_editor()
 
 			if (!ImGui::BeginTabItem(effect_name.c_str(), nullptr, flags))
 				continue;
+			else
+				opened_effect_tab = effect_index;
 			// Begin a new child here so scrolling through variables does not move the tab itself too
 			ImGui::BeginChild("##tab");
 		}

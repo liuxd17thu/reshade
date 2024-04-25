@@ -494,6 +494,7 @@ namespace reshade
 		std::filesystem::path _template_preset_path;
 		bool _was_preprocessor_popup_edited = false;
 		size_t _focused_effect = std::numeric_limits<size_t>::max();
+		size_t opened_effect_tab = std::numeric_limits<size_t>::max();
 		size_t _selected_technique = std::numeric_limits<size_t>::max();
 		unsigned int _tutorial_index = 0;
 		unsigned int _effects_expanded_state = 2;
