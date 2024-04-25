@@ -1923,13 +1923,13 @@ void reshade::runtime::draw_gui_home()
 #endif
 		}
 
-		std::string next_flair = _current_flair;
 		auto get_flair_it = [&]() -> std::vector<std::string>::iterator {
 			auto flair_it = std::find(_flairs.begin(), _flairs.end(), _current_flair);
 			if (flair_it == _flairs.end())
 				flair_it = _flairs.begin();
 			return flair_it;
 		};
+		std::string _next_flair = _current_flair;
 		if (_aurora_feature == 4)
 		{
 			const auto cursor_pos = ImGui::GetCursorPos() - ImVec2(0, button_height - button_size);
@@ -1939,7 +1939,7 @@ void reshade::runtime::draw_gui_home()
 				&& _flairs.size() > 1)
 			{
 				auto flair_it = get_flair_it();
-				next_flair = *(flair_it == _flairs.begin() ? std::prev(_flairs.end()) : std::prev(flair_it));
+				_next_flair = *(flair_it == _flairs.begin() ? std::prev(_flairs.end()) : std::prev(flair_it));
 			}
 			ImGui::SetItemTooltip(_("Previous variation"));
 			ImGui::SameLine(0, button_spacing);
@@ -1948,7 +1948,7 @@ void reshade::runtime::draw_gui_home()
 				&& _flairs.size() > 1)
 			{
 				auto flair_it = get_flair_it();
-				next_flair = *(std::next(flair_it) == _flairs.end() ? _flairs.begin() : std::next(flair_it));
+				_next_flair = *(std::next(flair_it) == _flairs.end() ? _flairs.begin() : std::next(flair_it));
 			}
 			ImGui::SetItemTooltip(_("Next variation"));
 			ImGui::SameLine(0, 2 * button_spacing);
@@ -1974,7 +1974,7 @@ void reshade::runtime::draw_gui_home()
 					if (std::find(_flairs.begin(), _flairs.end(), flair_name) == _flairs.end())
 					{
 						auto flair_it = get_flair_it();
-						next_flair = *(_flairs.insert(std::next(flair_it), flair_name));
+						_next_flair = *(_flairs.insert(std::next(flair_it), flair_name));
 					}
 					ImGui::CloseCurrentPopup();
 				}
@@ -1993,7 +1993,7 @@ void reshade::runtime::draw_gui_home()
 					flair_it = _flairs.erase(flair_it);
 					if (flair_it == _flairs.end())
 						flair_it = _flairs.begin();
-					next_flair = *flair_it;
+					_next_flair = *flair_it;
 				}
 			}
 			ImGui::SetItemTooltip(_("Remove this variation"));
@@ -2016,11 +2016,11 @@ void reshade::runtime::draw_gui_home()
 			{
 				for (auto &it : _flairs)
 					if (ImGui::Selectable(it.c_str(), it == _current_flair))
-						next_flair = it;
+						_next_flair = it;
 				ImGui::EndPopup();
 			}
 
-			if (next_flair != _current_flair)
+			if (_next_flair != _current_flair)
 			{
 				_focused_effect = opened_effect_tab;
 				_last_preset_switching_time = _last_present_time;
@@ -2040,7 +2040,7 @@ void reshade::runtime::draw_gui_home()
 							preset.remove_section(section);
 					}
 				}
-				preset.set({}, "CurrentFlair", next_flair == ":" ? u8"\u2014" : next_flair);
+				preset.set({}, "CurrentFlair", _next_flair == ":" ? u8"\u2014" : _next_flair);
 				load_current_preset();
 			}
 
@@ -4814,6 +4814,82 @@ void reshade::runtime::draw_technique_editor()
 
 				if (_aurora_feature == 4)
 				{
+					bool aurora_buttons = false;
+					const auto flair_button_width = 9.0f * _font_size - _imgui_context->Style.ItemSpacing.x - 2.0f;
+					if (_flairs.size() > 1)
+					{
+						const auto pos = ImGui::GetCursorPos();
+						ImGui::PushStyleVar(ImGuiStyleVar_DisabledAlpha, 1.0f);
+						ImGui::BeginDisabled();
+						ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
+						ImGui::PushStyleColor(ImGuiCol_Button, _imgui_context->Style.Colors[ImGuiCol_WindowBg]);
+						ImGui::Button(((_current_flair == u8"\u2014" ? ":" : _current_flair) + "##This").c_str(), ImVec2(flair_button_width, 0));
+						ImGui::EndDisabled();
+						ImGui::PopStyleVar(2);
+						ImGui::PopStyleColor(1);
+						ImGui::SameLine();
+						auto select_flair_pos = ImGui::GetCursorScreenPos();
+						bool flair_selected = false;
+
+						if (ImGui::ArrowButtonEx("<##ImportFrom", ImGuiDir_Left, ImVec2(4.5f * _font_size, ImGui::GetFrameHeight())))
+							ImGui::OpenPopup("##SelectFrom");
+						ImGui::SetNextWindowSize(ImVec2(9.0f * _font_size + _imgui_context->Style.ItemInnerSpacing.x + 2.0f, 0));
+						ImGui::SetNextWindowPos(select_flair_pos + ImVec2(-0.5f * _imgui_context->Style.ItemInnerSpacing.x, ImGui::GetFrameHeightWithSpacing()));
+						if (ImGui::BeginPopup("##SelectFrom"))
+						{
+							for (auto &flair : _flairs)
+								if (ImGui::Selectable(flair.c_str(), _target_flair == flair))
+								{
+									_target_flair = "<" + flair;
+									flair_selected = true;
+								}
+							ImGui::EndPopup();
+						}
+
+						ImGui::SameLine(0, 2.0f);
+						select_flair_pos = ImGui::GetCursorScreenPos();
+
+						if (ImGui::ArrowButtonEx(">##ExportTo", ImGuiDir_Right, ImVec2(4.5f * _font_size, ImGui::GetFrameHeight())))
+							ImGui::OpenPopup("##SelectTo");
+						ImGui::SetNextWindowSize(ImVec2(9.0f * _font_size + _imgui_context->Style.ItemInnerSpacing.x + 2.0f, 0));
+						ImGui::SetNextWindowPos(select_flair_pos + ImVec2(-0.5f * _imgui_context->Style.ItemInnerSpacing.x, ImGui::GetFrameHeightWithSpacing()));
+						if (ImGui::BeginPopup("##SelectTo"))
+						{
+							for (auto &flair : _flairs)
+								if (ImGui::Selectable(flair.c_str(), _target_flair == flair))
+								{
+									_target_flair = ">" + flair;
+									flair_selected = true;
+								}
+							ImGui::EndPopup();
+						}
+
+						const auto &undirect_flair = _target_flair.substr(1);
+						if (flair_selected && _current_flair != undirect_flair)
+						{
+							auto &preset = ini_file::load_cache(_current_preset_path);
+							const auto &raw_effect_name = effect.source_file.filename().u8string();
+							auto current_effect_name = raw_effect_name + ((_current_flair == ":" || _current_flair == "") ? "" : ("|" + _current_flair));
+							auto target_effect_name = raw_effect_name + ((undirect_flair == ":" || undirect_flair == "") ? "" : ("|" + undirect_flair));
+							if (_target_flair[0] == '<')
+								std::swap(current_effect_name, target_effect_name);
+
+							std::unordered_map<std::string, std::vector<std::string>> src_section, dst_section;
+							preset.get(current_effect_name, src_section);
+							for (const auto &kv : src_section)
+							{
+								if (kv.first == "PreprocessorDefinitions" || effect.definition_bindings.count(kv.first))
+									continue;
+								preset.remove_key(target_effect_name, kv.first);
+								preset.set(target_effect_name, kv.first, kv.second);
+							}
+							_target_flair = _current_flair;
+							reload_effect(tech.effect_index);
+							if (!_auto_save_preset)
+								_preset_is_modified = true;
+							ImGui::CloseCurrentPopup();
+						}
+					}
 					if (_current_flair != ":" && _effects[tech.effect_index].flair_touched)
 					{
 						if (ImGui::Button(_("Remove variation"), ImVec2(18.0f * _font_size, 0)))
@@ -4825,7 +4901,8 @@ void reshade::runtime::draw_technique_editor()
 							ImGui::CloseCurrentPopup();
 						}
 					}
-					ImGui::Separator();
+					if(aurora_buttons)
+						ImGui::Separator();
 				}
 
 				std::string open_button_label = ICON_FK_FOLDER " ";
