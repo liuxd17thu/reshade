@@ -1751,7 +1751,11 @@ void reshade::runtime::draw_gui_home()
 			ImGui::BeginDisabled(!_preset_is_modified);
 
 			if (imgui::confirm_button(ICON_FK_UNDO, button_size, _("Do you really want to reset all techniques and values?")))
+			{
+				if (!_auto_save_preset)
+					ini_file::clear_cache(_current_preset_path);
 				reload_preset = true;
+			}
 
 			ImGui::SetItemTooltip(_("Reset all techniques and values to those of the current preset"));
 
@@ -4778,9 +4782,10 @@ void reshade::runtime::draw_technique_editor()
 
 			if (modified)
 			{
-				if (_auto_save_preset)
-					save_current_preset();
-				else
+				// AuroraShade "saves" current preset everytime,
+				// but only flush to disk when auto save is enabled or save button is clicked.
+				save_current_preset();
+				if(!_auto_save_preset)
 					_preset_is_modified = true;
 			}
 		}
