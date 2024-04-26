@@ -3553,6 +3553,9 @@ void reshade::runtime::draw_gui_addons()
 #if RESHADE_FX
 void reshade::runtime::draw_variable_editor()
 {
+	static std::string preset_section_text = "\0";
+	static bool preset_section_modified = false;
+
 	const ImVec2 popup_pos = ImGui::GetCursorScreenPos() + ImVec2(std::max(0.f, (ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x) * 0.5f - 200.0f), ImGui::GetFrameHeightWithSpacing());
 
 	if (imgui::popup_button(_("Edit global preprocessor definitions"), ImGui::GetContentRegionAvail().x, ImGuiWindowFlags_NoMove))
@@ -3702,11 +3705,126 @@ void reshade::runtime::draw_variable_editor()
 			_focused_effect = std::numeric_limits<size_t>::max();
 		}
 
-		std::string reset_all_button_label = ICON_FK_UNDO " ";
+		std::string reset_to_preset_button_label = ICON_FK_UNDO ICON_FK_FILE " ";
+		reset_to_preset_button_label += "Reset all to preset";
+		std::string reset_all_button_label = ICON_FK_UNDO ICON_FK_FILE_CODE " ";
 		reset_all_button_label += _("Reset all to default");
 
+		const auto edit_button_width = 2.0f * _font_size;
+		const auto reset_button_width = ImGui::GetContentRegionAvail().x - edit_button_width - _imgui_context->Style.ItemSpacing.x;
+
+		if (_preset_section_editing == effect_index)
+		{
+			ImGui::Spacing();
+			ini_file &preset = ini_file::load_cache(_current_preset_path);
+			std::unordered_map<std::string, std::vector<std::string>> section {};
+			if (!preset_section_modified)
+			{
+				// Init Textbox content
+				preset.get(effect_name, section);
+				if (_aurora_feature == 4 && raw_effect_name != effect_name && !effect.definition_bindings.empty())
+				{
+					// Get ui_bind uniforms from base
+					for (const auto &bind : effect.definition_bindings)
+					{
+						std::string dat;
+						if (preset.get(raw_effect_name, bind.first, dat))
+							preset.set(effect_name, bind.first, dat);
+						preset.get(raw_effect_name, "PreprocessorDefinitions", dat);
+						preset.set(effect_name, "PreprocessorDefinitions", dat);
+					}
+				}
+				preset.get(effect_name, section);
+				preset.export_section(section, preset_section_text);
+			}
+
+			ImGui::BeginGroup();
+			if (imgui::multiline_input_box(("##Textbox_" + effect_name).c_str(), &preset_section_text, ImVec2(reset_button_width, 10.0f * _font_size + 2.0f * _imgui_context->Style.ItemSpacing.y),
+				ImGuiInputTextFlags_AutoSelectAll, imgui::multiline_text_resize_callback))
+			{
+				preset_section_modified = true;
+			}
+
+			ImGui::EndGroup();
+
+			ImGui::SameLine();
+
+			ImGui::BeginGroup();
+			if (ImGui::Button((ICON_FK_CANCEL"##" + effect_name).c_str(), ImVec2(edit_button_width, 3.5f * _font_size)))
+			{
+				preset_section_modified = false;
+				_preset_section_editing = std::numeric_limits<size_t>::max();
+			}
+
+			if (ImGui::Button((ICON_FK_OK"##" + effect_name).c_str(), ImVec2(edit_button_width, 3.5f * _font_size)))
+			{
+				auto ss = std::stringstream(preset_section_text);
+				std::vector<std::string> lines {}; std::string tmp;
+				if (!preset_section_text.empty())
+					while (std::getline(ss, tmp, '\n'))
+						lines.push_back(tmp);
+
+				preset.import_section(lines, section);
+
+				if (section.count("PreprocessorDefinitions"))
+				{
+					auto &new_pp = section["PreprocessorDefinitions"];
+					std::vector<std::string> raw_effect_pp;
+					preset.get(raw_effect_name, "PreprocessorDefinitions", raw_effect_pp);
+					if (!((raw_effect_pp.size() == new_pp.size()) && std::equal(new_pp.begin(), new_pp.end(), raw_effect_pp.begin())))
+					{
+						_uniform_binding_updated = effect_index;
+					}
+					// Base Flair <<-- Preprocessor Text
+					preset.set(raw_effect_name, "PreprocessorDefinitions", section["PreprocessorDefinitions"]);
+				}
+
+				for (auto &bind : effect.definition_bindings)
+				{
+					if (section.count(bind.first)) // base flair <- Section Text
+					{
+						if (raw_effect_name != effect_name) // flair?
+						{
+							preset.set(raw_effect_name, bind.first, section.at(bind.first));
+							section.erase(bind.first);
+						}
+						bind.second.second = section.at(bind.first)[0];
+					}
+				}
+
+				preset.remove_section(effect_name);
+				preset.set(effect_name, section);
+
+				preset.get(raw_effect_name, "PreprocessorDefinitions", _preset_preprocessor_definitions[raw_effect_name]);
+				reload_effect(_preset_section_editing);
+
+				preset_section_modified = false;
+				_preset_section_editing = std::numeric_limits<size_t>::max();
+			}
+
+			if (ImGui::Button((ICON_FK_COPY"##" + effect_name).c_str(), ImVec2(edit_button_width, 3.0f * _font_size)))
+			{
+				ImGui::SetClipboardText(preset_section_text.c_str());
+				preset_section_modified = false;
+				_preset_section_editing = std::numeric_limits<size_t>::max();
+			}
+			ImGui::EndGroup();
+
+			if (_variable_editor_tabs)
+			{
+				ImGui::EndChild();
+				ImGui::EndTabItem();
+			}
+			else
+			{
+				ImGui::TreePop();
+			}
+
+			continue;
+		}
+
 		ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(_imgui_context->Style.FramePadding.x, 0));
-		if (imgui::confirm_button(reset_all_button_label.c_str(), _variable_editor_tabs ? ImGui::GetContentRegionAvail().x : ImGui::CalcItemWidth(), _("Do you really want to reset all values in '%s' to their defaults?"), effect_name.c_str()))
+		if (imgui::confirm_button(reset_all_button_label.c_str(), reset_button_width, _("Do you really want to reset all values in '%s' to their defaults?"), effect_name.c_str()))
 		{
 			// Reset all uniform variables
 			for (uniform &variable_it : effect.uniforms)
@@ -3750,6 +3868,17 @@ void reshade::runtime::draw_variable_editor()
 				save_current_preset();
 			else
 				_preset_is_modified = true;
+		}
+		ImGui::SameLine();
+		std::string edit_effect_label = ICON_FK_PENCIL "###";
+		edit_effect_label += effect_name;
+
+		if (ImGui::Button(edit_effect_label.c_str(), ImVec2(edit_button_width, 0)))
+		{
+			preset_section_modified = false;
+			if (!_variable_editor_tabs)
+				_focused_effect = effect_index;
+			_preset_section_editing = _preset_section_editing == effect_index ? std::numeric_limits<size_t>::max() : effect_index;
 		}
 		ImGui::PopStyleVar();
 
