@@ -3711,7 +3711,7 @@ void reshade::runtime::draw_variable_editor()
 		reset_all_button_label += _("Reset all to default");
 
 		const auto edit_button_width = 2.0f * _font_size;
-		const auto reset_button_width = ImGui::GetContentRegionAvail().x - edit_button_width - _imgui_context->Style.ItemSpacing.x;
+		const auto reset_button_width = ImGui::GetContentRegionAvail().x - edit_button_width - _imgui_context->Style.ItemInnerSpacing.x;
 
 		if (_preset_section_editing == effect_index)
 		{
@@ -3747,7 +3747,7 @@ void reshade::runtime::draw_variable_editor()
 
 			ImGui::EndGroup();
 
-			ImGui::SameLine();
+			ImGui::SameLine(0.0f, _imgui_context->Style.ItemInnerSpacing.x);
 
 			ImGui::BeginGroup();
 			if (ImGui::Button((ICON_FK_CANCEL"##" + effect_name).c_str(), ImVec2(edit_button_width, 3.5f * _font_size)))
@@ -3824,6 +3824,23 @@ void reshade::runtime::draw_variable_editor()
 		}
 
 		ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(_imgui_context->Style.FramePadding.x, 0));
+		ImGui::BeginGroup();
+		if (!_auto_save_preset)
+		{
+			if (imgui::confirm_button(reset_to_preset_button_label.c_str(), reset_button_width, "Reset '%s' to preset?", effect_name.c_str()))
+			{
+				preset_section_modified = false;
+
+				auto &preset = ini_file::load_cache(_current_preset_path);
+				auto origin_preset = ini_file(_current_preset_path);
+				std::unordered_map<std::string, std::vector<std::string>> section;
+				origin_preset.get(effect_name, section);
+
+				preset.remove_section(effect_name);
+				preset.set(effect_name, section);
+				reload_effect(effect_index);
+			}
+		}
 		if (imgui::confirm_button(reset_all_button_label.c_str(), reset_button_width, _("Do you really want to reset all values in '%s' to their defaults?"), effect_name.c_str()))
 		{
 			// Reset all uniform variables
@@ -3869,11 +3886,14 @@ void reshade::runtime::draw_variable_editor()
 			else
 				_preset_is_modified = true;
 		}
-		ImGui::SameLine();
+		ImGui::EndGroup();
+
+		ImGui::SameLine(0.0f, _imgui_context->Style.ItemInnerSpacing.x);
 		std::string edit_effect_label = ICON_FK_PENCIL "###";
 		edit_effect_label += effect_name;
 
-		if (ImGui::Button(edit_effect_label.c_str(), ImVec2(edit_button_width, 0)))
+		const auto edit_button_height = _auto_save_preset ? 0.0f : (2.0f * _font_size + _imgui_context->Style.ItemSpacing.y);
+		if (ImGui::Button(edit_effect_label.c_str(), ImVec2(edit_button_width, edit_button_height)))
 		{
 			preset_section_modified = false;
 			if (!_variable_editor_tabs)
