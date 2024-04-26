@@ -363,6 +363,7 @@ void reshade::runtime::load_config_gui(const ini_file &config)
 	config.get("OVERLAY", "ShowPresetTransitionMessage", _show_preset_transition_message);
 	config.get("OVERLAY", "ShowPresetDescription", _show_preset_description);
 #endif
+	config.get("OVERLAY", "ShowImGuiCursor", _show_imgui_cursor);
 
 	ImGuiStyle &imgui_style = _imgui_context->Style;
 	config.get("STYLE", "Alpha", imgui_style.Alpha);
@@ -466,6 +467,7 @@ void reshade::runtime::save_config_gui(ini_file &config) const
 	config.set("OVERLAY", "ShowPresetTransitionMessage", _show_preset_transition_message);
 	config.set("OVERLAY", "ShowPresetDescription", _show_preset_description);
 #endif
+	config.set("OVERLAY", "ShowImGuiCursor", _show_imgui_cursor);
 
 	const ImGuiStyle &imgui_style = _imgui_context->Style;
 	config.set("STYLE", "Alpha", imgui_style.Alpha);
@@ -951,7 +953,7 @@ void reshade::runtime::draw_gui()
 
 	if (_input != nullptr)
 	{
-		imgui_io.MouseDrawCursor = _show_overlay && (!_should_save_screenshot || !_screenshot_save_gui);
+		imgui_io.MouseDrawCursor = _show_overlay && (_show_imgui_cursor || (ImGui::GetMouseCursor() > ImGuiMouseCursor_Arrow)) && (!_should_save_screenshot || !_screenshot_save_gui);
 
 		// Scale mouse position in case render resolution does not match the window size
 		unsigned int max_position[2];
@@ -2362,7 +2364,7 @@ void reshade::runtime::draw_gui_settings()
 			modified |= imgui::key_input_box(_("Next variation key"), _next_flair_key_data, *_input);
 			ImGui::EndDisabled();
 
-			modified |= ImGui::SliderInt(_("Preset transition duration"), reinterpret_cast<int *>(&_preset_transition_duration), 0, 10 * 1000);
+			modified |= ImGui::SliderInt(_("Preset transition duration"), reinterpret_cast<int *>(&_preset_transition_duration), 0, 10 * 1000, "%d ms");
 			ImGui::SetItemTooltip(_(
 				"Make a smooth transition when switching presets, but only for floating point values.\n"
 				"Recommended for multiple presets that contain the same effects, otherwise set this to zero.\n"
@@ -2377,11 +2379,21 @@ void reshade::runtime::draw_gui_settings()
 		ImGui::SetItemTooltip(_("When not empty, reset the current preset to this file during reloads."));
 
 		ImGui::Spacing();
+		ImGui::Separator();
+		ImGui::Spacing();
 
 		modified |= imgui::path_list(_("Effect search paths"), _effect_search_paths, _file_selection_path, g_reshade_base_path);
 		ImGui::SetItemTooltip(_("List of directory paths to be searched for effect files (.fx).\nPaths that end in \"\\**\" are searched recursively."));
 		modified |= imgui::path_list(_("Texture search paths"), _texture_search_paths, _file_selection_path, g_reshade_base_path);
 		ImGui::SetItemTooltip(_("List of directory paths to be searched for texture image files.\nPaths that end in \"\\**\" are searched recursively."));
+
+		if (ImGui::SliderInt("Effect load delay", reinterpret_cast<int *>(&_effect_load_delay), 0, 10 * 1000, "%d ms"))
+		{
+			modified = true;
+			_effect_load_delay = std::max<int>(_effect_load_delay, 0);
+		}
+
+		modified |= ImGui::Checkbox("Do not load effects when startup", &_no_reload_on_init);
 
 		if (ImGui::Checkbox(_("Load only enabled effects"), &_effect_load_skipping))
 		{
@@ -2562,6 +2574,7 @@ void reshade::runtime::draw_gui_settings()
 #if RESHADE_FX
 		modified |= ImGui::Checkbox(_("Group effect files with tabs instead of a tree"), &_variable_editor_tabs);
 #endif
+		modified |= ImGui::Checkbox("Show mouse cursor", &_show_imgui_cursor);
 
 		#pragma region Style
 		if (ImGui::Combo(_("Global style"), &_style_index, "AuroraShade\0Dark\0Light\0ReShade Default\0Custom Simple\0Custom Advanced\0Solarized Dark\0Solarized Light\0"))

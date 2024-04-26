@@ -879,7 +879,7 @@ void reshade::runtime::on_present(api::command_queue *present_queue)
 					{
 						_last_preset_switching_time = _last_present_time;
 						_is_in_preset_transition = true;
-						
+
 						save_current_preset();
 						auto &preset = ini_file::load_cache(_current_preset_path);
 						preset.set({}, "CurrentFlair", next_flair);
@@ -1039,6 +1039,7 @@ void reshade::runtime::load_config()
 	config_get("GENERAL", "NoEffectCache", _no_effect_cache);
 	config_get("GENERAL", "NoReloadOnInit", _no_reload_on_init);
 
+	config_get("GENERAL", "EffectTimeDelay", _effect_load_delay);
 	config_get("GENERAL", "EffectSearchPaths", _effect_search_paths);
 	config_get("GENERAL", "PerformanceMode", _performance_mode);
 	config_get("GENERAL", "PreprocessorDefinitions", _global_preprocessor_definitions);
@@ -1127,6 +1128,7 @@ void reshade::runtime::save_config() const
 	config.set("GENERAL", "NoEffectCache", _no_effect_cache);
 	config.set("GENERAL", "NoReloadOnInit", _no_reload_on_init);
 
+	config.set("GENERAL", "EffectTimeDelay", _effect_load_delay);
 	config.set("GENERAL", "EffectSearchPaths", _effect_search_paths);
 	config.set("GENERAL", "PerformanceMode", _performance_mode);
 	config.set("GENERAL", "PreprocessorDefinitions", _global_preprocessor_definitions);
@@ -4222,7 +4224,18 @@ bool reshade::runtime::update_effect_color_and_stencil_tex(uint32_t width, uint3
 void reshade::runtime::update_effects()
 {
 	// Delay first load to the first render call to avoid loading while the application is still initializing
-	if (_frame_count == 0 && !_no_reload_on_init)
+	if (_reload_count == 0 && !_no_reload_on_init && _init_time != std::chrono::high_resolution_clock::time_point::max())
+	{
+		const auto delay_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - _init_time).count();
+		if (delay_time >= _effect_load_delay)
+		{
+			_init_time = std::chrono::high_resolution_clock::time_point::max();
+			reload_effects();
+		}
+		else
+			_show_splash = true;
+	}
+	else if (_frame_count == 0 && !_no_reload_on_init)
 		reload_effects();
 
 	if (_should_reload_effect != std::numeric_limits<size_t>::max() && !is_loading())
