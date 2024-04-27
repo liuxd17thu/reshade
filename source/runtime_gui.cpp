@@ -525,7 +525,7 @@ void reshade::runtime::load_custom_style()
 	ImVec4 *const colors = _imgui_context->Style.Colors;
 	switch (_style_index)
 	{
-	case 0:
+	case 0: // AuroraShade Dark (Purple)
 		colors[ImGuiCol_Text] = ImColor(0xffeeeeee);
 		colors[ImGuiCol_TextDisabled] = ImColor(0x99eeeeee);
 		colors[ImGuiCol_WindowBg] = ImColor(0xff222222);
@@ -567,17 +567,63 @@ void reshade::runtime::load_custom_style()
 		colors[ImGuiCol_DockingEmptyBg] = ImColor(0xff333333);
 		colors[ImGuiCol_PlotLines] = ImColor(0xffffffee);
 		colors[ImGuiCol_PlotLinesHovered] = ImColor(0xffcc9966);
-		colors[ImGuiCol_PlotHistogram] = ImColor(0xaaccaa55);
+		colors[ImGuiCol_PlotHistogram] = ImColor(0xaacc6699);
 		colors[ImGuiCol_PlotHistogramHovered] = ImColor(0xffcc6699);
 		colors[ImGuiCol_TextSelectedBg] = ImColor(0x77cc9966);
 		break;
-	case 1:
-		ImGui::StyleColorsDark(&_imgui_context->Style);
+	case 1:  // AuroraShade Bright (Purple)
+		colors[ImGuiCol_Text] = ImColor(0xff111111);
+		colors[ImGuiCol_TextDisabled] = ImColor(0x99111111);
+		colors[ImGuiCol_WindowBg] = ImColor(0xffeeeeee);
+		colors[ImGuiCol_ChildBg] = ImColor(0x11dddddd);
+		colors[ImGuiCol_PopupBg] = ImColor(0xeeeeeeee);
+		colors[ImGuiCol_Border] = ImColor(0x88000000);
+		colors[ImGuiCol_FrameBg] = ImColor(0x66ccbbaa);
+		colors[ImGuiCol_FrameBgHovered] = ImColor(0xaacc9966);
+		colors[ImGuiCol_FrameBgActive] = ImColor(0xffcc9966);
+		colors[ImGuiCol_TitleBg] = ImColor(0xccffeedd);
+		colors[ImGuiCol_TitleBgActive] = ImColor(0xffffeedd);
+		colors[ImGuiCol_TitleBgCollapsed] = ImColor(0x99ccaa99);
+		colors[ImGuiCol_MenuBarBg] = ImColor(0x99443333);
+		colors[ImGuiCol_ScrollbarBg] = ImColor(0x55cc9966);
+		colors[ImGuiCol_ScrollbarGrab] = ImColor(0x55ff9966);
+		colors[ImGuiCol_ScrollbarGrabHovered] = ImColor(0xcccc6699);
+		colors[ImGuiCol_ScrollbarGrabActive] = ImColor(0xffff66cc);
+		colors[ImGuiCol_CheckMark] = ImColor(0xffcc6699);
+		colors[ImGuiCol_SliderGrab] = ImColor(0x88ff66cc);
+		colors[ImGuiCol_SliderGrabActive] = ImColor(0xffff88cc);
+		colors[ImGuiCol_Button] = ImColor(0x77cc9966);
+		colors[ImGuiCol_ButtonHovered] = ImColor(0x99cc6699);
+		colors[ImGuiCol_ButtonActive] = ImColor(0xffcc9966);
+		colors[ImGuiCol_Header] = ImColor(0xcccc9966);
+		colors[ImGuiCol_HeaderHovered] = ImColor(0xeecc6699);
+		colors[ImGuiCol_HeaderActive] = ImColor(0xffcc6699);
+		colors[ImGuiCol_Separator] = ImColor(0x55111111);
+		colors[ImGuiCol_SeparatorHovered] = ImColor(0xcc111111);
+		colors[ImGuiCol_SeparatorActive] = ImColor(0xff111111);
+		colors[ImGuiCol_ResizeGrip] = ImColor(0x33cc9966);
+		colors[ImGuiCol_ResizeGripHovered] = ImColor(0xcccc6699);
+		colors[ImGuiCol_ResizeGripActive] = ImColor(0xffcc6699);
+		colors[ImGuiCol_Tab] = ImColor(0x99cc9966);
+		colors[ImGuiCol_TabActive] = ImColor(0xccff99cc);
+		colors[ImGuiCol_TabHovered] = colors[ImGuiCol_ButtonHovered];
+		colors[ImGuiCol_TabUnfocused] = ImColor(0x99cc9966);
+		colors[ImGuiCol_TabUnfocusedActive] = ImColor(0x99cc6699);
+		colors[ImGuiCol_DockingPreview] = colors[ImGuiCol_Header] * ImVec4(1.0f, 1.0f, 1.0f, 0.7f);
+		colors[ImGuiCol_DockingEmptyBg] = ImColor(0xff333333);
+		colors[ImGuiCol_PlotLines] = ImColor(0x000000aa);
+		colors[ImGuiCol_PlotLinesHovered] = ImColor(0xffcc9966);
+		colors[ImGuiCol_PlotHistogram] = ImColor(0xaacc66aa);
+		colors[ImGuiCol_PlotHistogramHovered] = ImColor(0xffcc66aa);
+		colors[ImGuiCol_TextSelectedBg] = ImColor(0x77cc6699);
 		break;
 	case 2:
-		ImGui::StyleColorsLight(&_imgui_context->Style);
+		ImGui::StyleColorsDark(&_imgui_context->Style);
 		break;
 	case 3:
+		ImGui::StyleColorsLight(&_imgui_context->Style);
+		break;
+	case 4:
 		colors[ImGuiCol_Text] = ImVec4(0.862745f, 0.862745f, 0.862745f, 1.00f);
 		colors[ImGuiCol_TextDisabled] = ImVec4(0.862745f, 0.862745f, 0.862745f, 0.58f);
 		colors[ImGuiCol_WindowBg] = ImVec4(0.117647f, 0.117647f, 0.117647f, 1.00f);
@@ -623,7 +669,7 @@ void reshade::runtime::load_custom_style()
 		colors[ImGuiCol_PlotHistogramHovered] = ImVec4(0.392157f, 0.588235f, 0.941176f, 1.00f);
 		colors[ImGuiCol_TextSelectedBg] = ImVec4(0.392157f, 0.588235f, 0.941176f, 0.43f);
 		break;
-	case 6:
+	case 7:
 		colors[ImGuiCol_Text] = ImColor(0xff969483);
 		colors[ImGuiCol_TextDisabled] = ImColor(0xff756e58);
 		colors[ImGuiCol_WindowBg] = ImColor(0xff362b00);
@@ -675,7 +721,7 @@ void reshade::runtime::load_custom_style()
 		colors[ImGuiCol_NavWindowingDimBg] = ImColor(0x20e3f6fd); // Customized
 		colors[ImGuiCol_ModalWindowDimBg] = ImColor(0x20e3f6fd); // Customized
 		break;
-	case 7:
+	case 8:
 		colors[ImGuiCol_Text] = ImColor(0xff837b65);
 		colors[ImGuiCol_TextDisabled] = ImColor(0xffa1a193);
 		colors[ImGuiCol_WindowBg] = ImColor(0xffe3f6fd);
@@ -2582,13 +2628,13 @@ void reshade::runtime::draw_gui_settings()
 		modified |= ImGui::Checkbox(_("Show mouse cursor"), &_show_imgui_cursor);
 
 		#pragma region Style
-		if (ImGui::Combo(_("Global style"), &_style_index, "AuroraShade\0Dark\0Light\0ReShade Default\0Custom Simple\0Custom Advanced\0Solarized Dark\0Solarized Light\0"))
+		if (ImGui::Combo(_("Global style"), &_style_index, "AuroraShade Dark\0AuroraShade Light\0Dark\0Light\0ReShade Default\0Custom Simple\0Custom Advanced\0Solarized Dark\0Solarized Light\0"))
 		{
 			modified = true;
 			load_custom_style();
 		}
 
-		if (_style_index == 4) // Custom Simple
+		if (_style_index == 5) // Custom Simple
 		{
 			ImVec4 *const colors = _imgui_context->Style.Colors;
 
@@ -2653,7 +2699,7 @@ void reshade::runtime::draw_gui_settings()
 				colors[ImGuiCol_DockingEmptyBg] = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
 			}
 		}
-		if (_style_index == 5) // Custom Advanced
+		if (_style_index == 6) // Custom Advanced
 		{
 			const auto height = 20.0f * _imgui_context->Style.FramePadding.y + 10.0f * _font_size + 12.0f * _imgui_context->Style.ItemSpacing.y;
 			if (ImGui::BeginChild("##colors", ImVec2(0, height), ImGuiChildFlags_Border, ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NavFlattened))
