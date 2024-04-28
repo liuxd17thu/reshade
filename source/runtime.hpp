@@ -282,6 +282,7 @@ namespace reshade
 		std::chrono::high_resolution_clock::duration _last_frame_duration;
 		std::chrono::high_resolution_clock::time_point _start_time, _last_present_time;
 		uint64_t _frame_count = 0;
+		bool _has_reloaded_after_init = false;
 		#pragma endregion
 
 		#pragma region Effect Loading

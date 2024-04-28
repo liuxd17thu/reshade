@@ -501,6 +501,7 @@ bool reshade::runtime::on_init()
 
 	// Reset frame count to zero so effects are loaded in 'update_effects'
 	_frame_count = 0;
+	_has_reloaded_after_init = false;
 
 	_is_initialized = true;
 	_last_reload_time = std::chrono::high_resolution_clock::now(); // Intentionally set to current time, so that duration to last reload is valid even when there is no reload on init
@@ -4021,6 +4022,7 @@ void reshade::runtime::reload_effects(bool force_load_all)
 	_last_reload_successful = true;
 
 	load_effects(force_load_all);
+	_has_reloaded_after_init = true;
 }
 void reshade::runtime::destroy_effects()
 {
