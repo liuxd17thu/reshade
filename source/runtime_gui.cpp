@@ -2387,13 +2387,13 @@ void reshade::runtime::draw_gui_settings()
 		modified |= imgui::path_list(_("Texture search paths"), _texture_search_paths, _file_selection_path, g_reshade_base_path);
 		ImGui::SetItemTooltip(_("List of directory paths to be searched for texture image files.\nPaths that end in \"\\**\" are searched recursively."));
 
-		if (ImGui::SliderInt("Effect load delay", reinterpret_cast<int *>(&_effect_load_delay), 0, 10 * 1000, "%d ms"))
+		if (ImGui::SliderInt(_("Effect load delay"), reinterpret_cast<int *>(&_effect_load_delay), 0, 10 * 1000, "%d ms"))
 		{
 			modified = true;
 			_effect_load_delay = std::max<int>(_effect_load_delay, 0);
 		}
 
-		modified |= ImGui::Checkbox("Do not load effects when startup", &_no_reload_on_init);
+		modified |= ImGui::Checkbox(_("Do not load effects when startup"), &_no_reload_on_init);
 
 		if (ImGui::Checkbox(_("Load only enabled effects"), &_effect_load_skipping))
 		{
@@ -2574,7 +2574,7 @@ void reshade::runtime::draw_gui_settings()
 #if RESHADE_FX
 		modified |= ImGui::Checkbox(_("Group effect files with tabs instead of a tree"), &_variable_editor_tabs);
 #endif
-		modified |= ImGui::Checkbox("Show mouse cursor", &_show_imgui_cursor);
+		modified |= ImGui::Checkbox(_("Show mouse cursor"), &_show_imgui_cursor);
 
 		#pragma region Style
 		if (ImGui::Combo(_("Global style"), &_style_index, "AuroraShade\0Dark\0Light\0ReShade Default\0Custom Simple\0Custom Advanced\0Solarized Dark\0Solarized Light\0"))
