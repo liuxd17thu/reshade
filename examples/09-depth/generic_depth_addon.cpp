@@ -12,6 +12,7 @@
 #include <shared_mutex>
 #include <unordered_map>
 #include <Unknwn.h>
+#include "localization.hpp"
 
 using namespace reshade::api;
 
@@ -1117,14 +1118,17 @@ static void draw_settings_overlay(effect_runtime *runtime)
 {
 	bool force_reset = false;
 
-	const char *const heuristic_items[] = {
-		"None",
-		"Similar aspect ratio",
-		"Multiples of resolution (for DLSS or resolution scaling)",
-		"Match resolution exactly",
-		"Match custom width and height exactly"
+	const std::vector<std::string> heuristic_items_std = {
+		_("None"),
+		_("Similar aspect ratio"),
+		_("Multiples of resolution (for DLSS or resolution scaling)"),
+		_("Match resolution exactly"),
+		_("Match custom width and height exactly")
 	};
-	if (ImGui::Combo("Aspect ratio heuristics", reinterpret_cast<int *>(&s_use_aspect_ratio_heuristics), heuristic_items, static_cast<int>(std::size(heuristic_items))))
+	std::vector<const char *> heuristic_items;
+	for (auto &str : heuristic_items_std)
+		heuristic_items.push_back(str.c_str());
+	if (ImGui::Combo(_("Aspect ratio heuristics"), reinterpret_cast<int *>(&s_use_aspect_ratio_heuristics), &heuristic_items[0], static_cast<int>(std::size(heuristic_items))))
 	{
 		reshade::set_config_value(nullptr, "DEPTH", "UseAspectRatioHeuristics", s_use_aspect_ratio_heuristics);
 		force_reset = true;
@@ -1150,14 +1154,14 @@ static void draw_settings_overlay(effect_runtime *runtime)
 		"D32S8",
 		"INTZ "
 	};
-	if (ImGui::Combo("Filter by depth buffer format", reinterpret_cast<int *>(&s_use_format_filtering), depth_format_items, static_cast<int>(std::size(depth_format_items))))
+	if (ImGui::Combo(_("Filter by depth buffer format"), reinterpret_cast<int *>(&s_use_format_filtering), depth_format_items, static_cast<int>(std::size(depth_format_items))))
 	{
 		reshade::set_config_value(nullptr, "DEPTH", "FilterFormat", s_use_format_filtering);
 		force_reset = true;
 	}
 
 	if (bool copy_before_clear_operations = s_preserve_depth_buffers != 0;
-		ImGui::Checkbox("Copy depth buffer before clear operations", &copy_before_clear_operations))
+		ImGui::Checkbox(_("Copy depth buffer before clear operations"), &copy_before_clear_operations))
 	{
 		s_preserve_depth_buffers = copy_before_clear_operations ? 1 : 0;
 		reshade::set_config_value(nullptr, "DEPTH", "DepthCopyBeforeClears", s_preserve_depth_buffers);
@@ -1165,7 +1169,7 @@ static void draw_settings_overlay(effect_runtime *runtime)
 	}
 
 	if (s_preserve_depth_buffers == 0)
-		ImGui::SetItemTooltip("Enable this when the depth buffer is empty");
+		ImGui::SetItemTooltip(_("Enable this when the depth buffer is empty"));
 
 	device *const device = runtime->get_device();
 	const bool is_d3d12_or_vulkan = device->get_api() == device_api::d3d12 || device->get_api() == device_api::vulkan;
@@ -1173,7 +1177,7 @@ static void draw_settings_overlay(effect_runtime *runtime)
 	if (s_preserve_depth_buffers || is_d3d12_or_vulkan)
 	{
 		if (bool copy_before_fullscreen_draws = s_preserve_depth_buffers == 2;
-			ImGui::Checkbox(is_d3d12_or_vulkan ? "Copy depth buffer during frame to prevent artifacts" : "Copy depth buffer before fullscreen draw calls", &copy_before_fullscreen_draws))
+			ImGui::Checkbox(is_d3d12_or_vulkan ? _("Copy depth buffer during frame to prevent artifacts") : _("Copy depth buffer before fullscreen draw calls"), &copy_before_fullscreen_draws))
 		{
 			s_preserve_depth_buffers = copy_before_fullscreen_draws ? 2 : 1;
 			reshade::set_config_value(nullptr, "DEPTH", "DepthCopyBeforeClears", s_preserve_depth_buffers);
@@ -1191,7 +1195,7 @@ static void draw_settings_overlay(effect_runtime *runtime)
 
 	if (std::addressof(device_data) == nullptr || device_data.depth_stencil_resources.empty())
 	{
-		ImGui::TextUnformatted("No depth buffers found.");
+		ImGui::TextUnformatted(_("No depth buffers found."));
 		return;
 	}
 
@@ -1300,7 +1304,7 @@ static void draw_settings_overlay(effect_runtime *runtime)
 			if (sorted_item_list.size() == 1 && !is_d3d12_or_vulkan)
 			{
 				if (bool value = (depth_stencil_backup->force_clear_index == std::numeric_limits<uint32_t>::max());
-					ImGui::Checkbox("    Choose last clear operation with high number of draw calls", &value))
+					ImGui::Checkbox(_("    Choose last clear operation with high number of draw calls"), &value))
 				{
 					depth_stencil_backup->force_clear_index = value ? std::numeric_limits<uint32_t>::max() : 0;
 					reshade::set_config_value(nullptr, "DEPTH", "DepthCopyAtClearIndex", depth_stencil_backup->force_clear_index);
@@ -1317,10 +1321,10 @@ static void draw_settings_overlay(effect_runtime *runtime)
 
 		ImGui::PushTextWrapPos();
 		if (has_msaa_depth_stencil)
-			ImGui::TextUnformatted("Not all depth buffers are available.\nYou may have to disable MSAA in the game settings for depth buffer detection to work!");
+			ImGui::TextUnformatted(_("Not all depth buffers are available.\nYou may have to disable MSAA in the game settings for depth buffer detection to work!"));
 		if (has_no_clear_operations)
-			ImGui::Text("No clear operations were found for the selected depth buffer.\n%s",
-				s_preserve_depth_buffers != 2 ? "Try enabling \"Copy depth buffer before fullscreen draw calls\" or disable \"Copy depth buffer before clear operations\"!" : "Disable \"Copy depth buffer before clear operations\" or select a different depth buffer!");
+			ImGui::Text(_("No clear operations were found for the selected depth buffer.\n%s"),
+				s_preserve_depth_buffers != 2 ? _("Try enabling \"Copy depth buffer before fullscreen draw calls\" or disable \"Copy depth buffer before clear operations\"!") : _("Disable \"Copy depth buffer before clear operations\" or select a different depth buffer!"));
 		ImGui::PopTextWrapPos();
 	}
 

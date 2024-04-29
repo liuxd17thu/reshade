@@ -210,6 +210,23 @@ BEGIN
 42682 "Yes"
 35957 "No"
 25121 "Off\nOn\n"
+32459 "None"
+25611 "Similar aspect ratio"
+56346 "Multiples of resolution (for DLSS or resolution scaling)"
+14210 "Match resolution exactly"
+50503 "Match custom width and height exactly"
+51879 "Aspect ratio heuristics"
+7887 "Filter by depth buffer format"
+36533 "Copy depth buffer before clear operations"
+7736 "Enable this when the depth buffer is empty"
+40777 "Copy depth buffer during frame to prevent artifacts"
+17924 "Copy depth buffer before fullscreen draw calls"
+26595 "No depth buffers found."
+41416 "    Choose last clear operation with high number of draw calls"
+22398 "Not all depth buffers are available.\nYou may have to disable MSAA in the game settings for depth buffer detection to work!"
+19888 "No clear operations were found for the selected depth buffer.\n%s"
+54052 "Try enabling ""Copy depth buffer before fullscreen draw calls"" or disable ""Copy depth buffer before clear operations""!"
+57064 "Disable ""Copy depth buffer before clear operations"" or select a different depth buffer!"
 
 END
 
