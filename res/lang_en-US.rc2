@@ -227,6 +227,10 @@ BEGIN
 19888 "No clear operations were found for the selected depth buffer.\n%s"
 54052 "Try enabling ""Copy depth buffer before fullscreen draw calls"" or disable ""Copy depth buffer before clear operations""!"
 57064 "Disable ""Copy depth buffer before clear operations"" or select a different depth buffer!"
+10795 "This is the only active effect runtime instance."
+13169 "Apply preset of this effect runtime to all other instances"
+46366 "Synchronize effect runtimes"
+43605 "%p is being synchronized with:"
 
 END
 
