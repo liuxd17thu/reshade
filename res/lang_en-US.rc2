@@ -210,6 +210,8 @@ BEGIN
 42682 "Yes"
 35957 "No"
 25121 "Off\nOn\n"
+58027 "Automatic depth buffer detection that works in the majority of games."
+57350 "Adds preset synchronization between different effect runtime instances, e.g. to have changes in a desktop window reflect in VR."
 32459 "None"
 25611 "Similar aspect ratio"
 56346 "Multiples of resolution (for DLSS or resolution scaling)"
