@@ -3706,7 +3706,7 @@ void reshade::runtime::draw_variable_editor()
 		}
 
 		std::string reset_to_preset_button_label = ICON_FK_UNDO ICON_FK_FILE " ";
-		reset_to_preset_button_label += "Reset all to preset";
+		reset_to_preset_button_label += _("Revert all to preset");
 		std::string reset_all_button_label = ICON_FK_UNDO ICON_FK_FILE_CODE " ";
 		reset_all_button_label += _("Reset all to default");
 
@@ -3827,7 +3827,7 @@ void reshade::runtime::draw_variable_editor()
 		ImGui::BeginGroup();
 		if (!_auto_save_preset)
 		{
-			if (imgui::confirm_button(reset_to_preset_button_label.c_str(), reset_button_width, "Reset '%s' to preset?", effect_name.c_str()))
+			if (imgui::confirm_button(reset_to_preset_button_label.c_str(), reset_button_width, _("Do you really want to revert all values in '%s' to original preset?"), effect_name.c_str()))
 			{
 				preset_section_modified = false;
 
