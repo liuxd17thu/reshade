@@ -282,6 +282,7 @@ namespace reshade
 		std::chrono::high_resolution_clock::duration _last_frame_duration;
 		std::chrono::high_resolution_clock::time_point _start_time, _last_present_time;
 		uint64_t _frame_count = 0;
+		bool _has_reloaded_after_init = false;
 		#pragma endregion
 
 		#pragma region Effect Loading
@@ -291,6 +292,7 @@ namespace reshade
 		bool _no_reload_on_init = false;
 		bool _performance_mode = false;
 		bool _effect_load_skipping = false;
+		unsigned int _effect_load_delay = 0;
 		unsigned int _reload_key_data[4] = {};
 		unsigned int _performance_mode_key_data[4] = {};
 		bool _ui_bind_support = true;
@@ -324,6 +326,7 @@ namespace reshade
 #endif
 		std::vector<std::thread> _worker_threads;
 		std::chrono::high_resolution_clock::time_point _last_reload_time;
+		std::chrono::high_resolution_clock::time_point _init_time = std::chrono::high_resolution_clock::now();
 		#pragma endregion
 
 		#pragma region Effect Rendering
@@ -449,6 +452,7 @@ namespace reshade
 
 		bool _show_splash = true;
 		bool _show_overlay = false;
+		bool _show_imgui_cursor = true;
 		unsigned int _show_fps = 2;
 		unsigned int _show_clock = false;
 		unsigned int _show_frametime = false;
@@ -487,7 +491,7 @@ namespace reshade
 		#pragma region Overlay Home
 #if RESHADE_FX
 		char _effect_filter[32] = {};
-		bool _variable_editor_tabs = false;
+		bool _variable_editor_tabs = true;
 		bool _auto_save_preset = true;
 		size_t _preset_section_editing = std::numeric_limits<size_t>::max();
 		size_t _uniform_binding_updated = std::numeric_limits<size_t>::max();

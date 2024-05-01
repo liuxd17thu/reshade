@@ -7,6 +7,7 @@
 #include <reshade.hpp>
 #include <vector>
 #include <shared_mutex>
+#include "localization.hpp"
 
 using namespace reshade::api;
 
@@ -195,15 +196,15 @@ static void draw_settings_overlay(effect_runtime *runtime)
 	{
 		assert(s_runtimes[0] == runtime);
 
-		ImGui::TextUnformatted("This is the only active effect runtime instance.");
+		ImGui::TextUnformatted(_("This is the only active effect runtime instance."));
 		return;
 	}
 
-	if (ImGui::Button("Apply preset of this effect runtime to all other instances", ImVec2(-1, 0)))
+	if (ImGui::Button(_("Apply preset of this effect runtime to all other instances"), ImVec2(-1, 0)))
 		apply_preset_to_all(runtime);
 
 	if (bool sync = s_sync;
-		ImGui::Checkbox("Synchronize effect runtimes", &sync))
+		ImGui::Checkbox(_("Synchronize effect runtimes"), &sync))
 	{
 		reshade::set_config_value(nullptr, "ADDON", "SyncEffectRuntimes", sync);
 		if (sync)
@@ -218,7 +219,7 @@ static void draw_settings_overlay(effect_runtime *runtime)
 	ImGui::Separator();
 	ImGui::Spacing();
 
-	ImGui::Text("%p is being synchronized with:", runtime);
+	ImGui::Text(_("%p is being synchronized with:"), runtime);
 
 	for (effect_runtime *const synced_runtime : s_runtimes)
 	{

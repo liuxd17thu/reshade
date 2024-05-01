@@ -501,6 +501,7 @@ bool reshade::runtime::on_init()
 
 	// Reset frame count to zero so effects are loaded in 'update_effects'
 	_frame_count = 0;
+	_has_reloaded_after_init = false;
 
 	_is_initialized = true;
 	_last_reload_time = std::chrono::high_resolution_clock::now(); // Intentionally set to current time, so that duration to last reload is valid even when there is no reload on init
@@ -1039,6 +1040,7 @@ void reshade::runtime::load_config()
 	config_get("GENERAL", "NoEffectCache", _no_effect_cache);
 	config_get("GENERAL", "NoReloadOnInit", _no_reload_on_init);
 
+	config_get("GENERAL", "EffectTimeDelay", _effect_load_delay);
 	config_get("GENERAL", "EffectSearchPaths", _effect_search_paths);
 	config_get("GENERAL", "PerformanceMode", _performance_mode);
 	config_get("GENERAL", "PreprocessorDefinitions", _global_preprocessor_definitions);
@@ -1127,6 +1129,7 @@ void reshade::runtime::save_config() const
 	config.set("GENERAL", "NoEffectCache", _no_effect_cache);
 	config.set("GENERAL", "NoReloadOnInit", _no_reload_on_init);
 
+	config.set("GENERAL", "EffectTimeDelay", _effect_load_delay);
 	config.set("GENERAL", "EffectSearchPaths", _effect_search_paths);
 	config.set("GENERAL", "PerformanceMode", _performance_mode);
 	config.set("GENERAL", "PreprocessorDefinitions", _global_preprocessor_definitions);
@@ -4019,6 +4022,7 @@ void reshade::runtime::reload_effects(bool force_load_all)
 	_last_reload_successful = true;
 
 	load_effects(force_load_all);
+	_has_reloaded_after_init = true;
 }
 void reshade::runtime::destroy_effects()
 {
@@ -4222,7 +4226,18 @@ bool reshade::runtime::update_effect_color_and_stencil_tex(uint32_t width, uint3
 void reshade::runtime::update_effects()
 {
 	// Delay first load to the first render call to avoid loading while the application is still initializing
-	if (_frame_count == 0 && !_no_reload_on_init)
+	if (_reload_count == 0 && !_no_reload_on_init && _init_time != std::chrono::high_resolution_clock::time_point::max())
+	{
+		const auto delay_time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - _init_time).count();
+		if (delay_time >= _effect_load_delay)
+		{
+			_init_time = std::chrono::high_resolution_clock::time_point::max();
+			reload_effects();
+		}
+		else
+			_show_splash = true;
+	}
+	else if (_frame_count == 0 && !_no_reload_on_init)
 		reload_effects();
 
 	if (_should_reload_effect != std::numeric_limits<size_t>::max() && !is_loading())

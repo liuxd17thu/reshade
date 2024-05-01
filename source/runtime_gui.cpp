@@ -93,7 +93,8 @@ static std::string_view get_localized_annotation(T &object, const std::string_vi
 }
 
 static const ImVec4 COLOR_RED = ImColor(240, 100, 100);
-static const ImVec4 COLOR_YELLOW = ImColor(204, 204, 0);
+static const ImVec4 COLOR_YELLOW = ImColor(180, 150, 0);
+static const ImVec4 COLOR_GREEN = ImColor(20, 180, 50);
 
 void reshade::runtime::init_gui()
 {
@@ -363,6 +364,7 @@ void reshade::runtime::load_config_gui(const ini_file &config)
 	config.get("OVERLAY", "ShowPresetTransitionMessage", _show_preset_transition_message);
 	config.get("OVERLAY", "ShowPresetDescription", _show_preset_description);
 #endif
+	config.get("OVERLAY", "ShowImGuiCursor", _show_imgui_cursor);
 
 	ImGuiStyle &imgui_style = _imgui_context->Style;
 	config.get("STYLE", "Alpha", imgui_style.Alpha);
@@ -466,6 +468,7 @@ void reshade::runtime::save_config_gui(ini_file &config) const
 	config.set("OVERLAY", "ShowPresetTransitionMessage", _show_preset_transition_message);
 	config.set("OVERLAY", "ShowPresetDescription", _show_preset_description);
 #endif
+	config.set("OVERLAY", "ShowImGuiCursor", _show_imgui_cursor);
 
 	const ImGuiStyle &imgui_style = _imgui_context->Style;
 	config.set("STYLE", "Alpha", imgui_style.Alpha);
@@ -522,59 +525,105 @@ void reshade::runtime::load_custom_style()
 	ImVec4 *const colors = _imgui_context->Style.Colors;
 	switch (_style_index)
 	{
-	case 0:
-		colors[ImGuiCol_Text] = ImColor(0xffe0e0e0);
-		colors[ImGuiCol_TextDisabled] = ImColor(0x90e0e0e0);
-		colors[ImGuiCol_WindowBg] = ImColor(0xff202020);
-		colors[ImGuiCol_ChildBg] = ImColor(0x28404040);
-		colors[ImGuiCol_PopupBg] = ImColor(0xe0202020);
-		colors[ImGuiCol_Border] = ImColor(0x50ffffff);
-		colors[ImGuiCol_FrameBg] = ImColor(0xff604434);
-		colors[ImGuiCol_FrameBgHovered] = ImColor(0xa8c09060);
-		colors[ImGuiCol_FrameBgActive] = ImColor(0xffc09060);
-		colors[ImGuiCol_TitleBg] = ImColor(0x80c09060);
-		colors[ImGuiCol_TitleBgActive] = ImColor(0x90c09060);
-		colors[ImGuiCol_TitleBgCollapsed] = ImColor(0x60c09060);
-		colors[ImGuiCol_MenuBarBg] = ImColor(0x90403c38);
-		colors[ImGuiCol_ScrollbarBg] = ImColor(0x50403c38);
-		colors[ImGuiCol_ScrollbarGrab] = ImColor(0x50ff9060);
-		colors[ImGuiCol_ScrollbarGrabHovered] = ImColor(0xc0ff6090);
-		colors[ImGuiCol_ScrollbarGrabActive] = ImColor(0xffff60c0);
-		colors[ImGuiCol_CheckMark] = ImColor(0xd0ff90c0);
-		colors[ImGuiCol_SliderGrab] = ImColor(0x80ff60c0);
-		colors[ImGuiCol_SliderGrabActive] = ImColor(0xffff88d0);
-		colors[ImGuiCol_Button] = ImColor(0x70c09060);
-		colors[ImGuiCol_ButtonHovered] = ImColor(0xe0c06090);
-		colors[ImGuiCol_ButtonActive] = ImColor(0xffc09060);
-		colors[ImGuiCol_Header] = ImColor(0xc0c09060);
-		colors[ImGuiCol_HeaderHovered] = ImColor(0xe0c06090);
-		colors[ImGuiCol_HeaderActive] = ImColor(0xffc06090);
-		colors[ImGuiCol_Separator] = ImColor(0x50ffffff);
-		colors[ImGuiCol_SeparatorHovered] = ImColor(0xc8ffffff);
+	case 0: // AuroraShade Dark (Purple)
+		colors[ImGuiCol_Text] = ImColor(0xffeeeeee);
+		colors[ImGuiCol_TextDisabled] = ImColor(0x99eeeeee);
+		colors[ImGuiCol_WindowBg] = ImColor(0xff222222);
+		colors[ImGuiCol_ChildBg] = ImColor(0x22444444);
+		colors[ImGuiCol_PopupBg] = ImColor(0xee222222);
+		colors[ImGuiCol_Border] = ImColor(0x55ffffff);
+		colors[ImGuiCol_FrameBg] = ImColor(0xff664433);
+		colors[ImGuiCol_FrameBgHovered] = ImColor(0xaacc9966);
+		colors[ImGuiCol_FrameBgActive] = ImColor(0xffcc9966);
+		colors[ImGuiCol_TitleBg] = ImColor(0x88cc9966);
+		colors[ImGuiCol_TitleBgActive] = ImColor(0x99cc9966);
+		colors[ImGuiCol_TitleBgCollapsed] = ImColor(0x66cc9966);
+		colors[ImGuiCol_MenuBarBg] = ImColor(0x99443333);
+		colors[ImGuiCol_ScrollbarBg] = ImColor(0x55443333);
+		colors[ImGuiCol_ScrollbarGrab] = ImColor(0x55ff9966);
+		colors[ImGuiCol_ScrollbarGrabHovered] = ImColor(0xccff6699);
+		colors[ImGuiCol_ScrollbarGrabActive] = ImColor(0xffff66cc);
+		colors[ImGuiCol_CheckMark] = ImColor(0xddff99cc);
+		colors[ImGuiCol_SliderGrab] = ImColor(0x88ff66cc);
+		colors[ImGuiCol_SliderGrabActive] = ImColor(0xffff88cc);
+		colors[ImGuiCol_Button] = ImColor(0x77cc9966);
+		colors[ImGuiCol_ButtonHovered] = ImColor(0xeecc6699);
+		colors[ImGuiCol_ButtonActive] = ImColor(0xffcc9966);
+		colors[ImGuiCol_Header] = ImColor(0xcccc9966);
+		colors[ImGuiCol_HeaderHovered] = ImColor(0xeecc6699);
+		colors[ImGuiCol_HeaderActive] = ImColor(0xffcc6699);
+		colors[ImGuiCol_Separator] = ImColor(0x55ffffff);
+		colors[ImGuiCol_SeparatorHovered] = ImColor(0xccffffff);
 		colors[ImGuiCol_SeparatorActive] = ImColor(0xffffffff);
-		colors[ImGuiCol_ResizeGrip] = ImColor(0x30c09060);
-		colors[ImGuiCol_ResizeGripHovered] = ImColor(0xc8c06090);
-		colors[ImGuiCol_ResizeGripActive] = ImColor(0xffc06090);
-		colors[ImGuiCol_Tab] = ImColor(0x70c09060);
-		colors[ImGuiCol_TabActive] = ImColor(0xffc09060);
+		colors[ImGuiCol_ResizeGrip] = ImColor(0x33cc9966);
+		colors[ImGuiCol_ResizeGripHovered] = ImColor(0xcccc6699);
+		colors[ImGuiCol_ResizeGripActive] = ImColor(0xffcc6699);
+		colors[ImGuiCol_Tab] = ImColor(0x77cc9966);
+		colors[ImGuiCol_TabActive] = ImColor(0xffcc9966);
 		colors[ImGuiCol_TabHovered] = colors[ImGuiCol_ButtonHovered];
-		colors[ImGuiCol_TabUnfocused] = ImColor(0x80c09060);
-		colors[ImGuiCol_TabUnfocusedActive] = ImColor(0xc0c09060);
+		colors[ImGuiCol_TabUnfocused] = ImColor(0x88cc9966);
+		colors[ImGuiCol_TabUnfocusedActive] = ImColor(0xcccc9966);
 		colors[ImGuiCol_DockingPreview] = colors[ImGuiCol_Header] * ImVec4(1.0f, 1.0f, 1.0f, 0.7f);
-		colors[ImGuiCol_DockingEmptyBg] = ImColor(0xff303030);
-		colors[ImGuiCol_PlotLines] = ImColor(0xfffff0e0);
-		colors[ImGuiCol_PlotLinesHovered] = ImColor(0xffc09060);
-		colors[ImGuiCol_PlotHistogram] = ImColor(0xa0d0a050);
-		colors[ImGuiCol_PlotHistogramHovered] = ImColor(0xffc06090);
-		colors[ImGuiCol_TextSelectedBg] = ImColor(0x70c09060);
+		colors[ImGuiCol_DockingEmptyBg] = ImColor(0xff333333);
+		colors[ImGuiCol_PlotLines] = ImColor(0xffffffee);
+		colors[ImGuiCol_PlotLinesHovered] = ImColor(0xffcc9966);
+		colors[ImGuiCol_PlotHistogram] = ImColor(0xaacc6699);
+		colors[ImGuiCol_PlotHistogramHovered] = ImColor(0xffcc6699);
+		colors[ImGuiCol_TextSelectedBg] = ImColor(0x77cc9966);
 		break;
-	case 1:
-		ImGui::StyleColorsDark(&_imgui_context->Style);
+	case 1:  // AuroraShade Bright (Purple)
+		colors[ImGuiCol_Text] = ImColor(0xff111111);
+		colors[ImGuiCol_TextDisabled] = ImColor(0x99111111);
+		colors[ImGuiCol_WindowBg] = ImColor(0xffeeeeee);
+		colors[ImGuiCol_ChildBg] = ImColor(0x11dddddd);
+		colors[ImGuiCol_PopupBg] = ImColor(0xeeeeeeee);
+		colors[ImGuiCol_Border] = ImColor(0x88000000);
+		colors[ImGuiCol_FrameBg] = ImColor(0x66ccbbaa);
+		colors[ImGuiCol_FrameBgHovered] = ImColor(0xaacc9966);
+		colors[ImGuiCol_FrameBgActive] = ImColor(0xffcc9966);
+		colors[ImGuiCol_TitleBg] = ImColor(0xccffeedd);
+		colors[ImGuiCol_TitleBgActive] = ImColor(0xffffeedd);
+		colors[ImGuiCol_TitleBgCollapsed] = ImColor(0x99ccaa99);
+		colors[ImGuiCol_MenuBarBg] = ImColor(0x99443333);
+		colors[ImGuiCol_ScrollbarBg] = ImColor(0x55cc9966);
+		colors[ImGuiCol_ScrollbarGrab] = ImColor(0x55ff9966);
+		colors[ImGuiCol_ScrollbarGrabHovered] = ImColor(0xcccc6699);
+		colors[ImGuiCol_ScrollbarGrabActive] = ImColor(0xffff66cc);
+		colors[ImGuiCol_CheckMark] = ImColor(0xffcc6699);
+		colors[ImGuiCol_SliderGrab] = ImColor(0x88ff66cc);
+		colors[ImGuiCol_SliderGrabActive] = ImColor(0xffff88cc);
+		colors[ImGuiCol_Button] = ImColor(0x77cc9966);
+		colors[ImGuiCol_ButtonHovered] = ImColor(0x99cc6699);
+		colors[ImGuiCol_ButtonActive] = ImColor(0xffcc9966);
+		colors[ImGuiCol_Header] = ImColor(0xcccc9966);
+		colors[ImGuiCol_HeaderHovered] = ImColor(0xeecc6699);
+		colors[ImGuiCol_HeaderActive] = ImColor(0xffcc6699);
+		colors[ImGuiCol_Separator] = ImColor(0x55111111);
+		colors[ImGuiCol_SeparatorHovered] = ImColor(0xcc111111);
+		colors[ImGuiCol_SeparatorActive] = ImColor(0xff111111);
+		colors[ImGuiCol_ResizeGrip] = ImColor(0x33cc9966);
+		colors[ImGuiCol_ResizeGripHovered] = ImColor(0xcccc6699);
+		colors[ImGuiCol_ResizeGripActive] = ImColor(0xffcc6699);
+		colors[ImGuiCol_Tab] = ImColor(0x99cc9966);
+		colors[ImGuiCol_TabActive] = ImColor(0xccff99cc);
+		colors[ImGuiCol_TabHovered] = colors[ImGuiCol_ButtonHovered];
+		colors[ImGuiCol_TabUnfocused] = ImColor(0x99cc9966);
+		colors[ImGuiCol_TabUnfocusedActive] = ImColor(0x99cc6699);
+		colors[ImGuiCol_DockingPreview] = colors[ImGuiCol_Header] * ImVec4(1.0f, 1.0f, 1.0f, 0.7f);
+		colors[ImGuiCol_DockingEmptyBg] = ImColor(0xff333333);
+		colors[ImGuiCol_PlotLines] = ImColor(0x000000aa);
+		colors[ImGuiCol_PlotLinesHovered] = ImColor(0xffcc9966);
+		colors[ImGuiCol_PlotHistogram] = ImColor(0xaacc66aa);
+		colors[ImGuiCol_PlotHistogramHovered] = ImColor(0xffcc66aa);
+		colors[ImGuiCol_TextSelectedBg] = ImColor(0x77cc6699);
 		break;
 	case 2:
-		ImGui::StyleColorsLight(&_imgui_context->Style);
+		ImGui::StyleColorsDark(&_imgui_context->Style);
 		break;
 	case 3:
+		ImGui::StyleColorsLight(&_imgui_context->Style);
+		break;
+	case 4:
 		colors[ImGuiCol_Text] = ImVec4(0.862745f, 0.862745f, 0.862745f, 1.00f);
 		colors[ImGuiCol_TextDisabled] = ImVec4(0.862745f, 0.862745f, 0.862745f, 0.58f);
 		colors[ImGuiCol_WindowBg] = ImVec4(0.117647f, 0.117647f, 0.117647f, 1.00f);
@@ -620,7 +669,7 @@ void reshade::runtime::load_custom_style()
 		colors[ImGuiCol_PlotHistogramHovered] = ImVec4(0.392157f, 0.588235f, 0.941176f, 1.00f);
 		colors[ImGuiCol_TextSelectedBg] = ImVec4(0.392157f, 0.588235f, 0.941176f, 0.43f);
 		break;
-	case 6:
+	case 7:
 		colors[ImGuiCol_Text] = ImColor(0xff969483);
 		colors[ImGuiCol_TextDisabled] = ImColor(0xff756e58);
 		colors[ImGuiCol_WindowBg] = ImColor(0xff362b00);
@@ -672,7 +721,7 @@ void reshade::runtime::load_custom_style()
 		colors[ImGuiCol_NavWindowingDimBg] = ImColor(0x20e3f6fd); // Customized
 		colors[ImGuiCol_ModalWindowDimBg] = ImColor(0x20e3f6fd); // Customized
 		break;
-	case 7:
+	case 8:
 		colors[ImGuiCol_Text] = ImColor(0xff837b65);
 		colors[ImGuiCol_TextDisabled] = ImColor(0xffa1a193);
 		colors[ImGuiCol_WindowBg] = ImColor(0xffe3f6fd);
@@ -951,7 +1000,7 @@ void reshade::runtime::draw_gui()
 
 	if (_input != nullptr)
 	{
-		imgui_io.MouseDrawCursor = _show_overlay && (!_should_save_screenshot || !_screenshot_save_gui);
+		imgui_io.MouseDrawCursor = _show_overlay && (_show_imgui_cursor || (ImGui::GetMouseCursor() > ImGuiMouseCursor_Arrow)) && (!_should_save_screenshot || !_screenshot_save_gui);
 
 		// Scale mouse position in case render resolution does not match the window size
 		unsigned int max_position[2];
@@ -1136,8 +1185,7 @@ void reshade::runtime::draw_gui()
 		ImGui::SetNextWindowPos(_imgui_context->Style.WindowPadding);
 		ImGui::SetNextWindowSize(ImVec2(imgui_io.DisplaySize.x - 20.0f, 0.0f));
 		ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 1.0f);
-		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.862745f, 0.862745f, 0.862745f, 1.0f));
-		ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.117647f, 0.117647f, 0.117647f, 0.7f));
+		ImGui::PushStyleColor(ImGuiCol_FrameBg, _imgui_context->Style.Colors[ImGuiCol_FrameBg] * ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
 		ImGui::Begin("Splash Window", nullptr,
 			ImGuiWindowFlags_NoDecoration |
 			ImGuiWindowFlags_NoNav |
@@ -1199,7 +1247,7 @@ void reshade::runtime::draw_gui()
 
 				ImGui::TextUnformatted(label.c_str(), label.c_str() + key_offset);
 				ImGui::SameLine(0.0f, 0.0f);
-				ImGui::TextColored(ImVec4(1, 1, 1, 1), "%s", input::key_name(_overlay_key_data).c_str());
+				ImGui::TextColored(_imgui_context->Style.Colors[ImGuiCol_CheckMark], "%s", input::key_name(_overlay_key_data).c_str());
 				ImGui::SameLine(0.0f, 0.0f);
 				ImGui::TextUnformatted(label.c_str() + key_offset + 2, label.c_str() + label.size());
 			}
@@ -1211,7 +1259,7 @@ void reshade::runtime::draw_gui()
 
 				ImGui::TextUnformatted(label.c_str(), label.c_str() + key_offset);
 				ImGui::SameLine(0.0f, 0.0f);
-				ImGui::TextColored(ImVec4(1, 1, 1, 1), "%s", input::key_name(_overlay_key_data).c_str());
+				ImGui::TextColored(_imgui_context->Style.Colors[ImGuiCol_CheckMark], "%s", input::key_name(_overlay_key_data).c_str());
 				ImGui::SameLine(0.0f, 0.0f);
 				ImGui::TextUnformatted(label.c_str() + key_offset + 2, label.c_str() + label.size());
 			}
@@ -1238,7 +1286,7 @@ void reshade::runtime::draw_gui()
 		viewport_offset.y += ImGui::GetWindowHeight() + _imgui_context->Style.WindowPadding.x; // Add small space between windows
 
 		ImGui::End();
-		ImGui::PopStyleColor(2);
+		ImGui::PopStyleColor(1);
 		ImGui::PopStyleVar();
 	}
 
@@ -1793,12 +1841,17 @@ void reshade::runtime::draw_gui_home()
 		ImGui::EndDisabled();
 
 		ImGui::SameLine(0, button_spacing);
-		ImGui::PushStyleColor(ImGuiCol_Text, ImU32(0xffff90c0));
-		ImGui::PushStyleColor(ImGuiCol_Button, ImU32(0x70c09060));
-		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImU32(0xe0c09060));
+
+		ImGui::PushStyleColor(ImGuiCol_Text, _imgui_context->Style.Colors[ImGuiCol_CheckMark]);
+		ImGui::PushStyleColor(ImGuiCol_Button, _imgui_context->Style.Colors[ImGuiCol_FrameBg]);
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, _imgui_context->Style.Colors[ImGuiCol_FrameBgHovered]);
+		ImGui::PushStyleColor(ImGuiCol_ButtonActive, _imgui_context->Style.Colors[ImGuiCol_FrameBgActive]);
+		ImGui::PushStyleColor(ImGuiCol_Border, _imgui_context->Style.Colors[ImGuiCol_CheckMark]);
+		ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
 		if (ImGui::Button(ICON_FK_AURORA, ImVec2(button_size, button_height)))
 			ImGui::OpenPopup("##Feature Level");
-		ImGui::PopStyleColor(3);
+		ImGui::PopStyleVar(1);
+		ImGui::PopStyleColor(5);
 		if (ImGui::BeginPopup("##Feature Level"))
 		{
 			bool modified = false;
@@ -1815,7 +1868,7 @@ void reshade::runtime::draw_gui_home()
 			ImGui::Separator();
 			if (feature_is_using)
 			{
-				ImGui::TextColored(ImColor(255, 255, 100), _("Feature In Use:"));
+				ImGui::TextColored(COLOR_YELLOW, _("Feature In Use:"));
 			}
 			for (auto i = 0; i < 3; i++) {
 				if (feature_is_using && feature_id[i] != _aurora_feature)
@@ -2362,7 +2415,7 @@ void reshade::runtime::draw_gui_settings()
 			modified |= imgui::key_input_box(_("Next variation key"), _next_flair_key_data, *_input);
 			ImGui::EndDisabled();
 
-			modified |= ImGui::SliderInt(_("Preset transition duration"), reinterpret_cast<int *>(&_preset_transition_duration), 0, 10 * 1000);
+			modified |= ImGui::SliderInt(_("Preset transition duration"), reinterpret_cast<int *>(&_preset_transition_duration), 0, 10 * 1000, "%d ms");
 			ImGui::SetItemTooltip(_(
 				"Make a smooth transition when switching presets, but only for floating point values.\n"
 				"Recommended for multiple presets that contain the same effects, otherwise set this to zero.\n"
@@ -2377,11 +2430,21 @@ void reshade::runtime::draw_gui_settings()
 		ImGui::SetItemTooltip(_("When not empty, reset the current preset to this file during reloads."));
 
 		ImGui::Spacing();
+		ImGui::Separator();
+		ImGui::Spacing();
 
 		modified |= imgui::path_list(_("Effect search paths"), _effect_search_paths, _file_selection_path, g_reshade_base_path);
 		ImGui::SetItemTooltip(_("List of directory paths to be searched for effect files (.fx).\nPaths that end in \"\\**\" are searched recursively."));
 		modified |= imgui::path_list(_("Texture search paths"), _texture_search_paths, _file_selection_path, g_reshade_base_path);
 		ImGui::SetItemTooltip(_("List of directory paths to be searched for texture image files.\nPaths that end in \"\\**\" are searched recursively."));
+
+		if (ImGui::SliderInt(_("Effect load delay"), reinterpret_cast<int *>(&_effect_load_delay), 0, 10 * 1000, "%d ms"))
+		{
+			modified = true;
+			_effect_load_delay = std::max<int>(_effect_load_delay, 0);
+		}
+
+		modified |= ImGui::Checkbox(_("Do not load effects when startup"), &_no_reload_on_init);
 
 		if (ImGui::Checkbox(_("Load only enabled effects"), &_effect_load_skipping))
 		{
@@ -2562,15 +2625,16 @@ void reshade::runtime::draw_gui_settings()
 #if RESHADE_FX
 		modified |= ImGui::Checkbox(_("Group effect files with tabs instead of a tree"), &_variable_editor_tabs);
 #endif
+		modified |= ImGui::Checkbox(_("Show mouse cursor"), &_show_imgui_cursor);
 
 		#pragma region Style
-		if (ImGui::Combo(_("Global style"), &_style_index, "AuroraShade\0Dark\0Light\0ReShade Default\0Custom Simple\0Custom Advanced\0Solarized Dark\0Solarized Light\0"))
+		if (ImGui::Combo(_("Global style"), &_style_index, "AuroraShade Dark\0AuroraShade Light\0Dark\0Light\0ReShade Default\0Custom Simple\0Custom Advanced\0Solarized Dark\0Solarized Light\0"))
 		{
 			modified = true;
 			load_custom_style();
 		}
 
-		if (_style_index == 4) // Custom Simple
+		if (_style_index == 5) // Custom Simple
 		{
 			ImVec4 *const colors = _imgui_context->Style.Colors;
 
@@ -2635,7 +2699,7 @@ void reshade::runtime::draw_gui_settings()
 				colors[ImGuiCol_DockingEmptyBg] = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
 			}
 		}
-		if (_style_index == 5) // Custom Advanced
+		if (_style_index == 6) // Custom Advanced
 		{
 			const auto height = 20.0f * _imgui_context->Style.FramePadding.y + 10.0f * _font_size + 12.0f * _imgui_context->Style.ItemSpacing.y;
 			if (ImGui::BeginChild("##colors", ImVec2(0, height), ImGuiChildFlags_Border, ImGuiWindowFlags_AlwaysVerticalScrollbar | ImGuiWindowFlags_NavFlattened))
@@ -4258,7 +4322,7 @@ void reshade::runtime::draw_variable_editor()
 						if (_ui_bind_support && effect.definition_bindings.count(variable.name))
 						{
 							const std::string bind_info = "@[ " + effect.definition_bindings[variable.name].first + " ]";
-							ImGui::TextColored(ImColor(51, 204, 51), bind_info.c_str());
+							ImGui::TextColored(COLOR_GREEN, bind_info.c_str());
 						}
 						if(!tooltip.empty())
 							ImGui::TextUnformatted(tooltip.data(), tooltip.data() + tooltip.size());
@@ -4505,7 +4569,7 @@ void reshade::runtime::draw_variable_editor()
 }
 void reshade::runtime::draw_technique_editor()
 {
-	if (_reload_count != 0 && _effects.empty())
+	if (_has_reloaded_after_init && _effects.empty())
 	{
 		ImGui::TextColored(COLOR_YELLOW, _("No effect files (.fx) found in the configured effect search paths%c"), _effect_search_paths.empty() ? '.' : ':');
 		for (const std::filesystem::path &search_path : _effect_search_paths)
