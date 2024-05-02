@@ -493,7 +493,9 @@ namespace reshade
 		char _effect_filter[32] = {};
 		bool _variable_editor_tabs = true;
 		bool _auto_save_preset = true;
+#ifdef AURORA_PRO
 		size_t _preset_section_editing = std::numeric_limits<size_t>::max();
+#endif
 		size_t _uniform_binding_updated = std::numeric_limits<size_t>::max();
 		bool _preset_is_modified = false;
 		bool _inherit_current_preset = false;

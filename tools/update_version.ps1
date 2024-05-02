@@ -20,6 +20,7 @@ $version = 6,1,1,0
 
 $build = $(git rev-parse --short HEAD)
 $cn2 = "Release 7.1"
+$cn2_pro = "Pro 7.1"
 
 # Increment build version for release builds
 if (($config -eq "Release") -or
@@ -45,5 +46,10 @@ $official = Test-Path ($path + "\..\sign.pfx")
 
 #define VERSION_STRING_FILE "$([string]::Join('.', $version))"
 #define VERSION_STRING_PRODUCT "$($version[0]).$($version[1]).$($version[2])"
+
+#ifdef AURORA_PRO
+#define VERSION_STRING_CN2 "$cn2_pro | Build $build"
+#else
 #define VERSION_STRING_CN2 "$cn2 | Build $build"
+#endif
 "@ | Out-File -FilePath $path -Encoding ASCII

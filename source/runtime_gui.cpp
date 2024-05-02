@@ -525,7 +525,8 @@ void reshade::runtime::load_custom_style()
 	ImVec4 *const colors = _imgui_context->Style.Colors;
 	switch (_style_index)
 	{
-	case 0: // AuroraShade Dark (Purple)
+	case 0:
+#ifndef AURORA_PRO // AuroraShade Dark (Purple)
 		colors[ImGuiCol_Text] = ImColor(0xffeeeeee);
 		colors[ImGuiCol_TextDisabled] = ImColor(0x99eeeeee);
 		colors[ImGuiCol_WindowBg] = ImColor(0xff222222);
@@ -570,8 +571,55 @@ void reshade::runtime::load_custom_style()
 		colors[ImGuiCol_PlotHistogram] = ImColor(0xaacc6699);
 		colors[ImGuiCol_PlotHistogramHovered] = ImColor(0xffcc6699);
 		colors[ImGuiCol_TextSelectedBg] = ImColor(0x77cc9966);
+#else // AuroraShade Pro Dark (Cyan)
+		colors[ImGuiCol_Text] = ImColor(0xffeeeeee);
+		colors[ImGuiCol_TextDisabled] = ImColor(0x99eeeeee);
+		colors[ImGuiCol_WindowBg] = ImColor(0xff222222);
+		colors[ImGuiCol_ChildBg] = ImColor(0x22444444);
+		colors[ImGuiCol_PopupBg] = ImColor(0xee222222);
+		colors[ImGuiCol_Border] = ImColor(0x55ffffff);
+		colors[ImGuiCol_FrameBg] = ImColor(0x99554433);
+		colors[ImGuiCol_FrameBgHovered] = ImColor(0xaaccaa66);
+		colors[ImGuiCol_FrameBgActive] = ImColor(0xffccaa66);
+		colors[ImGuiCol_TitleBg] = ImColor(0x88ccaa66);
+		colors[ImGuiCol_TitleBgActive] = ImColor(0x99ccaa66);
+		colors[ImGuiCol_TitleBgCollapsed] = ImColor(0x66ccaa66);
+		colors[ImGuiCol_MenuBarBg] = ImColor(0x99443333);
+		colors[ImGuiCol_ScrollbarBg] = ImColor(0x55443333);
+		colors[ImGuiCol_ScrollbarGrab] = ImColor(0x55ccaa66);
+		colors[ImGuiCol_ScrollbarGrabHovered] = ImColor(0xcc99cc66);
+		colors[ImGuiCol_ScrollbarGrabActive] = ImColor(0xeeccff99);
+		colors[ImGuiCol_CheckMark] = ImColor(0xddccff99);
+		colors[ImGuiCol_SliderGrab] = ImColor(0x99ccff99);
+		colors[ImGuiCol_SliderGrabActive] = ImColor(0xffccff99);
+		colors[ImGuiCol_Button] = ImColor(0x77ccaa66);
+		colors[ImGuiCol_ButtonHovered] = ImColor(0xdd99cc66);
+		colors[ImGuiCol_ButtonActive] = ImColor(0xffccaa66);
+		colors[ImGuiCol_Header] = ImColor(0xccccaa66);
+		colors[ImGuiCol_HeaderHovered] = ImColor(0xdd99cc66);
+		colors[ImGuiCol_HeaderActive] = ImColor(0xff99cc66);
+		colors[ImGuiCol_Separator] = ImColor(0x55ffffff);
+		colors[ImGuiCol_SeparatorHovered] = ImColor(0xccffffff);
+		colors[ImGuiCol_SeparatorActive] = ImColor(0xffffffff);
+		colors[ImGuiCol_ResizeGrip] = ImColor(0x33ccaa66);
+		colors[ImGuiCol_ResizeGripHovered] = ImColor(0xcc99cc66);
+		colors[ImGuiCol_ResizeGripActive] = ImColor(0xff99cc66);
+		colors[ImGuiCol_Tab] = ImColor(0x77ccaa66);
+		colors[ImGuiCol_TabActive] = ImColor(0xffccaa66);
+		colors[ImGuiCol_TabHovered] = colors[ImGuiCol_ButtonHovered];
+		colors[ImGuiCol_TabUnfocused] = ImColor(0x88ccaa66);
+		colors[ImGuiCol_TabUnfocusedActive] = ImColor(0xccccaa66);
+		colors[ImGuiCol_DockingPreview] = colors[ImGuiCol_Header] * ImVec4(1.0f, 1.0f, 1.0f, 0.7f);
+		colors[ImGuiCol_DockingEmptyBg] = ImColor(0xff333333);
+		colors[ImGuiCol_PlotLines] = ImColor(0xffffffee);
+		colors[ImGuiCol_PlotLinesHovered] = ImColor(0xffccaa66);
+		colors[ImGuiCol_PlotHistogram] = ImColor(0xaaccaa55);
+		colors[ImGuiCol_PlotHistogramHovered] = ImColor(0xff99cc66);
+		colors[ImGuiCol_TextSelectedBg] = ImColor(0x77ccaa66);
+#endif
 		break;
-	case 1:  // AuroraShade Bright (Purple)
+	case 1:
+#ifndef AURORA_PRO // AuroraShade Bright (Purple)
 		colors[ImGuiCol_Text] = ImColor(0xff111111);
 		colors[ImGuiCol_TextDisabled] = ImColor(0x99111111);
 		colors[ImGuiCol_WindowBg] = ImColor(0xffeeeeee);
@@ -616,6 +664,52 @@ void reshade::runtime::load_custom_style()
 		colors[ImGuiCol_PlotHistogram] = ImColor(0xaacc66aa);
 		colors[ImGuiCol_PlotHistogramHovered] = ImColor(0xffcc66aa);
 		colors[ImGuiCol_TextSelectedBg] = ImColor(0x77cc6699);
+#else // AuroraShade Pro Bright (Cyan)
+		colors[ImGuiCol_Text] = ImColor(0xff111111);
+		colors[ImGuiCol_TextDisabled] = ImColor(0x99111111);
+		colors[ImGuiCol_WindowBg] = ImColor(0xffeeeeee);
+		colors[ImGuiCol_ChildBg] = ImColor(0x11dddddd);
+		colors[ImGuiCol_PopupBg] = ImColor(0xeeeeeeee);
+		colors[ImGuiCol_Border] = ImColor(0x88000000);
+		colors[ImGuiCol_FrameBg] = ImColor(0x66ddccaa);
+		colors[ImGuiCol_FrameBgHovered] = ImColor(0xaaccaa66);
+		colors[ImGuiCol_FrameBgActive] = ImColor(0x99aacc66);
+		colors[ImGuiCol_TitleBg] = ImColor(0x77ffeedd);
+		colors[ImGuiCol_TitleBgActive] = ImColor(0xffffeedd);
+		colors[ImGuiCol_TitleBgCollapsed] = ImColor(0x55ccaa66);
+		colors[ImGuiCol_MenuBarBg] = ImColor(0x99aacc66);
+		colors[ImGuiCol_ScrollbarBg] = ImColor(0xffddccaa);
+		colors[ImGuiCol_ScrollbarGrab] = ImColor(0xccccaa66);
+		colors[ImGuiCol_ScrollbarGrabHovered] = ImColor(0xcc669933);
+		colors[ImGuiCol_ScrollbarGrabActive] = ImColor(0xff99cc66);
+		colors[ImGuiCol_CheckMark] = ImColor(0xff669933);
+		colors[ImGuiCol_SliderGrab] = ImColor(0x99669933);
+		colors[ImGuiCol_SliderGrabActive] = ImColor(0xccaacc66);
+		colors[ImGuiCol_Button] = ImColor(0x77ccaa66);
+		colors[ImGuiCol_ButtonHovered] = ImColor(0xcc669933);
+		colors[ImGuiCol_ButtonActive] = ImColor(0xffccaa66);
+		colors[ImGuiCol_Header] = ImColor(0xccccaa66);
+		colors[ImGuiCol_HeaderHovered] = ImColor(0x99669933);
+		colors[ImGuiCol_HeaderActive] = ImColor(0xffccaa66);
+		colors[ImGuiCol_Separator] = ImColor(0x55000000);
+		colors[ImGuiCol_SeparatorHovered] = ImColor(0xcc000000);
+		colors[ImGuiCol_SeparatorActive] = ImColor(0xff000000);
+		colors[ImGuiCol_ResizeGrip] = ImColor(0x99ccaa66);
+		colors[ImGuiCol_ResizeGripHovered] = ImColor(0x99669933);
+		colors[ImGuiCol_ResizeGripActive] = ImColor(0xffaacc66);
+		colors[ImGuiCol_Tab] = ImColor(0x99ddccaa);
+		colors[ImGuiCol_TabActive] = ImColor(0xcc99cc66);
+		colors[ImGuiCol_TabHovered] = colors[ImGuiCol_ButtonHovered];
+		colors[ImGuiCol_TabUnfocused] = ImColor(0x77ddccaa);
+		colors[ImGuiCol_TabUnfocusedActive] = ImColor(0x99aacc66);
+		colors[ImGuiCol_DockingPreview] = colors[ImGuiCol_Header] * ImVec4(1.0f, 1.0f, 1.0f, 0.7f);
+		colors[ImGuiCol_DockingEmptyBg] = ImColor(0xff333333);
+		colors[ImGuiCol_PlotLines] = ImColor(0xaa000000);
+		colors[ImGuiCol_PlotLinesHovered] = ImColor(0xffccaa66);
+		colors[ImGuiCol_PlotHistogram] = ImColor(0xaaaacc66);
+		colors[ImGuiCol_PlotHistogramHovered] = ImColor(0xffccaa66);
+		colors[ImGuiCol_TextSelectedBg] = ImColor(0x77aacc66);
+#endif
 		break;
 	case 2:
 		ImGui::StyleColorsDark(&_imgui_context->Style);
@@ -3768,15 +3862,17 @@ void reshade::runtime::draw_variable_editor()
 			ImGui::SetScrollHereY(0.0f);
 			_focused_effect = std::numeric_limits<size_t>::max();
 		}
-
+#ifdef AURORA_PRO
 		std::string reset_to_preset_button_label = ICON_FK_UNDO ICON_FK_FILE " ";
 		reset_to_preset_button_label += _("Revert all to preset");
-		std::string reset_all_button_label = ICON_FK_UNDO ICON_FK_FILE_CODE " ";
-		reset_all_button_label += _("Reset all to default");
-
 		const auto edit_button_width = 2.0f * _font_size;
 		const auto reset_button_width = ImGui::GetContentRegionAvail().x - edit_button_width - _imgui_context->Style.ItemInnerSpacing.x;
-
+#else
+		const auto reset_button_width = ImGui::GetContentRegionAvail().x;
+#endif
+		std::string reset_all_button_label = ICON_FK_UNDO ICON_FK_FILE_CODE " ";
+		reset_all_button_label += _("Reset all to default");
+#ifdef AURORA_PRO
 		if (_preset_section_editing == effect_index)
 		{
 			ImGui::Spacing();
@@ -3886,9 +3982,10 @@ void reshade::runtime::draw_variable_editor()
 
 			continue;
 		}
-
+#endif
 		ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(_imgui_context->Style.FramePadding.x, 0));
 		ImGui::BeginGroup();
+#ifdef AURORA_PRO
 		if (!_auto_save_preset)
 		{
 			if (imgui::confirm_button(reset_to_preset_button_label.c_str(), reset_button_width, _("Do you really want to revert all values in '%s' to original preset?"), effect_name.c_str()))
@@ -3905,6 +4002,7 @@ void reshade::runtime::draw_variable_editor()
 				reload_effect(effect_index);
 			}
 		}
+#endif
 		if (imgui::confirm_button(reset_all_button_label.c_str(), reset_button_width, _("Do you really want to reset all values in '%s' to their defaults?"), effect_name.c_str()))
 		{
 			// Reset all uniform variables
@@ -3951,7 +4049,7 @@ void reshade::runtime::draw_variable_editor()
 				_preset_is_modified = true;
 		}
 		ImGui::EndGroup();
-
+#ifdef AURORA_PRO
 		ImGui::SameLine(0.0f, _imgui_context->Style.ItemInnerSpacing.x);
 		std::string edit_effect_label = ICON_FK_PENCIL "###";
 		edit_effect_label += effect_name;
@@ -3964,8 +4062,8 @@ void reshade::runtime::draw_variable_editor()
 				_focused_effect = effect_index;
 			_preset_section_editing = _preset_section_editing == effect_index ? std::numeric_limits<size_t>::max() : effect_index;
 		}
+#endif
 		ImGui::PopStyleVar();
-
 		bool category_closed = false;
 		bool category_visible = true;
 		std::string current_category;
@@ -4895,7 +4993,7 @@ void reshade::runtime::draw_technique_editor()
 
 				if (is_not_top || is_not_bottom || (_input != nullptr && !force_enabled))
 					ImGui::Separator();
-
+#ifdef AURORA_PRO
 				if (_aurora_feature == 4)
 				{
 					bool aurora_buttons = false;
@@ -4988,7 +5086,7 @@ void reshade::runtime::draw_technique_editor()
 					if(aurora_buttons)
 						ImGui::Separator();
 				}
-
+#endif
 				std::string open_button_label = ICON_FK_FOLDER " ";
 				open_button_label += _("Open folder in explorer");
 
