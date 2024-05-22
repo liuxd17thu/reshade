@@ -4500,9 +4500,9 @@ void reshade::runtime::draw_variable_editor()
 			{
 				if (_aurora_feature == 4 && _current_flair != ":" && !effect.flair_touched)
 					effect.flair_touched = true;
-				if (_auto_save_preset)
-					save_current_preset();
-				else
+
+				save_current_preset();
+				if (!_auto_save_preset)
 					_preset_is_modified = true;
 			}
 		}
