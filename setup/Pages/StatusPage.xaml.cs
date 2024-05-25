@@ -30,7 +30,7 @@ namespace ReShade.Setup.Pages
 				StatusSpin.Visibility = Visibility.Collapsed;
 				StatusSuccess.Visibility = status == true ? Visibility.Visible : Visibility.Collapsed;
 				StatusFailure.Visibility = status == true ? Visibility.Collapsed : Visibility.Visible;
-				PatreonButton.Visibility = status == true ? Visibility.Visible : Visibility.Collapsed;
+				PatreonButton.Visibility = Visibility.Collapsed; // status == true ? Visibility.Visible : Visibility.Collapsed;
 			}
 
 			ProgressText.Text = message;

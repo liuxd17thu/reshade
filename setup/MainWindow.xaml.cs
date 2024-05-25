@@ -28,7 +28,7 @@ namespace ReShade.Setup
 {
 	public static class SetupConfig
 	{
-		public static string CN2Version = @"CN2-v1.0.1";
+		public static string CN2Version = @"AUR";
 		public static string CN2PackDir = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), CN2Version);
 		public static string SCFontName = @"sarasa-mono-sc-gb2312.ttf";
 		public static string ShutterSEName = @"350d-shutter.wav";
@@ -43,7 +43,7 @@ namespace ReShade.Setup
 
 			var assembly = Assembly.GetExecutingAssembly();
 			var productVersion = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>().InformationalVersion;
-			Title = "ReShade-CN2 安装程序 v" + productVersion;
+			Title = "AuroraShade安装程序" + assembly.GetCustomAttribute<AssemblyDescriptionAttribute>().Description + " [ReShade: " + productVersion + "]";
 
 			if (productVersion.Contains(" "))
 			{
@@ -180,7 +180,7 @@ namespace ReShade.Setup
 				ResetStatus();
 
 #if RESHADE_ADDON
-				MessageBox.Show(this, "此ReShade构建版本旨在用于单人游戏，在某些多人在线游戏中可能导致账号封禁。\n*此外，ReShade-CN2改动内容虽然不多，但仅针对《最终幻想14》进行了测试，不保证在其他游戏中的可用性。", "Warning", MessageBoxButton.OK, MessageBoxImage.Exclamation);
+				MessageBox.Show(this, "此ReShade修改版本旨在用于单人游戏，在某些多人在线游戏中可能导致账号封禁。\n*此外，AuroraShade仅针对《最终幻想14》进行了测试，不保证在其他游戏中的可用性。", "Warning", MessageBoxButton.OK, MessageBoxImage.Exclamation);
 #endif
 			}
 		}
@@ -268,7 +268,8 @@ namespace ReShade.Setup
 		{
 			if (File.Exists(path))
 			{
-				isReShade = FileVersionInfo.GetVersionInfo(path).ProductName == "ReShade";
+				isReShade = FileVersionInfo.GetVersionInfo(path).ProductName == "ReShade"
+					|| FileVersionInfo.GetVersionInfo(path).ProductName == "AuroraShade";
 				return true;
 			}
 			else
@@ -862,7 +863,7 @@ namespace ReShade.Setup
 			}
 			catch (InvalidDataException)
 			{
-				UpdateStatusAndFinish(false, "此安装包文件已损坏！请前往 https://reshade.me 下载官方版，或重新下载CN2整合版！");
+				UpdateStatusAndFinish(false, "此安装包文件已损坏！请前往 https://reshade.me 下载官方版，或重新下载AuroraShade！");
 				return;
 			}
 
@@ -1062,10 +1063,10 @@ namespace ReShade.Setup
 3) 如果游戏崩溃，尝试关闭所有游戏内覆盖层（如Origin）、录制软件（如Fraps）、帧数显示软件（如MSI Afterburner/微星小飞机）、
    显卡超频软件，或者其他的代理DLL（如ENB、Helix或Umod）。
 
-4) [CN2] 对于FF14，尝试将安装出的dxgi.dll更名为d3d11.dll。
+4) [AUR] 对于FF14，尝试将安装出的dxgi.dll更名为d3d11.dll。
 
 5) 如果以上所有都没有作用，可以前往ReShade官方论坛https://reshade.me/forum获取帮助。但请在发帖前搜索你遇到的问题，可能别人已经解决了。
-   [CN2] 你也可以参考随附的PDF教程，联系汉化整合包作者 路障MKXX 获得帮助。
+   [AUR] 你也可以参考随附的PDF教程，联系汉化整合包作者 路障MKXX 获得帮助。
 ");
 			}
 
@@ -1732,7 +1733,7 @@ namespace ReShade.Setup
 				var prevInstall = new bool[2] { Directory.Exists(targetPathEffects), Directory.Exists(targetPathTextures) };
 				if (prevInstall[0] || prevInstall[1])
 				{
-					var AutoCN2Confirm = MessageBox.Show("似乎检测到了先前的效果器安装。\n选“是”将完全清理它们，并安装CN2整合；\n选“否”则保持原样，你可能需要自行备份。", "提示", MessageBoxButton.YesNo);
+					var AutoCN2Confirm = MessageBox.Show("似乎检测到了先前的效果器安装。\n选“是”将完全清理它们，并安装AuroraShade；\n选“否”则保持原样，你可能需要自行备份。", "提示", MessageBoxButton.YesNo);
 					if (AutoCN2Confirm == MessageBoxResult.Yes)
 					{
 						if (prevInstall[0])
@@ -1762,9 +1763,9 @@ namespace ReShade.Setup
 
 				var tempPathPresets = Path.Combine(SetupConfig.CN2PackDir, @"reshade-presets");
 				var targetPathPresets = Path.Combine(basePath, @"reshade-presets");
-				if (Directory.Exists(targetPathPresets))
+				if (Directory.Exists(targetPathPresets) && installPresets)
 				{
-					var AutoCN2Confirm = MessageBox.Show("似乎检测到了先前的预设安装。\n选“是”将完全清理它们，并安装CN2整合版预设；\n选“否”则保持原样，你可能需要自行备份。", "提示", MessageBoxButton.YesNo);
+					var AutoCN2Confirm = MessageBox.Show("似乎检测到了先前的预设安装。\n选“是”将完全清理它们，并安装AuroraShade预设；\n选“否”则保持原样，你可能需要自行备份。", "提示", MessageBoxButton.YesNo);
 					if (AutoCN2Confirm == MessageBoxResult.Yes)
 					{
 						Directory.Delete(targetPathPresets, true);
@@ -1778,7 +1779,7 @@ namespace ReShade.Setup
 			}
 			catch (Exception ex)
 			{
-				UpdateStatusAndFinish(false, "安装CN2整合失败：\n" + ex.Message);
+				UpdateStatusAndFinish(false, "安装AuroraShade失败：\n" + ex.Message);
 				return;
 			}
 		}

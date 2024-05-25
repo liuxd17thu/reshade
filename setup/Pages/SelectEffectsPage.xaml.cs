@@ -84,13 +84,13 @@ namespace ReShade.Setup.Pages
 			if (Directory.Exists("./" + SetupConfig.CN2Version + "/reshade-shaders"))
 			{
 				AutoCN2.Foreground = (SolidColorBrush)new BrushConverter().ConvertFrom("#ff00aa33");
-				AutoCN2.Content = "CN2效果器：就绪";
+				AutoCN2.Content = "AuroraShade效果器：就绪";
 				AutoCN2.IsChecked = false;
 			}
 			else
 			{
 				AutoCN2.Foreground = (SolidColorBrush)new BrushConverter().ConvertFrom("#ffaa0033");
-				AutoCN2.Content = "未找到CN2效果器";
+				AutoCN2.Content = "未找到AuroraShade效果器";
 				AutoCN2.IsEnabled = false;
 				AutoCN2.IsChecked = false;
 			}

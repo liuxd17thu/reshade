@@ -8,13 +8,13 @@
 
 using System.Reflection;
 
-[assembly: AssemblyTitle("ReShade Setup")]
+[assembly: AssemblyTitle("AuroraShade Setup")]
 [assembly: AssemblyVersion(BUILD_VERSION(VERSION_MAJOR, VERSION_MINOR, VERSION_REVISION))]
 [assembly: AssemblyInformationalVersion(VERSION_STRING_PRODUCT)]
-[assembly: AssemblyDescription("")]
-[assembly: AssemblyCompany("crosire")]
-[assembly: AssemblyProduct("ReShade")]
-[assembly: AssemblyCopyright("Copyright © 2014. All rights reserved.")]
+[assembly: AssemblyDescription(VERSION_STRING_CN2)]
+[assembly: AssemblyCompany("BarricadeMKXX")]
+[assembly: AssemblyProduct("AuroraShade")]
+[assembly: AssemblyCopyright("Copyright © 2023-2024. All rights reserved.")]
 
 #ifdef BUILD_CONFIGURATION
 [assembly: AssemblyConfiguration(EXPAND_AND_STRINGIZE(BUILD_CONFIGURATION))]

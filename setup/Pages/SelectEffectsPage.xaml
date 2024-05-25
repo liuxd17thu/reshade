@@ -16,12 +16,12 @@
     <StackPanel DockPanel.Dock="Top">
       <TextBlock x:Uid="PageDescription" DockPanel.Dock="Top" Margin="10,5" TextWrapping="Wrap">
         选择所有需要安装或更新的效果文件。未勾选的不会被安装或改动。<LineBreak/>
-        如果你想使用CN2整合包的汉化效果器和预设，请在下面按需勾选。<LineBreak/>
-        选择CN2效果器时，会无视以下列表的着色器。
+        如果你想使用AuroraShade的汉化效果器和预设，请在下面按需勾选。<LineBreak/>
+        选择AuroraShade汉化版效果器时，会无视以下来自ReShade官方源的着色器。
       </TextBlock>
       <Grid>
-        <CheckBox x:Name="AutoCN2" Content="CN2效果器：就绪" Width="120" Margin="5" HorizontalAlignment="Left" VerticalContentAlignment="Center" Foreground="#ff00aa33"/>
-        <CheckBox x:Name="AutoPresets" Content="预设包：就绪" Width="120" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="130,0,0,0" Foreground="#ff00aa33"/>
+        <CheckBox x:Name="AutoCN2" Content="AuroraShade效果器：就绪" Width="170" Margin="5" HorizontalAlignment="Left" VerticalContentAlignment="Center" Foreground="#ff00aa33"/>
+        <CheckBox x:Name="AutoPresets" Content="预设包：就绪" Width="120" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="180,0,0,0" Foreground="#ff00aa33"/>
       </Grid>
     </StackPanel>
     <Grid DockPanel.Dock="Bottom" Margin="10,5">

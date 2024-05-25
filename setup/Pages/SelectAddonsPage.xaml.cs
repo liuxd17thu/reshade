@@ -63,14 +63,14 @@ namespace ReShade.Setup.Pages
 			{
 				Items.Add(new Addon
 				{
-					Name = "[CN2 BETA] REST 汉化版",
+					Name = "[AuroraShade] REST - AuroraShade改版",
 					Description = "允许你将ReShade滤镜应用到指定的游戏着色器之前。",
 					DownloadUrl = "@.\\reshade-addons\\REST\\ReshadeEffectShaderToggler.addon64",
 					RepositoryUrl = "https://github.com/liuxd17thu/ReshadeEffectShaderToggler"
 				});
 				Items.Add(new Addon
 				{
-					Name = "[CN2 BETA] REST的《最终幻想14》特供配置文件",
+					Name = "[AuroraShade] REST的《最终幻想14》特供配置文件",
 					Description = "在《最终幻想14》中，可以作为FFKeepUI的上位替代，但不止于此……",
 					DownloadUrl = "@.\\reshade-addons\\REST\\ReshadeEffectShaderToggler.ini",
 					RepositoryUrl = "https://github.com/liuxd17thu/ReshadeEffectShaderToggler"

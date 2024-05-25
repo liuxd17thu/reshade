@@ -21,8 +21,8 @@
       浏览并选择一个游戏，管理它的ReShade安装。
     </TextBlock>
     <StackPanel DockPanel.Dock="Bottom" Orientation="Vertical" VerticalAlignment="Bottom" Margin="10,5">
-      <CheckBox x:Name="InstallSCFontCheckBox" VerticalAlignment="Bottom" Content="[CN2]安装时使用“等宽更纱黑体SC GB2312”作为默认界面字体"/>
-      <CheckBox x:Name="InstallShutterSECheckBox" Content="[CN2]安装时添加预置快门音效"/>
+      <CheckBox x:Name="InstallSCFontCheckBox" VerticalAlignment="Bottom" Content="[AUR]安装时使用“等宽更纱黑体SC GB2312”作为默认界面字体"/>
+      <CheckBox x:Name="InstallShutterSECheckBox" Content="[AUR]安装时添加预置快门音效"/>
     </StackPanel>
     <Grid DockPanel.Dock="Bottom" Margin="10,5">
       <TextBlock x:Uid="BrowseButtonDescription" HorizontalAlignment="Left" VerticalAlignment="Center" Text="没有找到想要的游戏？" />
