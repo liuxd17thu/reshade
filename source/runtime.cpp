@@ -4227,7 +4227,11 @@ void reshade::runtime::update_effects()
 			_show_splash = true;
 	}
 	else if (_frame_count == 0 && !_no_reload_on_init)
+	{
+		bool preset_modified_tmp = _preset_is_modified;
 		reload_effects();
+		_preset_is_modified = preset_modified_tmp;
+	}
 
 	if (_should_reload_effect != std::numeric_limits<size_t>::max() && !is_loading())
 	{
