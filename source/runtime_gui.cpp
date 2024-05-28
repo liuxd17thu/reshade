@@ -4588,6 +4588,7 @@ void reshade::runtime::draw_variable_editor()
 								modified_definition = effect_definitions.end() - 1;
 							}
 						}
+						_preset_is_modified = true;
 					}
 					if (ui_bind_managed)
 						ImGui::EndDisabled();
