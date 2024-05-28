@@ -722,6 +722,9 @@
     <ClInclude Include="source\vulkan\vulkan_impl_type_convert.hpp">
       <Filter>core\api\vulkan</Filter>
     </ClInclude>
+    <ClInclude Include="res\fonts\aurora.h">
+      <Filter>resources\fonts</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="res\resource.rc">
@@ -740,6 +743,9 @@
     </None>
     <None Include="tools\update_version.ps1">
       <Filter>resources</Filter>
+    </None>
+    <None Include="res\fonts\aurora.inl">
+      <Filter>resources\fonts</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>

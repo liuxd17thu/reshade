@@ -204,6 +204,8 @@ BEGIN
 24770 "Duplicate name"
 10061 "Move to top"
 9764 "Move to bottom"
+51885 "Import"
+50592 "Export"
 9294 "Remove variation"
 53670 "Save"
 62309 "Select"

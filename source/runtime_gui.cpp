@@ -18,6 +18,7 @@
 #include "localization.hpp"
 #include "platform_utils.hpp"
 #include "fonts/forkawesome.inl"
+#include "fonts/aurora.inl"
 #include "fonts/glyph_ranges.hpp"
 #include <fstream>
 #include <algorithm>
@@ -238,6 +239,10 @@ void reshade::runtime::build_font_atlas()
 		static constexpr ImWchar icon_ranges[] = { ICON_MIN_FK, ICON_MAX_FK, 0 }; // Zero-terminated list
 
 		atlas->AddFontFromMemoryCompressedBase85TTF(FONT_ICON_BUFFER_NAME_FK, cfg.SizePixels, &cfg, icon_ranges);
+
+		// cfg.GlyphOffset = { 0.0f , 2.0f * _font_size / 13.0f };
+		static constexpr ImWchar aurora_ranges[] = { ICON_MIN_AU, ICON_MAX_AU, 0 };
+		atlas->AddFontFromMemoryCompressedBase85TTF(FONT_ICON_BUFFER_NAME_AU, cfg.SizePixels, &cfg, aurora_ranges);
 	}
 
 	// Add editor font
@@ -1954,9 +1959,10 @@ void reshade::runtime::draw_gui_home()
 		ImGui::PushStyleColor(ImGuiCol_ButtonActive, _imgui_context->Style.Colors[ImGuiCol_FrameBgActive]);
 		ImGui::PushStyleColor(ImGuiCol_Border, _imgui_context->Style.Colors[ImGuiCol_CheckMark]);
 		ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
-		if (ImGui::Button(ICON_FK_AURORA, ImVec2(button_height, button_height2)))
+		ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, _imgui_context->Style.FramePadding.y));
+		if (ImGui::Button(ICON_AU_AURORA, ImVec2(button_height, button_height2)))
 			ImGui::OpenPopup("##Feature Level");
-		ImGui::PopStyleVar(1);
+		ImGui::PopStyleVar(2);
 		ImGui::PopStyleColor(5);
 		if (ImGui::BeginPopup("##Feature Level"))
 		{
@@ -5011,7 +5017,8 @@ void reshade::runtime::draw_technique_editor()
 						auto select_flair_pos = ImGui::GetCursorScreenPos();
 						bool flair_selected = false;
 
-						if (ImGui::ArrowButtonEx("<##ImportFrom", ImGuiDir_Left, ImVec2(4.5f * _font_size, ImGui::GetFrameHeight())))
+						const std::string import_str = std::string(ICON_FK_IMPORT" ") + _("Import");
+						if (ImGui::Button(import_str.c_str(), ImVec2(4.5f * _font_size, ImGui::GetFrameHeight())))
 							ImGui::OpenPopup("##SelectFrom");
 						ImGui::SetNextWindowSize(ImVec2(9.0f * _font_size + _imgui_context->Style.ItemInnerSpacing.x + 2.0f, 0));
 						ImGui::SetNextWindowPos(select_flair_pos + ImVec2(-0.5f * _imgui_context->Style.ItemInnerSpacing.x, ImGui::GetFrameHeightWithSpacing()));
@@ -5029,7 +5036,8 @@ void reshade::runtime::draw_technique_editor()
 						ImGui::SameLine(0, 2.0f);
 						select_flair_pos = ImGui::GetCursorScreenPos();
 
-						if (ImGui::ArrowButtonEx(">##ExportTo", ImGuiDir_Right, ImVec2(4.5f * _font_size, ImGui::GetFrameHeight())))
+						const std::string export_str = std::string(ICON_FK_EXPORT" ") + _("Export");
+						if (ImGui::Button(export_str.c_str(), ImVec2(4.5f * _font_size, ImGui::GetFrameHeight())))
 							ImGui::OpenPopup("##SelectTo");
 						ImGui::SetNextWindowSize(ImVec2(9.0f * _font_size + _imgui_context->Style.ItemInnerSpacing.x + 2.0f, 0));
 						ImGui::SetNextWindowPos(select_flair_pos + ImVec2(-0.5f * _imgui_context->Style.ItemInnerSpacing.x, ImGui::GetFrameHeightWithSpacing()));

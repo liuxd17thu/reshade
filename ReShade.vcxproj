@@ -651,6 +651,7 @@
     <ClInclude Include="include\reshade_api_resource.hpp" />
     <ClInclude Include="include\reshade_events.hpp" />
     <ClInclude Include="include\reshade_overlay.hpp" />
+    <ClInclude Include="res\fonts\aurora.h" />
     <ClInclude Include="res\fonts\forkawesome.h" />
     <ClInclude Include="res\fonts\glyph_ranges.hpp" />
     <ClInclude Include="res\resource.h" />
@@ -748,6 +749,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="res\exports.def" />
+    <None Include="res\fonts\aurora.inl" />
     <None Include="res\fonts\forkawesome.inl" />
     <None Include="res\version.rc2" />
     <None Include="tools\update_version.ps1" />
