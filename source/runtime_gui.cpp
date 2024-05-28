@@ -2004,6 +2004,7 @@ void reshade::runtime::draw_gui_home()
 			if (ini_file::load_cache(_file_selection_path).has({}, "Techniques"))
 			{
 				reload_preset = true;
+				ini_file::clear_cache(_current_preset_path);
 				_current_preset_path = _file_selection_path;
 			}
 			else
