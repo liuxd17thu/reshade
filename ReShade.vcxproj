@@ -150,7 +150,7 @@
       <SDLCheck>true</SDLCheck>
       <Optimization>Disabled</Optimization>
       <AdditionalIncludeDirectories>res;source;include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>RESHADE_FX;RESHADE_GUI;RESHADE_API_LIBRARY_EXPORT;RESHADE_ADDON=2;RESHADE_VERBOSE_LOG;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>RESHADE_LOCALIZATION;RESHADE_FX;RESHADE_GUI;RESHADE_API_LIBRARY_EXPORT;RESHADE_ADDON=2;RESHADE_VERBOSE_LOG;_SILENCE_ALL_CXX17_DEPRECATION_WARNINGS;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <DisableSpecificWarnings>4351;26812;28251;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <ObjectFileName>$(IntDir)%(RelativeDir)</ObjectFileName>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
@@ -170,7 +170,7 @@
       <ObjectFileOutput>res\shaders\%(Filename).cso</ObjectFileOutput>
     </FxCompile>
     <ResourceCompile>
-      <PreprocessorDefinitions>_DEBUG;_WIN64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>RESHADE_LOCALIZATION;_DEBUG;_WIN64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
     <PreBuildEvent>
       <Command>powershell -ExecutionPolicy Bypass -File tools\update_version.ps1 res\version.h -config "$(Configuration)" -platform "$(Platform)"</Command>
