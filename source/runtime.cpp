@@ -970,10 +970,12 @@ void reshade::runtime::on_present(api::command_queue *present_queue)
 
 	// Save modified INI files
 #if RESHADE_GUI
-	if(_auto_save_preset)
+	if (_auto_save_preset)
 #endif
 		if (!ini_file::flush_cache())
 			_preset_save_successful = false;
+		else
+			_preset_is_modified = false;
 
 #if RESHADE_ADDON == 1
 	// Detect high network traffic
