@@ -16,8 +16,9 @@ namespace reshade::opengl
 		void apply(api::pipeline_stage stages) const;
 
 		GLuint program;
-		GLuint vao;
+
 		std::vector<api::input_element> input_elements;
+		api::primitive_topology topology;
 
 		// Blend state
 
@@ -33,6 +34,7 @@ namespace reshade::opengl
 		GLenum logic_op;
 		GLfloat blend_constant[4];
 		GLboolean color_write_mask[8][4];
+		GLbitfield sample_mask;
 
 		// Rasterizer state
 
@@ -64,10 +66,6 @@ namespace reshade::opengl
 		GLenum back_stencil_op_fail;
 		GLenum back_stencil_op_depth_fail;
 		GLenum back_stencil_op_pass;
-
-		GLbitfield sample_mask;
-		GLenum prim_mode;
-		GLuint patch_vertices;
 	};
 
 	struct descriptor_table_impl
@@ -114,19 +112,17 @@ namespace reshade::opengl
 	auto convert_upload_format(api::format format, GLenum &type) -> GLenum;
 	auto convert_upload_format(GLenum format, GLenum type) -> api::format;
 	auto convert_attrib_format(api::format format, GLint &size, GLboolean &normalized) -> GLenum;
+	auto convert_attrib_format(GLint size, GLenum type, GLboolean normalized) -> api::format;
 	auto convert_sized_internal_format(GLenum internal_format) -> GLenum;
 
 	auto is_depth_stencil_format(api::format format) -> GLenum;
 
-	void convert_memory_usage_to_flags(GLenum usage, GLbitfield &flags);
-	void convert_memory_flags_to_usage(GLbitfield flags, GLenum &usage);
-
 	auto convert_access_flags(api::map_access flags) -> GLbitfield;
 	api::map_access convert_access_flags(GLbitfield flags);
 
-	void convert_resource_desc(const api::resource_desc &desc, GLsizeiptr &buffer_size, GLenum &usage);
+	void convert_resource_desc(const api::resource_desc &desc, GLsizeiptr &buffer_size, GLbitfield &storage_flags);
 	api::resource_type convert_resource_type(GLenum target);
-	api::resource_desc convert_resource_desc(GLenum target, GLsizeiptr buffer_size, GLenum usage);
+	api::resource_desc convert_resource_desc(GLenum target, GLsizeiptr buffer_size, GLbitfield storage_flags);
 	api::resource_desc convert_resource_desc(GLenum target, GLsizei levels, GLsizei samples, GLenum internal_format, GLsizei width, GLsizei height = 1, GLsizei depth = 1, const GLint swizzle_mask[4] = nullptr);
 
 	api::resource_view_type convert_resource_view_type(GLenum target);

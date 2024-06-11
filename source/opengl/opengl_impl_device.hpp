@@ -7,6 +7,7 @@
 
 #include <GL/gl3w.h>
 #include "reshade_api_object_impl.hpp"
+#include <atomic>
 #include <unordered_map>
 
 namespace reshade::opengl
@@ -36,8 +37,8 @@ namespace reshade::opengl
 
 		api::resource_desc get_resource_desc(api::resource resource) const override;
 
-		bool create_resource_view(api::resource resource, api::resource_usage usage_type, const api::resource_view_desc &desc, api::resource_view *out_handle) override;
-		void destroy_resource_view(api::resource_view handle) override;
+		bool create_resource_view(api::resource resource, api::resource_usage usage_type, const api::resource_view_desc &desc, api::resource_view *out_handle) final;
+		void destroy_resource_view(api::resource_view handle) final;
 
 		api::format get_resource_format(GLenum target, GLenum object) const;
 
@@ -102,6 +103,9 @@ namespace reshade::opengl
 		std::vector<GLuint> _reserved_buffer_names;
 		std::vector<GLuint> _reserved_texture_names;
 
+		GLuint _mipmap_program = 0;
+		GLuint _mipmap_sampler = 0;
+
 		struct map_info
 		{
 			api::subresource_data data;
@@ -110,5 +114,8 @@ namespace reshade::opengl
 		};
 
 		std::unordered_map<size_t, map_info> _map_lookup;
+
+		std::atomic<uint64_t> _fbo_lookup_version = 0;
+		std::atomic<uint64_t> _vao_lookup_version = 0;
 	};
 }

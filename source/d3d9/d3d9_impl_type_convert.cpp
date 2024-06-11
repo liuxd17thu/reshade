@@ -13,9 +13,9 @@ auto reshade::d3d9::convert_format(api::format format, BOOL lockable) -> D3DFORM
 	{
 	default:
 		assert(false);
-		[[fallthrough]];
-	case api::format::unknown:
 		break;
+	case api::format::unknown:
+		return static_cast<D3DFORMAT>(MAKEFOURCC('N', 'U', 'L', 'L'));
 	case api::format::r1_unorm:
 		return D3DFMT_A1; // Not a perfect fit for R1, but what can you do ...
 	case api::format::l8_unorm:
@@ -179,7 +179,10 @@ auto reshade::d3d9::convert_format(D3DFORMAT d3d_format, BOOL *lockable) -> api:
 	switch (static_cast<DWORD>(d3d_format))
 	{
 	default:
+		assert(false);
+		[[fallthrough]];
 	case D3DFMT_UNKNOWN:
+	case MAKEFOURCC('N', 'U', 'L', 'L'):
 		return api::format::unknown;
 	case D3DFMT_A1:
 		return api::format::r1_unorm;
@@ -359,6 +362,47 @@ void reshade::d3d9::convert_d3d_usage_to_resource_usage(DWORD d3d_usage, api::re
 		usage |= api::resource_usage::depth_stencil;
 }
 
+void reshade::d3d9::convert_sampler_desc(const api::sampler_desc &desc, DWORD state[11])
+{
+	state[D3DSAMP_ADDRESSU] = static_cast<DWORD>(desc.address_u);
+	state[D3DSAMP_ADDRESSV] = static_cast<DWORD>(desc.address_v);
+	state[D3DSAMP_ADDRESSW] = static_cast<DWORD>(desc.address_w);
+	state[D3DSAMP_BORDERCOLOR] = D3DCOLOR_COLORVALUE(desc.border_color[0], desc.border_color[1], desc.border_color[2], desc.border_color[3]);
+	state[D3DSAMP_MAGFILTER] = ((static_cast<DWORD>(desc.filter) & 0x0C) >> 2) + 1;
+	state[D3DSAMP_MINFILTER] = ((static_cast<DWORD>(desc.filter) & 0x30) >> 4) + 1;
+	state[D3DSAMP_MIPFILTER] = ((static_cast<DWORD>(desc.filter) & 0x03)) + 1;
+	state[D3DSAMP_MIPMAPLODBIAS] = *reinterpret_cast<const DWORD *>(&desc.mip_lod_bias);
+	state[D3DSAMP_MAXMIPLEVEL] = desc.min_lod > 0 ? static_cast<DWORD>(desc.min_lod) : 0;
+	state[D3DSAMP_MAXANISOTROPY] = static_cast<DWORD>(desc.max_anisotropy);
+
+	if (desc.filter == api::filter_mode::anisotropic || desc.filter == api::filter_mode::min_mag_anisotropic_mip_point)
+	{
+		state[D3DSAMP_MAGFILTER] = D3DTEXF_ANISOTROPIC;
+		state[D3DSAMP_MINFILTER] = D3DTEXF_ANISOTROPIC;
+	}
+}
+reshade::api::sampler_desc reshade::d3d9::convert_sampler_desc(const DWORD state[11])
+{
+	reshade::api::sampler_desc desc = {};
+	desc.filter = static_cast<api::filter_mode>(
+		(state[D3DSAMP_MIPFILTER] >= D3DTEXF_LINEAR ? 0x01 : 0) |
+		(state[D3DSAMP_MAGFILTER] >= D3DTEXF_LINEAR ? 0x04 : 0) |
+		(state[D3DSAMP_MINFILTER] >= D3DTEXF_LINEAR ? 0x10 : 0) |
+		(state[D3DSAMP_MAGFILTER] == D3DTEXF_ANISOTROPIC || state[D3DSAMP_MINFILTER] == D3DTEXF_ANISOTROPIC ? 0x54 : 0));
+	desc.address_u = static_cast<api::texture_address_mode>(state[D3DSAMP_ADDRESSU]);
+	desc.address_v = static_cast<api::texture_address_mode>(state[D3DSAMP_ADDRESSV]);
+	desc.address_w = static_cast<api::texture_address_mode>(state[D3DSAMP_ADDRESSW]);
+	desc.mip_lod_bias = *reinterpret_cast<const FLOAT *>(&state[D3DSAMP_MIPMAPLODBIAS]);
+	desc.max_anisotropy = static_cast<float>(state[D3DSAMP_MAXANISOTROPY]);
+	desc.border_color[0] = ((state[D3DSAMP_BORDERCOLOR] >> 16) & 0xFF) / 255.0f;
+	desc.border_color[1] = ((state[D3DSAMP_BORDERCOLOR] >> 8) & 0xFF) / 255.0f;
+	desc.border_color[2] = ((state[D3DSAMP_BORDERCOLOR]) & 0xFF) / 255.0f;
+	desc.border_color[3] = ((state[D3DSAMP_BORDERCOLOR] >> 24) & 0xFF) / 255.0f;
+	desc.min_lod = static_cast<float>(state[D3DSAMP_MAXMIPLEVEL]);
+
+	return desc;
+}
+
 void reshade::d3d9::convert_resource_desc(const api::resource_desc &desc, D3DVOLUME_DESC &internal_desc, UINT *levels, const D3DCAPS9 &caps)
 {
 	assert(desc.type == api::resource_type::texture_3d);
@@ -406,8 +450,6 @@ void reshade::d3d9::convert_resource_desc(const api::resource_desc &desc, D3DSUR
 	if (const D3DFORMAT format = convert_format(desc.texture.format, (desc.flags & api::resource_flags::dynamic) != 0);
 		format != D3DFMT_UNKNOWN)
 		internal_desc.Format = format;
-	else if (desc.type == api::resource_type::surface && desc.texture.format == api::format::unknown)
-		internal_desc.Format = static_cast<D3DFORMAT>(MAKEFOURCC('N', 'U', 'L', 'L'));
 
 	if (desc.texture.samples > 1)
 	{
@@ -483,6 +525,9 @@ void reshade::d3d9::convert_resource_desc(const api::resource_desc &desc, D3DIND
 {
 	assert(desc.type == api::resource_type::buffer);
 
+	assert(desc.buffer.stride == 0 || desc.buffer.stride == 2 || desc.buffer.stride == 4);
+	internal_desc.Format = desc.buffer.stride >= 4 ? D3DFMT_INDEX32 : D3DFMT_INDEX16;
+
 	assert(desc.buffer.size <= std::numeric_limits<UINT>::max());
 	internal_desc.Size = static_cast<UINT>(desc.buffer.size);
 
@@ -504,7 +549,7 @@ void reshade::d3d9::convert_resource_desc(const api::resource_desc &desc, D3DIND
 				internal_desc.Usage |= D3DUSAGE_WRITEONLY | D3DUSAGE_DYNAMIC;
 		}
 
-		if ((desc.flags & api::resource_flags::dynamic) != 0)
+		if ((desc.flags & api::resource_flags::dynamic) != 0 && desc.heap != api::memory_heap::unknown)
 		{
 			internal_desc.Usage |= D3DUSAGE_DYNAMIC;
 
@@ -539,7 +584,7 @@ void reshade::d3d9::convert_resource_desc(const api::resource_desc &desc, D3DVER
 				internal_desc.Usage |= D3DUSAGE_WRITEONLY | D3DUSAGE_DYNAMIC;
 		}
 
-		if ((desc.flags & api::resource_flags::dynamic) != 0)
+		if ((desc.flags & api::resource_flags::dynamic) != 0 && desc.heap != api::memory_heap::unknown)
 		{
 			internal_desc.Usage |= D3DUSAGE_DYNAMIC;
 
@@ -698,7 +743,8 @@ reshade::api::resource_desc reshade::d3d9::convert_resource_desc(const D3DINDEXB
 	api::resource_desc desc = {};
 	desc.type = api::resource_type::buffer;
 	desc.buffer.size = internal_desc.Size;
-	desc.buffer.stride = 0;
+	assert(internal_desc.Format == D3DFMT_INDEX16 || internal_desc.Format == D3DFMT_INDEX32);
+	desc.buffer.stride = (internal_desc.Format == D3DFMT_INDEX32) ? 4 : 2;
 	if (internal_desc.Pool == D3DPOOL_DEFAULT && (internal_desc.Usage & D3DUSAGE_WRITEONLY) == 0)
 		desc.heap = api::memory_heap::gpu_to_cpu;
 	else
@@ -818,7 +864,15 @@ void reshade::d3d9::convert_input_layout_desc(uint32_t count, const api::input_e
 			break;
 		}
 
-		if (std::strcmp(element.semantic, "POSITION") == 0)
+		if (element.semantic == nullptr)
+		{
+			internal_element.Usage = D3DDECLUSAGE_TEXCOORD;
+			assert(element.location <= 256);
+			internal_element.UsageIndex = static_cast<BYTE>(element.location);
+			continue;
+		}
+
+		else if (std::strcmp(element.semantic, "POSITION") == 0)
 			internal_element.Usage = D3DDECLUSAGE_POSITION;
 		else if (std::strcmp(element.semantic, "BLENDWEIGHT") == 0)
 			internal_element.Usage = D3DDECLUSAGE_BLENDWEIGHT;
@@ -1095,7 +1149,7 @@ auto reshade::d3d9::convert_cull_mode(D3DCULL value, bool front_counter_clockwis
 {
 	if (value == D3DCULL_NONE)
 		return api::cull_mode::none;
-	return (value == D3DCULL_CCW && front_counter_clockwise) ? api::cull_mode::front : api::cull_mode::back;
+	return (value == D3DCULL_CCW) == front_counter_clockwise ? api::cull_mode::front : api::cull_mode::back;
 }
 auto reshade::d3d9::convert_cull_mode(api::cull_mode value, bool front_counter_clockwise) -> D3DCULL
 {

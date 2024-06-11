@@ -351,6 +351,8 @@ void reshade::d3d9::device_impl::bind_descriptor_tables(api::shader_stage stages
 
 void reshade::d3d9::device_impl::bind_index_buffer(api::resource buffer, [[maybe_unused]] uint64_t offset, [[maybe_unused]] uint32_t index_size)
 {
+	assert(buffer != global_vertex_buffer && buffer != global_index_buffer);
+
 #ifndef NDEBUG
 	assert(offset == 0);
 
@@ -360,7 +362,7 @@ void reshade::d3d9::device_impl::bind_index_buffer(api::resource buffer, [[maybe
 
 		D3DINDEXBUFFER_DESC desc;
 		reinterpret_cast<IDirect3DIndexBuffer9 *>(buffer.handle)->GetDesc(&desc);
-		assert(desc.Format == (index_size == 2 ? D3DFMT_INDEX16 : D3DFMT_INDEX32));
+		assert(desc.Format == (index_size >= 4 ? D3DFMT_INDEX32 : D3DFMT_INDEX16));
 	}
 #endif
 
@@ -370,6 +372,7 @@ void reshade::d3d9::device_impl::bind_vertex_buffers(uint32_t first, uint32_t co
 {
 	for (uint32_t i = 0; i < count; ++i)
 	{
+		assert(buffers[i] != global_vertex_buffer && buffers[i] != global_index_buffer);
 		assert(offsets == nullptr || offsets[i] <= std::numeric_limits<UINT>::max());
 
 		_orig->SetStreamSource(first + i, reinterpret_cast<IDirect3DVertexBuffer9 *>(buffers[i].handle), offsets != nullptr ? static_cast<UINT>(offsets[i]) : 0, strides[i]);
@@ -378,6 +381,7 @@ void reshade::d3d9::device_impl::bind_vertex_buffers(uint32_t first, uint32_t co
 void reshade::d3d9::device_impl::bind_stream_output_buffers(uint32_t first, uint32_t count, const api::resource *buffers, const uint64_t *offsets, const uint64_t *, const api::resource *, const uint64_t *)
 {
 	assert(first == 0 && count == 1);
+	assert(buffers[0] != global_vertex_buffer && buffers[0] != global_index_buffer);
 	assert(offsets == nullptr || offsets[0] <= std::numeric_limits<UINT>::max());
 
 	_current_stream_output = reinterpret_cast<IDirect3DVertexBuffer9 *>(buffers[0].handle);
@@ -867,16 +871,18 @@ void reshade::d3d9::device_impl::clear_depth_stencil_view(api::resource_view dsv
 {
 	assert(dsv.handle != 0 && rect_count == 0); // Clearing rectangles is not supported
 
-	_backup_state.capture();
-
-	_orig->SetDepthStencilSurface(reinterpret_cast<IDirect3DSurface9 *>(dsv.handle));
+	com_ptr<IDirect3DSurface9> prev_surface;
+	_orig->GetDepthStencilSurface(&prev_surface);
+	if (prev_surface != reinterpret_cast<IDirect3DSurface9 *>(dsv.handle))
+		_orig->SetDepthStencilSurface(reinterpret_cast<IDirect3DSurface9 *>(dsv.handle));
 
 	_orig->Clear(
 		0, nullptr,
 		(depth != nullptr ? D3DCLEAR_ZBUFFER : 0) | (stencil != nullptr ? D3DCLEAR_STENCIL : 0),
 		0, depth != nullptr ? *depth : 0.0f, stencil != nullptr ? *stencil : 0);
 
-	_backup_state.apply_and_release();
+	if (prev_surface != reinterpret_cast<IDirect3DSurface9 *>(dsv.handle))
+		_orig->SetDepthStencilSurface(prev_surface.get());
 }
 void reshade::d3d9::device_impl::clear_render_target_view(api::resource_view rtv, const float color[4], uint32_t rect_count, const api::rect *rects)
 {

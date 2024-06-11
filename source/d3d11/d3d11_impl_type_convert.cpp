@@ -201,11 +201,6 @@ static void convert_resource_flags_to_misc_flags(reshade::api::resource_flags fl
 	else
 		misc_flags &= ~D3D11_RESOURCE_MISC_GENERATE_MIPS;
 
-	if ((flags & api::resource_flags::structured) != 0)
-		misc_flags |= D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
-	else
-		misc_flags &= ~D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
-
 	if ((flags & api::resource_flags::sparse_binding) != 0)
 		misc_flags |= D3D11_RESOURCE_MISC_TILED;
 	else
@@ -223,8 +218,6 @@ static void convert_misc_flags_to_resource_flags(UINT misc_flags, reshade::api::
 		flags |= api::resource_flags::cube_compatible;
 	if ((misc_flags & D3D11_RESOURCE_MISC_GENERATE_MIPS) != 0)
 		flags |= api::resource_flags::generate_mipmaps;
-	if ((misc_flags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED) != 0)
-		flags |= api::resource_flags::structured;
 	if ((misc_flags & D3D11_RESOURCE_MISC_TILED) != 0)
 		flags |= api::resource_flags::sparse_binding;
 }
@@ -298,11 +291,15 @@ void reshade::d3d11::convert_resource_desc(const api::resource_desc &desc, D3D11
 	convert_memory_heap_to_d3d_usage(desc.heap, internal_desc.Usage, internal_desc.CPUAccessFlags);
 	convert_resource_usage_to_bind_flags(desc.usage, internal_desc.BindFlags);
 	convert_resource_flags_to_misc_flags(desc.flags, internal_desc.MiscFlags);
-	assert(desc.buffer.stride == 0 || (desc.flags & api::resource_flags::structured) != 0);
 	internal_desc.StructureByteStride = desc.buffer.stride;
 
 	if ((desc.usage & api::resource_usage::indirect_argument) != 0)
 		internal_desc.MiscFlags |= D3D11_RESOURCE_MISC_DRAWINDIRECT_ARGS;
+
+	if (desc.buffer.stride != 0 && (desc.usage & (api::resource_usage::vertex_buffer | api::resource_usage::index_buffer | api::resource_usage::constant_buffer | api::resource_usage::stream_output)) == 0)
+		internal_desc.MiscFlags |= D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+	else if ((desc.usage & (api::resource_usage::shader_resource | api::resource_usage::unordered_access)) != 0)
+		internal_desc.MiscFlags |= D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
 }
 void reshade::d3d11::convert_resource_desc(const api::resource_desc &desc, D3D11_TEXTURE1D_DESC &internal_desc)
 {
@@ -368,15 +365,22 @@ reshade::api::resource_desc reshade::d3d11::convert_resource_desc(const D3D11_BU
 	api::resource_desc desc = {};
 	desc.type = api::resource_type::buffer;
 	desc.buffer.size = internal_desc.ByteWidth;
-	desc.buffer.stride = internal_desc.StructureByteStride;
+	desc.buffer.stride = 0; // Clear value that was set by default constructor of 'resource_desc'
 	convert_d3d_usage_to_memory_heap(internal_desc.Usage, internal_desc.CPUAccessFlags, desc.heap);
 	convert_bind_flags_to_resource_usage(internal_desc.BindFlags, desc.usage);
 	convert_misc_flags_to_resource_flags(internal_desc.MiscFlags, desc.flags);
 
 	if (internal_desc.Usage == D3D11_USAGE_DYNAMIC)
 		desc.flags |= api::resource_flags::dynamic;
+
 	if ((internal_desc.MiscFlags & D3D11_RESOURCE_MISC_DRAWINDIRECT_ARGS) != 0)
 		desc.usage |= api::resource_usage::indirect_argument;
+
+	if ((internal_desc.MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED) != 0)
+	{
+		assert(internal_desc.StructureByteStride != 0);
+		desc.buffer.stride = internal_desc.StructureByteStride;
+	}
 
 	return desc;
 }
@@ -459,7 +463,7 @@ void reshade::d3d11::convert_resource_view_desc(const api::resource_view_desc &d
 {
 	// Missing fields: D3D11_DEPTH_STENCIL_VIEW_DESC::Flags
 	internal_desc.Format = convert_format(desc.format);
-	assert(desc.type != api::resource_view_type::buffer && desc.texture.level_count == 1);
+	assert(desc.type != api::resource_view_type::buffer);
 	switch (desc.type) // Do not modifiy description in case type is 'resource_view_type::unknown'
 	{
 	case api::resource_view_type::texture_1d:
@@ -495,9 +499,15 @@ void reshade::d3d11::convert_resource_view_desc(const api::resource_view_desc &d
 void reshade::d3d11::convert_resource_view_desc(const api::resource_view_desc &desc, D3D11_RENDER_TARGET_VIEW_DESC &internal_desc)
 {
 	internal_desc.Format = convert_format(desc.format);
-	assert(desc.type != api::resource_view_type::buffer && desc.texture.level_count == 1);
 	switch (desc.type) // Do not modifiy description in case type is 'resource_view_type::unknown'
 	{
+	case api::resource_view_type::buffer:
+		internal_desc.ViewDimension = D3D11_RTV_DIMENSION_BUFFER;
+		assert(desc.buffer.offset <= std::numeric_limits<UINT>::max());
+		internal_desc.Buffer.FirstElement = static_cast<UINT>(desc.buffer.offset);
+		assert(desc.buffer.size <= std::numeric_limits<UINT>::max());
+		internal_desc.Buffer.NumElements = static_cast<UINT>(desc.buffer.size);
+		break;
 	case api::resource_view_type::texture_1d:
 		internal_desc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE1D;
 		internal_desc.Texture1D.MipSlice = desc.texture.first_level;
@@ -539,7 +549,6 @@ void reshade::d3d11::convert_resource_view_desc(const api::resource_view_desc &d
 	if (desc.type == api::resource_view_type::texture_2d || desc.type == api::resource_view_type::texture_2d_array)
 	{
 		internal_desc.Format = convert_format(desc.format);
-		assert(desc.type != api::resource_view_type::buffer && desc.texture.level_count == 1);
 		switch (desc.type)
 		{
 		case api::resource_view_type::texture_2d:
@@ -769,6 +778,11 @@ reshade::api::resource_view_desc reshade::d3d11::convert_resource_view_desc(cons
 	desc.texture.level_count = 1;
 	switch (internal_desc.ViewDimension)
 	{
+	case D3D11_RTV_DIMENSION_BUFFER:
+		desc.type = api::resource_view_type::buffer;
+		desc.buffer.offset = internal_desc.Buffer.FirstElement;
+		desc.buffer.size = internal_desc.Buffer.NumElements;
+		break;
 	case D3D11_RTV_DIMENSION_TEXTURE1D:
 		desc.type = api::resource_view_type::texture_1d;
 		desc.texture.first_level = internal_desc.Texture1D.MipSlice;
@@ -1025,6 +1039,12 @@ void reshade::d3d11::convert_input_layout_desc(uint32_t count, const api::input_
 		internal_element.AlignedByteOffset = element.offset;
 		internal_element.InputSlotClass = element.instance_step_rate > 0 ? D3D11_INPUT_PER_INSTANCE_DATA : D3D11_INPUT_PER_VERTEX_DATA;
 		internal_element.InstanceDataStepRate = element.instance_step_rate;
+
+		if (element.semantic == nullptr)
+		{
+			internal_element.SemanticName = "TEXCOORD";
+			internal_element.SemanticIndex = element.location;
+		}
 	}
 }
 std::vector<reshade::api::input_element> reshade::d3d11::convert_input_layout_desc(UINT count, const D3D11_INPUT_ELEMENT_DESC *internal_elements)

@@ -40,7 +40,6 @@ namespace reshade::opengl
 
 		void update_default_framebuffer(unsigned int width, unsigned int height);
 		void update_current_window_height(api::resource_view default_attachment);
-		void invalidate_framebuffer_cache();
 
 		void bind_pipeline(api::pipeline_stage stages, api::pipeline pipeline) final;
 		void bind_pipeline_states(uint32_t count, const api::dynamic_state *states, const uint32_t *values) final;
@@ -92,7 +91,10 @@ namespace reshade::opengl
 
 		uint64_t get_timestamp_frequency() const final { return 1000000000; /* Assume nanoseconds */ }
 
-		GLuint _current_ibo = 0;
+		bool _current_vao_dirty = true;
+		bool _current_ibo_dirty = true;
+		bool _current_vbo_dirty = true;
+
 		GLenum _current_prim_mode = GL_NONE;
 		GLenum _current_index_type = GL_UNSIGNED_INT;
 		GLuint _current_vertex_count = 0; // Used to calculate vertex count inside 'glBegin'/'glEnd' pairs
@@ -105,14 +107,13 @@ namespace reshade::opengl
 	private:
 		device_impl *const _device_impl;
 
-		// Programs and framebuffer objects cannot be shared between render contexts, so have to create them for each one
-		GLuint _mipmap_program = 0;
-		GLuint _mipmap_sampler = 0;
-
 		GLuint _push_constants = 0;
 		GLuint _push_constants_size = 0;
 
-		bool _fbo_lookup_valid = true;
+		// Framebuffer and vertex array objects cannot be shared between render contexts, so have to create them for each one
+		uint64_t _last_fbo_lookup_version = 0;
 		std::unordered_map<size_t, GLuint> _fbo_lookup;
+		uint64_t _last_vao_lookup_version = 0;
+		std::unordered_map<size_t, GLuint> _vao_lookup;
 	};
 }

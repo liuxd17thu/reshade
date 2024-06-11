@@ -29,6 +29,10 @@ void reshade::opengl::pipeline_impl::apply(api::pipeline_stage stages) const
 
 	if ((stages & api::pipeline_stage::output_merger) != 0)
 	{
+		// Set clip space to something consistent
+		if (gl.ClipControl != nullptr)
+			gl.ClipControl(GL_LOWER_LEFT, GL_NEGATIVE_ONE_TO_ONE);
+
 		glEnableOrDisable(GL_SAMPLE_ALPHA_TO_COVERAGE, sample_alpha_to_coverage);
 
 		for (GLuint i = 0; i < 8; ++i)
@@ -62,40 +66,14 @@ void reshade::opengl::pipeline_impl::apply(api::pipeline_stage stages) const
 		{
 			gl.ColorMaski(i, color_write_mask[i][0], color_write_mask[i][1], color_write_mask[i][2], color_write_mask[i][3]);
 		}
-	}
 
-	if ((stages & api::pipeline_stage::input_assembler) != 0)
-	{
-		gl.BindVertexArray(vao);
-
-		// Rebuild vertex array object every time
-		// This fixes weird artifacts in melonDS and the first Call of Duty
-		for (const api::input_element &element : input_elements)
-		{
-			gl.EnableVertexAttribArray(element.location);
-
-			GLint attrib_size = 0;
-			GLboolean normalized = GL_FALSE;
-			const GLenum attrib_format = convert_attrib_format(element.format, attrib_size, normalized);
-#if 1
-			gl.VertexAttribFormat(element.location, attrib_size, attrib_format, normalized, element.offset);
-			gl.VertexAttribBinding(element.location, element.buffer_binding);
-#else
-			gl.VertexAttribPointer(element.location, attrib_size, attrib_format, normalized, element.stride, reinterpret_cast<const void *>(static_cast<uintptr_t>(element.offset)));
-#endif
-			gl.VertexBindingDivisor(element.buffer_binding, element.instance_step_rate);
-		}
-
-		gl.PolygonMode(GL_FRONT_AND_BACK, polygon_mode);
-
-		if (prim_mode == GL_PATCHES)
-		{
-			gl.PatchParameteri(GL_PATCH_VERTICES, patch_vertices);
-		}
+		gl.SampleMaski(0, sample_mask);
 	}
 
 	if ((stages & api::pipeline_stage::rasterizer) != 0)
 	{
+		gl.PolygonMode(GL_FRONT_AND_BACK, polygon_mode);
+
 		if (cull_mode != GL_NONE)
 		{
 			gl.Enable(GL_CULL_FACE);
@@ -141,8 +119,6 @@ void reshade::opengl::pipeline_impl::apply(api::pipeline_stage stages) const
 		{
 			gl.Disable(GL_STENCIL_TEST);
 		}
-
-		gl.SampleMaski(0, sample_mask);
 	}
 }
 
@@ -274,12 +250,13 @@ void reshade::opengl::device_context_impl::bind_framebuffer_with_resource(GLenum
 	hash_combine(hash, dst_desc.texture.height);
 	hash_combine(hash, static_cast<uint32_t>(dst_desc.texture.format));
 
-	if (!_fbo_lookup_valid)
+	if (const uint64_t current_lookup_version = _device_impl->_fbo_lookup_version;
+		current_lookup_version != _last_fbo_lookup_version)
 	{
 		for (const auto &fbo_data : _fbo_lookup)
 			gl.DeleteFramebuffers(1, &fbo_data.second);
 		_fbo_lookup.clear();
-		_fbo_lookup_valid = true;
+		_last_fbo_lookup_version = current_lookup_version;
 	}
 	else if (const auto it = _fbo_lookup.find(hash);
 		it != _fbo_lookup.end())
@@ -335,12 +312,13 @@ void reshade::opengl::device_context_impl::bind_framebuffer_with_resource_views(
 		hash_combine(hash, rtvs[i].handle);
 	hash_combine(hash, dsv.handle);
 
-	if (!_fbo_lookup_valid)
+	if (const uint64_t current_lookup_version = _device_impl->_fbo_lookup_version;
+		current_lookup_version != _last_fbo_lookup_version)
 	{
 		for (const auto &fbo_data : _fbo_lookup)
 			gl.DeleteFramebuffers(1, &fbo_data.second);
 		_fbo_lookup.clear();
-		_fbo_lookup_valid = true;
+		_last_fbo_lookup_version = current_lookup_version;
 	}
 	else if (const auto it = _fbo_lookup.find(hash);
 		it != _fbo_lookup.end())
@@ -496,27 +474,26 @@ void reshade::opengl::device_context_impl::update_current_window_height(api::res
 
 	_current_window_height = height;
 }
-void reshade::opengl::device_context_impl::invalidate_framebuffer_cache()
-{
-	_fbo_lookup_valid = false;
-}
 
 void reshade::opengl::device_context_impl::bind_pipeline(api::pipeline_stage stages, api::pipeline pipeline)
 {
 	if (pipeline.handle == 0)
 		return;
 
-	// Special case for application pipeline handles
+	// Special case for application handles
 	if ((pipeline.handle >> 40) == GL_PROGRAM)
 	{
 		assert((stages & ~api::pipeline_stage::all_shader_stages) == 0);
 		gl.UseProgram(pipeline.handle & 0xFFFFFFFF);
 		return;
 	}
-
-	// Set clip space to something consistent
-	if (gl.ClipControl != nullptr)
-		gl.ClipControl(GL_LOWER_LEFT, GL_NEGATIVE_ONE_TO_ONE);
+	if ((pipeline.handle >> 40) == GL_VERTEX_ARRAY)
+	{
+		assert((stages & ~api::pipeline_stage::input_assembler) == 0);
+		gl.BindVertexArray(pipeline.handle & 0xFFFFFFFF);
+		_current_vao_dirty = false;
+		return;
+	}
 
 	// Always disable alpha test in case the application set that (fixes broken GUI rendering in Quake)
 	if (_device_impl->_compatibility_context)
@@ -525,7 +502,47 @@ void reshade::opengl::device_context_impl::bind_pipeline(api::pipeline_stage sta
 	reinterpret_cast<pipeline_impl *>(pipeline.handle)->apply(stages);
 
 	if ((stages & api::pipeline_stage::input_assembler) != 0)
-		_current_prim_mode = reinterpret_cast<pipeline_impl *>(pipeline.handle)->prim_mode;
+	{
+		bind_pipeline_state(api::dynamic_state::primitive_topology, static_cast<uint32_t>(reinterpret_cast<pipeline_impl *>(pipeline.handle)->topology));
+
+		_current_vao_dirty = false;
+
+		if (const uint64_t current_lookup_version = _device_impl->_vao_lookup_version;
+			current_lookup_version != _last_vao_lookup_version)
+		{
+			for (const auto &vao_data : _vao_lookup)
+				gl.DeleteVertexArrays(1, &vao_data.second);
+			_vao_lookup.clear();
+			_last_vao_lookup_version = current_lookup_version;
+		}
+		else if (const auto it = _vao_lookup.find(static_cast<size_t>(pipeline.handle));
+			it != _vao_lookup.end())
+		{
+			gl.BindVertexArray(it->second);
+			return;
+		}
+
+		GLuint vao = 0;
+		gl.GenVertexArrays(1, &vao);
+		_vao_lookup.emplace(static_cast<size_t>(pipeline.handle), vao);
+
+		gl.BindVertexArray(vao);
+
+		for (const api::input_element &element : reinterpret_cast<pipeline_impl *>(pipeline.handle)->input_elements)
+		{
+			gl.EnableVertexAttribArray(element.location);
+
+			GLint attrib_size = 0;
+			GLboolean normalized = GL_FALSE;
+			const GLenum attrib_type = convert_attrib_format(element.format, attrib_size, normalized);
+			if (normalized || attrib_type == GL_FLOAT || attrib_type == GL_HALF_FLOAT)
+				gl.VertexAttribFormat(element.location, attrib_size, attrib_type, normalized, element.offset);
+			else
+				gl.VertexAttribIFormat(element.location, attrib_size, attrib_type, element.offset);
+			gl.VertexAttribBinding(element.location, element.buffer_binding);
+			gl.VertexBindingDivisor(element.buffer_binding, element.instance_step_rate);
+		}
+	}
 }
 void reshade::opengl::device_context_impl::bind_pipeline_states(uint32_t count, const api::dynamic_state *states, const uint32_t *values)
 {
@@ -540,7 +557,9 @@ void reshade::opengl::device_context_impl::bind_pipeline_states(uint32_t count, 
 			glEnableOrDisable(GL_FRAMEBUFFER_SRGB, values[i]);
 			break;
 		case api::dynamic_state::primitive_topology:
-			_current_prim_mode = values[i];
+			_current_prim_mode = static_cast<GLenum>(convert_primitive_topology(static_cast<api::primitive_topology>(values[i])));
+			if (_current_prim_mode == GL_PATCHES)
+				gl.PatchParameteri(GL_PATCH_VERTICES, values[i] - static_cast<uint32_t>(api::primitive_topology::patch_list_01_cp));
 			break;
 		case api::dynamic_state::alpha_to_coverage_enable:
 			glEnableOrDisable(GL_SAMPLE_ALPHA_TO_COVERAGE, values[i]);
@@ -552,63 +571,107 @@ void reshade::opengl::device_context_impl::bind_pipeline_states(uint32_t count, 
 			glEnableOrDisable(GL_COLOR_LOGIC_OP, values[i]);
 			break;
 		case api::dynamic_state::source_color_blend_factor:
-		{
-			GLint prev_dest_color_factor = GL_NONE;
-			GLint prev_source_alpha_factor = GL_NONE;
-			GLint prev_dest_alpha_factor = GL_NONE;
-			gl.GetIntegerv(GL_BLEND_DST_RGB, &prev_dest_color_factor);
-			gl.GetIntegerv(GL_BLEND_SRC_ALPHA, &prev_source_alpha_factor);
-			gl.GetIntegerv(GL_BLEND_DST_ALPHA, &prev_dest_alpha_factor);
-			gl.BlendFuncSeparate(convert_blend_factor(static_cast<api::blend_factor>(values[i])), prev_dest_color_factor, prev_source_alpha_factor, prev_dest_alpha_factor);
+			if (i + 3 < count &&
+				states[i + 1] == api::dynamic_state::dest_color_blend_factor &&
+				states[i + 2] == api::dynamic_state::source_alpha_blend_factor &&
+				states[i + 3] == api::dynamic_state::dest_alpha_blend_factor)
+			{
+				gl.BlendFuncSeparate(
+					convert_blend_factor(static_cast<api::blend_factor>(values[i + 0])),
+					convert_blend_factor(static_cast<api::blend_factor>(values[i + 1])),
+					convert_blend_factor(static_cast<api::blend_factor>(values[i + 2])),
+					convert_blend_factor(static_cast<api::blend_factor>(values[i + 3])));
+				i += 3;
+			}
+			else
+			{
+				GLint prev_dest_color_factor = GL_NONE;
+				GLint prev_source_alpha_factor = GL_NONE;
+				GLint prev_dest_alpha_factor = GL_NONE;
+				gl.GetIntegerv(GL_BLEND_DST_RGB, &prev_dest_color_factor);
+				gl.GetIntegerv(GL_BLEND_SRC_ALPHA, &prev_source_alpha_factor);
+				gl.GetIntegerv(GL_BLEND_DST_ALPHA, &prev_dest_alpha_factor);
+
+				gl.BlendFuncSeparate(
+					convert_blend_factor(static_cast<api::blend_factor>(values[i])),
+					prev_dest_color_factor,
+					prev_source_alpha_factor,
+					prev_dest_alpha_factor);
+			}
 			break;
-		}
 		case api::dynamic_state::dest_color_blend_factor:
-		{
-			GLint prev_source_color_blend_factor = GL_NONE;
-			GLint prev_source_alpha_factor = GL_NONE;
-			GLint prev_dest_alpha_factor = GL_NONE;
-			gl.GetIntegerv(GL_BLEND_SRC_RGB, &prev_source_color_blend_factor);
-			gl.GetIntegerv(GL_BLEND_SRC_ALPHA, &prev_source_alpha_factor);
-			gl.GetIntegerv(GL_BLEND_DST_ALPHA, &prev_dest_alpha_factor);
-			gl.BlendFuncSeparate(prev_source_color_blend_factor, convert_blend_factor(static_cast<api::blend_factor>(values[i])), prev_source_alpha_factor, prev_dest_alpha_factor);
+			{
+				GLint prev_source_color_blend_factor = GL_NONE;
+				GLint prev_source_alpha_factor = GL_NONE;
+				GLint prev_dest_alpha_factor = GL_NONE;
+				gl.GetIntegerv(GL_BLEND_SRC_RGB, &prev_source_color_blend_factor);
+				gl.GetIntegerv(GL_BLEND_SRC_ALPHA, &prev_source_alpha_factor);
+				gl.GetIntegerv(GL_BLEND_DST_ALPHA, &prev_dest_alpha_factor);
+
+				gl.BlendFuncSeparate(
+					prev_source_color_blend_factor,
+					convert_blend_factor(static_cast<api::blend_factor>(values[i])),
+					prev_source_alpha_factor,
+					prev_dest_alpha_factor);
+			}
 			break;
-		}
 		case api::dynamic_state::color_blend_op:
-		{
-			GLint prev_blend_op = GL_NONE;
-			gl.GetIntegerv(GL_BLEND_EQUATION_ALPHA, &prev_blend_op);
-			gl.BlendEquationSeparate(convert_blend_op(static_cast<api::blend_op>(values[i])), prev_blend_op);
+			if (i + 1 < count &&
+				states[i + 1] == api::dynamic_state::alpha_blend_op)
+			{
+				gl.BlendEquationSeparate(
+					convert_blend_op(static_cast<api::blend_op>(values[i + 0])),
+					convert_blend_op(static_cast<api::blend_op>(values[i + 1])));
+				i += 1;
+			}
+			else
+			{
+				GLint prev_blend_op = GL_NONE;
+				gl.GetIntegerv(GL_BLEND_EQUATION_ALPHA, &prev_blend_op);
+
+				gl.BlendEquationSeparate(convert_blend_op(static_cast<api::blend_op>(values[i])), prev_blend_op);
+			}
 			break;
-		}
 		case api::dynamic_state::source_alpha_blend_factor:
-		{
-			GLint prev_source_color_blend_factor = GL_NONE;
-			GLint prev_dest_color_blend_factor = GL_NONE;
-			GLint prev_dest_alpha_factor = GL_NONE;
-			gl.GetIntegerv(GL_BLEND_SRC_RGB, &prev_source_color_blend_factor);
-			gl.GetIntegerv(GL_BLEND_DST_RGB, &prev_dest_color_blend_factor);
-			gl.GetIntegerv(GL_BLEND_DST_ALPHA, &prev_dest_alpha_factor);
-			gl.BlendFuncSeparate(prev_source_color_blend_factor, prev_dest_color_blend_factor, convert_blend_factor(static_cast<api::blend_factor>(values[i])), prev_dest_alpha_factor);
+			{
+				GLint prev_source_color_blend_factor = GL_NONE;
+				GLint prev_dest_color_blend_factor = GL_NONE;
+				GLint prev_dest_alpha_factor = GL_NONE;
+				gl.GetIntegerv(GL_BLEND_SRC_RGB, &prev_source_color_blend_factor);
+				gl.GetIntegerv(GL_BLEND_DST_RGB, &prev_dest_color_blend_factor);
+				gl.GetIntegerv(GL_BLEND_DST_ALPHA, &prev_dest_alpha_factor);
+
+				gl.BlendFuncSeparate(
+					prev_source_color_blend_factor,
+					prev_dest_color_blend_factor,
+					convert_blend_factor(static_cast<api::blend_factor>(values[i])),
+					prev_dest_alpha_factor);
+			}
 			break;
-		}
 		case api::dynamic_state::dest_alpha_blend_factor:
-		{
-			GLint prev_source_color_blend_factor = GL_NONE;
-			GLint prev_dest_color_blend_factor = GL_NONE;
-			GLint prev_source_alpha_factor = GL_NONE;
-			gl.GetIntegerv(GL_BLEND_SRC_RGB, &prev_source_color_blend_factor);
-			gl.GetIntegerv(GL_BLEND_DST_RGB, &prev_dest_color_blend_factor);
-			gl.GetIntegerv(GL_BLEND_SRC_ALPHA, &prev_source_alpha_factor);
-			gl.BlendFuncSeparate(prev_source_color_blend_factor, prev_dest_color_blend_factor, prev_source_alpha_factor, convert_blend_factor(static_cast<api::blend_factor>(values[i])));
+			{
+				GLint prev_source_color_blend_factor = GL_NONE;
+				GLint prev_dest_color_blend_factor = GL_NONE;
+				GLint prev_source_alpha_factor = GL_NONE;
+				gl.GetIntegerv(GL_BLEND_SRC_RGB, &prev_source_color_blend_factor);
+				gl.GetIntegerv(GL_BLEND_DST_RGB, &prev_dest_color_blend_factor);
+				gl.GetIntegerv(GL_BLEND_SRC_ALPHA, &prev_source_alpha_factor);
+
+				gl.BlendFuncSeparate(
+					prev_source_color_blend_factor,
+					prev_dest_color_blend_factor,
+					prev_source_alpha_factor,
+					convert_blend_factor(static_cast<api::blend_factor>(values[i])));
+			}
 			break;
-		}
 		case api::dynamic_state::alpha_blend_op:
-		{
-			GLint prev_blend_op = GL_NONE;
-			gl.GetIntegerv(GL_BLEND_EQUATION_RGB, &prev_blend_op);
-			gl.BlendEquationSeparate(prev_blend_op, convert_blend_op(static_cast<api::blend_op>(values[i])));
+			{
+				GLint prev_blend_op = GL_NONE;
+				gl.GetIntegerv(GL_BLEND_EQUATION_RGB, &prev_blend_op);
+
+				gl.BlendEquationSeparate(prev_blend_op, convert_blend_op(static_cast<api::blend_op>(values[i])));
+			}
 			break;
-		}
 		case api::dynamic_state::logic_op:
 			gl.LogicOp(convert_logic_op(static_cast<api::logic_op>(values[i])));
 			break;
@@ -628,19 +691,30 @@ void reshade::opengl::device_context_impl::bind_pipeline_states(uint32_t count, 
 			gl.FrontFace(values[i] ? GL_CCW : GL_CW);
 			break;
 		case api::dynamic_state::depth_bias:
-		{
-			GLfloat prev_depth_bias_slope_scaled = 0.0f;
-			gl.GetFloatv(GL_POLYGON_OFFSET_FACTOR, &prev_depth_bias_slope_scaled);
-			gl.PolygonOffset(prev_depth_bias_slope_scaled, *reinterpret_cast<const GLfloat *>(&values[i]));
+			{
+				GLfloat prev_depth_bias_slope_scaled = 0.0f;
+				gl.GetFloatv(GL_POLYGON_OFFSET_FACTOR, &prev_depth_bias_slope_scaled);
+
+				gl.PolygonOffset(prev_depth_bias_slope_scaled, *reinterpret_cast<const GLfloat *>(&values[i]));
+			}
 			break;
-		}
 		case api::dynamic_state::depth_bias_slope_scaled:
-		{
-			GLfloat prev_depth_bias = 0.0f;
-			gl.GetFloatv(GL_POLYGON_OFFSET_UNITS, &prev_depth_bias);
-			gl.PolygonOffset(*reinterpret_cast<const GLfloat *>(&values[i]), prev_depth_bias);
+			if (i + 1 < count &&
+				states[i + 1] == api::dynamic_state::depth_bias)
+			{
+				gl.PolygonOffset(
+					*reinterpret_cast<const GLfloat *>(&values[i + 0]),
+					*reinterpret_cast<const GLfloat *>(&values[i + 1]));
+				i += 1;
+			}
+			else
+			{
+				GLfloat prev_depth_bias = 0.0f;
+				gl.GetFloatv(GL_POLYGON_OFFSET_UNITS, &prev_depth_bias);
+
+				gl.PolygonOffset(*reinterpret_cast<const GLfloat *>(&values[i]), prev_depth_bias);
+			}
 			break;
-		}
 		case api::dynamic_state::depth_clip_enable:
 			glEnableOrDisable(GL_DEPTH_CLAMP, !values[i]);
 			break;
@@ -666,119 +740,179 @@ void reshade::opengl::device_context_impl::bind_pipeline_states(uint32_t count, 
 			glEnableOrDisable(GL_STENCIL_TEST, values[i]);
 			break;
 		case api::dynamic_state::front_stencil_read_mask:
-		{
-			GLint prev_stencil_func = GL_NONE;
-			GLint prev_stencil_reference_value = 0;
-			gl.GetIntegerv(GL_STENCIL_FUNC, &prev_stencil_func);
-			gl.GetIntegerv(GL_STENCIL_REF, &prev_stencil_reference_value);
-			gl.StencilFuncSeparate(GL_FRONT, prev_stencil_func, prev_stencil_reference_value, values[i]);
+			{
+				GLint prev_stencil_func = GL_NONE;
+				GLint prev_stencil_reference_value = 0;
+				gl.GetIntegerv(GL_STENCIL_FUNC, &prev_stencil_func);
+				gl.GetIntegerv(GL_STENCIL_REF, &prev_stencil_reference_value);
+
+				gl.StencilFuncSeparate(GL_FRONT, prev_stencil_func, prev_stencil_reference_value, values[i]);
+			}
 			break;
-		}
 		case api::dynamic_state::front_stencil_write_mask:
 			gl.StencilMaskSeparate(GL_FRONT, values[i]);
 			break;
 		case api::dynamic_state::front_stencil_reference_value:
-		{
-			GLint prev_stencil_func = GL_NONE;
-			GLint prev_stencil_read_mask = 0;
-			gl.GetIntegerv(GL_STENCIL_FUNC, &prev_stencil_func);
-			gl.GetIntegerv(GL_STENCIL_VALUE_MASK, &prev_stencil_read_mask);
-			gl.StencilFuncSeparate(GL_FRONT, prev_stencil_func, values[i], prev_stencil_read_mask);
+			{
+				GLint prev_stencil_func = GL_NONE;
+				GLint prev_stencil_read_mask = 0;
+				gl.GetIntegerv(GL_STENCIL_FUNC, &prev_stencil_func);
+				gl.GetIntegerv(GL_STENCIL_VALUE_MASK, &prev_stencil_read_mask);
+
+				gl.StencilFuncSeparate(GL_FRONT, prev_stencil_func, values[i], prev_stencil_read_mask);
+			}
 			break;
-		}
 		case api::dynamic_state::front_stencil_func:
-		{
-			GLint prev_stencil_reference_value = GL_NONE;
-			GLint prev_stencil_read_mask = 0;
-			gl.GetIntegerv(GL_STENCIL_REF, &prev_stencil_reference_value);
-			gl.GetIntegerv(GL_STENCIL_VALUE_MASK, &prev_stencil_read_mask);
-			gl.StencilFuncSeparate(GL_FRONT, convert_compare_op(static_cast<api::compare_op>(values[i])), prev_stencil_reference_value, prev_stencil_read_mask);
+			if (i + 2 < count &&
+				states[i + 1] == api::dynamic_state::front_stencil_reference_value &&
+				states[i + 2] == api::dynamic_state::front_stencil_read_mask)
+			{
+				gl.StencilFuncSeparate(
+					GL_FRONT,
+					convert_compare_op(static_cast<api::compare_op>(values[i])),
+					values[i + 1],
+					values[i + 2]);
+				i += 2;
+			}
+			else
+			{
+				GLint prev_stencil_reference_value = GL_NONE;
+				GLint prev_stencil_read_mask = 0;
+				gl.GetIntegerv(GL_STENCIL_REF, &prev_stencil_reference_value);
+				gl.GetIntegerv(GL_STENCIL_VALUE_MASK, &prev_stencil_read_mask);
+
+				gl.StencilFuncSeparate(GL_FRONT, convert_compare_op(static_cast<api::compare_op>(values[i])), prev_stencil_reference_value, prev_stencil_read_mask);
+			}
 			break;
-		}
 		case api::dynamic_state::front_stencil_pass_op:
-		{
-			GLint prev_stencil_fail_op = GL_NONE;
-			GLint prev_stencil_depth_fail_op = 0;
-			gl.GetIntegerv(GL_STENCIL_FAIL, &prev_stencil_fail_op);
-			gl.GetIntegerv(GL_STENCIL_PASS_DEPTH_FAIL, &prev_stencil_depth_fail_op);
-			gl.StencilOpSeparate(GL_FRONT, prev_stencil_fail_op, prev_stencil_depth_fail_op, convert_stencil_op(static_cast<api::stencil_op>(values[i])));
+			{
+				GLint prev_stencil_fail_op = GL_NONE;
+				GLint prev_stencil_depth_fail_op = 0;
+				gl.GetIntegerv(GL_STENCIL_FAIL, &prev_stencil_fail_op);
+				gl.GetIntegerv(GL_STENCIL_PASS_DEPTH_FAIL, &prev_stencil_depth_fail_op);
+
+				gl.StencilOpSeparate(GL_FRONT, prev_stencil_fail_op, prev_stencil_depth_fail_op, convert_stencil_op(static_cast<api::stencil_op>(values[i])));
+			}
 			break;
-		}
 		case api::dynamic_state::front_stencil_fail_op:
-		{
-			GLint prev_stencil_depth_fail_op = 0;
-			GLint prev_stencil_pass_op = GL_NONE;
-			gl.GetIntegerv(GL_STENCIL_PASS_DEPTH_FAIL, &prev_stencil_depth_fail_op);
-			gl.GetIntegerv(GL_STENCIL_PASS_DEPTH_PASS, &prev_stencil_pass_op);
-			gl.StencilOpSeparate(GL_FRONT, convert_stencil_op(static_cast<api::stencil_op>(values[i])), prev_stencil_depth_fail_op, prev_stencil_pass_op);
+			if (i + 2 < count &&
+				states[i + 1] == api::dynamic_state::front_stencil_depth_fail_op &&
+				states[i + 2] == api::dynamic_state::front_stencil_pass_op)
+			{
+				gl.StencilOpSeparate(
+					GL_FRONT,
+					convert_stencil_op(static_cast<api::stencil_op>(values[i + 0])),
+					convert_stencil_op(static_cast<api::stencil_op>(values[i + 1])),
+					convert_stencil_op(static_cast<api::stencil_op>(values[i + 2])));
+				i += 2;
+			}
+			else
+			{
+				GLint prev_stencil_depth_fail_op = 0;
+				GLint prev_stencil_pass_op = GL_NONE;
+				gl.GetIntegerv(GL_STENCIL_PASS_DEPTH_FAIL, &prev_stencil_depth_fail_op);
+				gl.GetIntegerv(GL_STENCIL_PASS_DEPTH_PASS, &prev_stencil_pass_op);
+
+				gl.StencilOpSeparate(GL_FRONT, convert_stencil_op(static_cast<api::stencil_op>(values[i])), prev_stencil_depth_fail_op, prev_stencil_pass_op);
+			}
 			break;
-		}
 		case api::dynamic_state::front_stencil_depth_fail_op:
-		{
-			GLint prev_stencil_fail_op = GL_NONE;
-			GLint prev_stencil_pass_op = GL_NONE;
-			gl.GetIntegerv(GL_STENCIL_FAIL, &prev_stencil_fail_op);
-			gl.GetIntegerv(GL_STENCIL_PASS_DEPTH_PASS, &prev_stencil_pass_op);
-			gl.StencilOpSeparate(GL_FRONT, prev_stencil_fail_op, convert_stencil_op(static_cast<api::stencil_op>(values[i])), prev_stencil_pass_op);
+			{
+				GLint prev_stencil_fail_op = GL_NONE;
+				GLint prev_stencil_pass_op = GL_NONE;
+				gl.GetIntegerv(GL_STENCIL_FAIL, &prev_stencil_fail_op);
+				gl.GetIntegerv(GL_STENCIL_PASS_DEPTH_PASS, &prev_stencil_pass_op);
+
+				gl.StencilOpSeparate(GL_FRONT, prev_stencil_fail_op, convert_stencil_op(static_cast<api::stencil_op>(values[i])), prev_stencil_pass_op);
+			}
 			break;
-		}
 		case api::dynamic_state::back_stencil_read_mask:
-		{
-			GLint prev_stencil_func = GL_NONE;
-			GLint prev_stencil_reference_value = 0;
-			gl.GetIntegerv(GL_STENCIL_BACK_FUNC, &prev_stencil_func);
-			gl.GetIntegerv(GL_STENCIL_BACK_REF, &prev_stencil_reference_value);
-			gl.StencilFuncSeparate(GL_BACK, prev_stencil_func, prev_stencil_reference_value, values[i]);
+			{
+				GLint prev_stencil_func = GL_NONE;
+				GLint prev_stencil_reference_value = 0;
+				gl.GetIntegerv(GL_STENCIL_BACK_FUNC, &prev_stencil_func);
+				gl.GetIntegerv(GL_STENCIL_BACK_REF, &prev_stencil_reference_value);
+
+				gl.StencilFuncSeparate(GL_BACK, prev_stencil_func, prev_stencil_reference_value, values[i]);
+			}
 			break;
-		}
 		case api::dynamic_state::back_stencil_write_mask:
 			gl.StencilMaskSeparate(GL_BACK, values[i]);
 			break;
 		case api::dynamic_state::back_stencil_reference_value:
-		{
-			GLint prev_stencil_func = GL_NONE;
-			GLint prev_stencil_read_mask = 0;
-			gl.GetIntegerv(GL_STENCIL_BACK_FUNC, &prev_stencil_func);
-			gl.GetIntegerv(GL_STENCIL_BACK_VALUE_MASK, &prev_stencil_read_mask);
-			gl.StencilFuncSeparate(GL_BACK, prev_stencil_func, values[i], prev_stencil_read_mask);
+			{
+				GLint prev_stencil_func = GL_NONE;
+				GLint prev_stencil_read_mask = 0;
+				gl.GetIntegerv(GL_STENCIL_BACK_FUNC, &prev_stencil_func);
+				gl.GetIntegerv(GL_STENCIL_BACK_VALUE_MASK, &prev_stencil_read_mask);
+
+				gl.StencilFuncSeparate(GL_BACK, prev_stencil_func, values[i], prev_stencil_read_mask);
+			}
 			break;
-		}
 		case api::dynamic_state::back_stencil_func:
-		{
-			GLint prev_stencil_reference_value = GL_NONE;
-			GLint prev_stencil_read_mask = 0;
-			gl.GetIntegerv(GL_STENCIL_BACK_REF, &prev_stencil_reference_value);
-			gl.GetIntegerv(GL_STENCIL_BACK_VALUE_MASK, &prev_stencil_read_mask);
-			gl.StencilFuncSeparate(GL_BACK, convert_compare_op(static_cast<api::compare_op>(values[i])), prev_stencil_reference_value, prev_stencil_read_mask);
+			if (i + 2 < count &&
+				states[i + 1] == api::dynamic_state::back_stencil_reference_value &&
+				states[i + 2] == api::dynamic_state::back_stencil_read_mask)
+			{
+				gl.StencilFuncSeparate(
+					GL_BACK,
+					convert_compare_op(static_cast<api::compare_op>(values[i])),
+					values[i + 1],
+					values[i + 2]);
+				i += 2;
+			}
+			else
+			{
+				GLint prev_stencil_reference_value = GL_NONE;
+				GLint prev_stencil_read_mask = 0;
+				gl.GetIntegerv(GL_STENCIL_BACK_REF, &prev_stencil_reference_value);
+				gl.GetIntegerv(GL_STENCIL_BACK_VALUE_MASK, &prev_stencil_read_mask);
+
+				gl.StencilFuncSeparate(GL_BACK, convert_compare_op(static_cast<api::compare_op>(values[i])), prev_stencil_reference_value, prev_stencil_read_mask);
+			}
 			break;
-		}
 		case api::dynamic_state::back_stencil_pass_op:
-		{
-			GLint prev_stencil_fail_op = GL_NONE;
-			GLint prev_stencil_depth_fail_op = 0;
-			gl.GetIntegerv(GL_STENCIL_BACK_FAIL, &prev_stencil_fail_op);
-			gl.GetIntegerv(GL_STENCIL_BACK_PASS_DEPTH_FAIL, &prev_stencil_depth_fail_op);
-			gl.StencilOpSeparate(GL_BACK, prev_stencil_fail_op, prev_stencil_depth_fail_op, convert_stencil_op(static_cast<api::stencil_op>(values[i])));
+			{
+				GLint prev_stencil_fail_op = GL_NONE;
+				GLint prev_stencil_depth_fail_op = 0;
+				gl.GetIntegerv(GL_STENCIL_BACK_FAIL, &prev_stencil_fail_op);
+				gl.GetIntegerv(GL_STENCIL_BACK_PASS_DEPTH_FAIL, &prev_stencil_depth_fail_op);
+
+				gl.StencilOpSeparate(GL_BACK, prev_stencil_fail_op, prev_stencil_depth_fail_op, convert_stencil_op(static_cast<api::stencil_op>(values[i])));
+			}
 			break;
-		}
 		case api::dynamic_state::back_stencil_fail_op:
-		{
-			GLint prev_stencil_depth_fail_op = 0;
-			GLint prev_stencil_pass_op = GL_NONE;
-			gl.GetIntegerv(GL_STENCIL_BACK_PASS_DEPTH_FAIL, &prev_stencil_depth_fail_op);
-			gl.GetIntegerv(GL_STENCIL_BACK_PASS_DEPTH_PASS, &prev_stencil_pass_op);
-			gl.StencilOpSeparate(GL_BACK, convert_stencil_op(static_cast<api::stencil_op>(values[i])), prev_stencil_depth_fail_op, prev_stencil_pass_op);
+			if (i + 2 < count &&
+				states[i + 1] == api::dynamic_state::back_stencil_depth_fail_op &&
+				states[i + 2] == api::dynamic_state::back_stencil_pass_op)
+			{
+				gl.StencilOpSeparate(
+					GL_BACK,
+					convert_stencil_op(static_cast<api::stencil_op>(values[i + 0])),
+					convert_stencil_op(static_cast<api::stencil_op>(values[i + 1])),
+					convert_stencil_op(static_cast<api::stencil_op>(values[i + 2])));
+				i += 2;
+			}
+			else
+			{
+				GLint prev_stencil_depth_fail_op = 0;
+				GLint prev_stencil_pass_op = GL_NONE;
+				gl.GetIntegerv(GL_STENCIL_BACK_PASS_DEPTH_FAIL, &prev_stencil_depth_fail_op);
+				gl.GetIntegerv(GL_STENCIL_BACK_PASS_DEPTH_PASS, &prev_stencil_pass_op);
+
+				gl.StencilOpSeparate(GL_BACK, convert_stencil_op(static_cast<api::stencil_op>(values[i])), prev_stencil_depth_fail_op, prev_stencil_pass_op);
+			}
 			break;
-		}
 		case api::dynamic_state::back_stencil_depth_fail_op:
-		{
-			GLint prev_stencil_fail_op = GL_NONE;
-			GLint prev_stencil_pass_op = GL_NONE;
-			gl.GetIntegerv(GL_STENCIL_BACK_FAIL, &prev_stencil_fail_op);
-			gl.GetIntegerv(GL_STENCIL_BACK_PASS_DEPTH_PASS, &prev_stencil_pass_op);
-			gl.StencilOpSeparate(GL_BACK, prev_stencil_fail_op, convert_stencil_op(static_cast<api::stencil_op>(values[i])), prev_stencil_pass_op);
+			{
+				GLint prev_stencil_fail_op = GL_NONE;
+				GLint prev_stencil_pass_op = GL_NONE;
+				gl.GetIntegerv(GL_STENCIL_BACK_FAIL, &prev_stencil_fail_op);
+				gl.GetIntegerv(GL_STENCIL_BACK_PASS_DEPTH_PASS, &prev_stencil_pass_op);
+
+				gl.StencilOpSeparate(GL_BACK, prev_stencil_fail_op, convert_stencil_op(static_cast<api::stencil_op>(values[i])), prev_stencil_pass_op);
+			}
 			break;
-		}
 		default:
 			assert(false);
 			break;
@@ -815,10 +949,96 @@ void reshade::opengl::device_context_impl::bind_scissor_rects(uint32_t first, ui
 
 void reshade::opengl::device_context_impl::push_constants(api::shader_stage, api::pipeline_layout layout, uint32_t layout_param, uint32_t first, uint32_t count, const void *values)
 {
+	const GLuint push_constants_binding =
+		layout == global_pipeline_layout ? UINT32_MAX :
+		layout.handle != 0 ? reinterpret_cast<pipeline_layout_impl *>(layout.handle)->ranges[layout_param].binding : 0;
+
+	if (push_constants_binding == UINT32_MAX)
+	{
+		first /= 4;
+
+		switch (layout_param)
+		{
+		case 4:
+			if ((count % (4 * 4)) == 0)
+			{
+				gl.UniformMatrix4fv(first, count / (4 * 4), GL_FALSE, static_cast<const GLfloat *>(values));
+				break;
+			}
+			if ((count % (3 * 3)) == 0)
+			{
+				gl.UniformMatrix3fv(first, count / (3 * 3), GL_FALSE, static_cast<const GLfloat *>(values));
+				break;
+			}
+			if ((count % 4) == 0)
+			{
+				gl.Uniform4fv(first, count / 4, static_cast<const GLfloat *>(values));
+				break;
+			}
+			if ((count % 3) == 0)
+			{
+				gl.Uniform3fv(first, count / 3, static_cast<const GLfloat *>(values));
+				break;
+			}
+			if ((count % 2) == 0)
+			{
+				gl.Uniform2fv(first, count / 2, static_cast<const GLfloat *>(values));
+				break;
+			}
+			{
+				gl.Uniform1fv(first, count / 1, static_cast<const GLfloat *>(values));
+				break;
+			}
+		case 5:
+			if ((count % 4) == 0)
+			{
+				gl.Uniform4iv(first, count / 4, static_cast<const GLint *>(values));
+				break;
+			}
+			if ((count % 3) == 0)
+			{
+				gl.Uniform3iv(first, count / 3, static_cast<const GLint *>(values));
+				break;
+			}
+			if ((count % 2) == 0)
+			{
+				gl.Uniform2iv(first, count / 2, static_cast<const GLint *>(values));
+				break;
+			}
+			{
+				gl.Uniform1iv(first, count / 1, static_cast<const GLint *>(values));
+				break;
+			}
+		case 6:
+			if ((count % 4) == 0)
+			{
+				gl.Uniform4uiv(first, count / 4, static_cast<const GLuint *>(values));
+				break;
+			}
+			if ((count % 3) == 0)
+			{
+				gl.Uniform3uiv(first, count / 3, static_cast<const GLuint *>(values));
+				break;
+			}
+			if ((count % 2) == 0)
+			{
+				gl.Uniform2uiv(first, count / 2, static_cast<const GLuint *>(values));
+				break;
+			}
+			{
+				gl.Uniform1uiv(first, count / 1, static_cast<const GLuint *>(values));
+				break;
+			}
+		default:
+			assert(false);
+			break;
+		}
+		return;
+	}
+
 	assert(first == 0);
 
 	const GLuint push_constants_size = (first + count) * sizeof(uint32_t);
-	const GLuint push_constants_binding = (layout.handle != 0 && layout != global_pipeline_layout) ? reinterpret_cast<pipeline_layout_impl *>(layout.handle)->ranges[layout_param].binding : 0;
 
 	// Binds the push constant buffer to the requested indexed binding point as well as the generic binding point
 	gl.BindBufferBase(GL_UNIFORM_BUFFER, push_constants_binding, _push_constants);
@@ -986,15 +1206,22 @@ void reshade::opengl::device_context_impl::bind_index_buffer(api::resource buffe
 		assert(buffer.handle == 0);
 		break;
 	}
+
+	_current_ibo_dirty = false;
 }
 void reshade::opengl::device_context_impl::bind_vertex_buffers(uint32_t first, uint32_t count, const api::resource *buffers, const uint64_t *offsets, const uint32_t *strides)
 {
 	for (uint32_t i = 0; i < count; ++i)
 	{
+		if (buffers[i].handle == 0)
+			continue;
+
 		assert(offsets[i] <= static_cast<uint64_t>(std::numeric_limits<GLintptr>::max()));
 
 		gl.BindVertexBuffer(first + i, buffers[i].handle & 0xFFFFFFFF, static_cast<GLintptr>(offsets[i]), strides[i]);
 	}
+
+	_current_vbo_dirty = false;
 }
 void reshade::opengl::device_context_impl::bind_stream_output_buffers(uint32_t first, uint32_t count, const api::resource *buffers, const uint64_t *offsets, const uint64_t *max_sizes, const api::resource *, const uint64_t *)
 {
@@ -1618,7 +1845,9 @@ void reshade::opengl::device_context_impl::clear_depth_stencil_view(api::resourc
 	GLuint prev_draw_binding = 0;
 	gl.GetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, reinterpret_cast<GLint *>(&prev_draw_binding));
 
-	bind_framebuffer_with_resource_views(GL_DRAW_FRAMEBUFFER, 0, nullptr, dsv);
+	const bool binding_has_this_dsv = _device_impl->_supports_dsa && (dsv == _device_impl->get_framebuffer_attachment(prev_draw_binding, GL_DEPTH, 0));
+	if (!binding_has_this_dsv)
+		bind_framebuffer_with_resource_views(GL_DRAW_FRAMEBUFFER, 0, nullptr, dsv);
 
 	if (depth != nullptr && stencil != nullptr)
 	{
@@ -1635,7 +1864,8 @@ void reshade::opengl::device_context_impl::clear_depth_stencil_view(api::resourc
 		gl.ClearBufferiv(GL_STENCIL, 0, &clear_value);
 	}
 
-	gl.BindFramebuffer(GL_DRAW_FRAMEBUFFER, prev_draw_binding);
+	if (!binding_has_this_dsv)
+		gl.BindFramebuffer(GL_DRAW_FRAMEBUFFER, prev_draw_binding);
 }
 void reshade::opengl::device_context_impl::clear_render_target_view(api::resource_view rtv, const float color[4], uint32_t rect_count, const api::rect *)
 {
@@ -1644,11 +1874,14 @@ void reshade::opengl::device_context_impl::clear_render_target_view(api::resourc
 	GLuint prev_draw_binding = 0;
 	gl.GetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, reinterpret_cast<GLint *>(&prev_draw_binding));
 
-	bind_framebuffer_with_resource_views(GL_DRAW_FRAMEBUFFER, 1, &rtv, { 0 });
+	const bool binding_has_this_rtv = _device_impl->_supports_dsa && (rtv == _device_impl->get_framebuffer_attachment(prev_draw_binding, GL_COLOR, 0));
+	if (!binding_has_this_rtv)
+		bind_framebuffer_with_resource_views(GL_DRAW_FRAMEBUFFER, 1, &rtv, { 0 });
 
 	gl.ClearBufferfv(GL_COLOR, 0, color);
 
-	gl.BindFramebuffer(GL_DRAW_FRAMEBUFFER, prev_draw_binding);
+	if (!binding_has_this_rtv)
+		gl.BindFramebuffer(GL_DRAW_FRAMEBUFFER, prev_draw_binding);
 }
 void reshade::opengl::device_context_impl::clear_unordered_access_view_uint(api::resource_view, const uint32_t[4], uint32_t, const api::rect *)
 {
@@ -1666,7 +1899,7 @@ void reshade::opengl::device_context_impl::generate_mipmaps(api::resource_view s
 	const GLenum target = srv.handle >> 40;
 	const GLuint object = srv.handle & 0xFFFFFFFF;
 
-	gl.BindSampler(0, _mipmap_sampler);
+	gl.BindSampler(0, _device_impl->_mipmap_sampler);
 	gl.ActiveTexture(GL_TEXTURE0); // src
 	gl.BindTexture(target, object);
 
@@ -1674,7 +1907,7 @@ void reshade::opengl::device_context_impl::generate_mipmaps(api::resource_view s
 	gl.GenerateMipmap(target);
 #else
 	// Use custom mipmap generation implementation because 'glGenerateMipmap' generates shifted results
-	gl.UseProgram(_mipmap_program);
+	gl.UseProgram(_device_impl->_mipmap_program);
 
 	GLuint levels = 0;
 	gl.GetTexParameteriv(target, GL_TEXTURE_IMMUTABLE_LEVELS, reinterpret_cast<GLint *>(&levels));
@@ -1684,6 +1917,8 @@ void reshade::opengl::device_context_impl::generate_mipmaps(api::resource_view s
 	gl.GetTexLevelParameteriv(target, 0, GL_TEXTURE_HEIGHT, reinterpret_cast<GLint *>(&base_height));
 	GLenum internal_format = GL_NONE;
 	gl.GetTexLevelParameteriv(target, 0, GL_TEXTURE_INTERNAL_FORMAT, reinterpret_cast<GLint *>(&internal_format));
+
+	assert(internal_format != GL_SRGB8 && internal_format != GL_SRGB8_ALPHA8);
 
 	for (GLuint level = 1; level < levels; ++level)
 	{

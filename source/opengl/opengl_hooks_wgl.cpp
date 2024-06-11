@@ -106,7 +106,7 @@ static std::unordered_set<HDC> s_pbuffer_device_contexts;
 static std::unordered_set<HGLRC> s_legacy_contexts;
 static std::unordered_map<HGLRC, HGLRC> s_shared_contexts;
 static std::unordered_map<HGLRC, reshade::opengl::device_context_impl *> s_opengl_contexts;
-static std::vector<std::pair<HDC, reshade::opengl::swapchain_impl *>> s_opengl_swapchains;
+static std::vector<class wgl_swapchain *> s_opengl_swapchains;
 
 extern thread_local reshade::opengl::device_context_impl *g_current_context;
 
@@ -132,14 +132,17 @@ public:
 		gl.GetIntegerv(GL_MAX_UNIFORM_BUFFER_BINDINGS, &max_uniform_buffer_bindings);
 		GLint max_image_units = 0;
 		gl.GetIntegerv(GL_MAX_IMAGE_UNITS, &max_image_units);
+		GLint max_uniform_locations = 0;
+		gl.GetIntegerv(GL_MAX_UNIFORM_LOCATIONS, &max_uniform_locations);
 
-		const reshade::api::pipeline_layout_param global_pipeline_layout_params[6] = {
+		const reshade::api::pipeline_layout_param global_pipeline_layout_params[7] = {
 			reshade::api::descriptor_range { 0, 0, 0, static_cast<uint32_t>(max_combined_texture_image_units), reshade::api::shader_stage::all, 1, reshade::api::descriptor_type::sampler_with_resource_view },
 			reshade::api::descriptor_range { 0, 0, 0, static_cast<uint32_t>(max_shader_storage_buffer_bindings), reshade::api::shader_stage::all, 1, reshade::api::descriptor_type::shader_storage_buffer },
 			reshade::api::descriptor_range { 0, 0, 0, static_cast<uint32_t>(max_uniform_buffer_bindings), reshade::api::shader_stage::all, 1, reshade::api::descriptor_type::constant_buffer },
 			reshade::api::descriptor_range { 0, 0, 0, static_cast<uint32_t>(max_image_units), reshade::api::shader_stage::all, 1, reshade::api::descriptor_type::unordered_access_view },
-			/* Float uniforms */ reshade::api::constant_range { 0, 0, 0, std::numeric_limits<uint32_t>::max(), reshade::api::shader_stage::all },
-			/* Integer uniforms */ reshade::api::constant_range { 0, 0, 0, std::numeric_limits<uint32_t>::max(), reshade::api::shader_stage::all },
+			/* Float uniforms */ reshade::api::constant_range { UINT32_MAX, 0, 0, static_cast<uint32_t>(max_uniform_locations) * 4, reshade::api::shader_stage::all },
+			/* Signed integer uniforms */ reshade::api::constant_range { UINT32_MAX, 0, 0, static_cast<uint32_t>(max_uniform_locations) * 4, reshade::api::shader_stage::all },
+			/* Unsigned integer uniforms */ reshade::api::constant_range { UINT32_MAX, 0, 0, static_cast<uint32_t>(max_uniform_locations) * 4, reshade::api::shader_stage::all },
 		};
 		reshade::invoke_addon_event<reshade::addon_event::init_pipeline_layout>(this, static_cast<uint32_t>(std::size(global_pipeline_layout_params)), global_pipeline_layout_params, reshade::opengl::global_pipeline_layout);
 
@@ -162,17 +165,6 @@ public:
 	}
 
 	auto get_pixel_format() const { return _pixel_format; }
-
-	void destroy_resource_view(reshade::api::resource_view handle) final
-	{
-		device_impl::destroy_resource_view(handle);
-
-		// Destroy all framebuffers, to ensure they are recreated even if a resource view handle is reused
-		// This is necessary since framebuffers include dimension information, so 'glBlitFramebuffer' etc. will clip the image if an outdated one is used
-		for (const std::pair<HGLRC, reshade::opengl::device_context_impl *> context_info : s_opengl_contexts)
-			if (context_info.second->get_device() == this)
-				context_info.second->invalidate_framebuffer_cache();
-	}
 
 	reshade::api::resource_desc get_resource_desc(reshade::api::resource resource) const final
 	{
@@ -237,14 +229,15 @@ public:
 
 		if (device->_default_depth_format != reshade::api::format::unknown)
 		{
-			reshade::api::resource_desc default_fbo_depth_desc = device->_default_fbo_desc;
+			constexpr reshade::api::resource default_ds = reshade::opengl::make_resource_handle(GL_FRAMEBUFFER_DEFAULT, GL_DEPTH_STENCIL_ATTACHMENT);
+			constexpr reshade::api::resource_view default_dsv = reshade::opengl::make_resource_view_handle(GL_FRAMEBUFFER_DEFAULT, GL_DEPTH_STENCIL_ATTACHMENT);
+
+			reshade::api::resource_desc default_fbo_depth_desc = device->get_resource_desc(default_ds);
 			default_fbo_depth_desc.texture.width = width;
 			default_fbo_depth_desc.texture.height = height;
-			default_fbo_depth_desc.texture.format = device->_default_depth_format;
 
-			constexpr reshade::api::resource_view default_dsv = reshade::opengl::make_resource_view_handle(GL_FRAMEBUFFER_DEFAULT, GL_DEPTH_STENCIL_ATTACHMENT);
-			reshade::invoke_addon_event<reshade::addon_event::init_resource>(device, default_fbo_depth_desc, nullptr, reshade::api::resource_usage::depth_stencil, device->get_resource_from_view(default_dsv));
-			reshade::invoke_addon_event<reshade::addon_event::init_resource_view>(device, device->get_resource_from_view(default_dsv), reshade::api::resource_usage::depth_stencil, reshade::api::resource_view_desc(default_fbo_depth_desc.texture.format), default_dsv);
+			reshade::invoke_addon_event<reshade::addon_event::init_resource>(device, default_fbo_depth_desc, nullptr, reshade::api::resource_usage::depth_stencil, default_ds);
+			reshade::invoke_addon_event<reshade::addon_event::init_resource_view>(device, default_ds, reshade::api::resource_usage::depth_stencil, reshade::api::resource_view_desc(default_fbo_depth_desc.texture.format), default_dsv);
 		}
 #endif
 
@@ -267,9 +260,11 @@ public:
 
 		if (device->_default_depth_format != reshade::api::format::unknown)
 		{
+			constexpr reshade::api::resource default_ds = reshade::opengl::make_resource_handle(GL_FRAMEBUFFER_DEFAULT, GL_DEPTH_STENCIL_ATTACHMENT);
 			constexpr reshade::api::resource_view default_dsv = reshade::opengl::make_resource_view_handle(GL_FRAMEBUFFER_DEFAULT, GL_DEPTH_STENCIL_ATTACHMENT);
+
 			reshade::invoke_addon_event<reshade::addon_event::destroy_resource_view>(device, default_dsv);
-			reshade::invoke_addon_event<reshade::addon_event::destroy_resource>(device, device->get_resource_from_view(default_dsv));
+			reshade::invoke_addon_event<reshade::addon_event::destroy_resource>(device, default_ds);
 		}
 
 		reshade::invoke_addon_event<reshade::addon_event::destroy_swapchain>(this);
@@ -909,12 +904,11 @@ extern "C" BOOL  WINAPI wglDeleteContext(HGLRC hglrc)
 					// Delete any swap chains referencing this device
 					for (auto swapchain_it = s_opengl_swapchains.begin(); swapchain_it != s_opengl_swapchains.end();)
 					{
-						const auto swapchain = static_cast<wgl_swapchain *>(swapchain_it->second);
+						const auto swapchain = *swapchain_it;
 
 						if (device == swapchain->get_device())
 						{
 							delete swapchain;
-
 							swapchain_it = s_opengl_swapchains.erase(swapchain_it);
 						}
 						else
@@ -1100,12 +1094,15 @@ extern "C" BOOL  WINAPI wglMakeCurrent(HDC hdc, HGLRC hglrc)
 	wgl_swapchain *swapchain = nullptr;
 
 	if (const auto swapchain_it = std::find_if(s_opengl_swapchains.begin(), s_opengl_swapchains.end(),
-			[hdc, hwnd, device](const std::pair<HDC, reshade::opengl::swapchain_impl *> &swapchain_info) { return (swapchain_info.first == hdc || (hwnd != nullptr && WindowFromDC(swapchain_info.first) == hwnd)) && swapchain_info.second->get_device() == device; });
+			[hdc, hwnd, device](wgl_swapchain *const swapchain) {
+				const HDC swapchain_hdc = reinterpret_cast<HDC>(swapchain->_orig);
+				return (swapchain_hdc == hdc || (hwnd != nullptr && WindowFromDC(swapchain_hdc) == hwnd)) && swapchain->get_device() == device;
+			});
 		swapchain_it != s_opengl_swapchains.end())
 	{
 		assert(hwnd != nullptr);
 
-		swapchain = static_cast<wgl_swapchain *>(swapchain_it->second);
+		swapchain = *swapchain_it;
 	}
 	else
 	{
@@ -1125,7 +1122,7 @@ extern "C" BOOL  WINAPI wglMakeCurrent(HDC hdc, HGLRC hglrc)
 			assert(wglGetPixelFormat(hdc) == device->get_pixel_format());
 
 			swapchain = new wgl_swapchain(device, hdc);
-			s_opengl_swapchains.emplace_back(hdc, swapchain);
+			s_opengl_swapchains.push_back(swapchain);
 		}
 	}
 
@@ -1294,13 +1291,14 @@ extern "C" BOOL  WINAPI wglSwapBuffers(HDC hdc)
 		const std::shared_lock<std::shared_mutex> lock(s_global_mutex);
 
 		if (const auto swapchain_it = std::find_if(s_opengl_swapchains.begin(), s_opengl_swapchains.end(),
-				[hdc, hwnd = WindowFromDC(hdc)](const std::pair<HDC, reshade::opengl::swapchain_impl *> &swapchain_info) {
+				[hdc, hwnd = WindowFromDC(hdc)](wgl_swapchain *const swapchain) {
+					const HDC swapchain_hdc = reinterpret_cast<HDC>(swapchain->_orig);
 					// Fall back to checking for the same window, in case the device context handle has changed (without 'CS_OWNDC')
-					return (swapchain_info.first == hdc || (hwnd != nullptr && WindowFromDC(swapchain_info.first) == hwnd)) && swapchain_info.second->get_device() == g_current_context->get_device();
+					return (swapchain_hdc == hdc || (hwnd != nullptr && WindowFromDC(swapchain_hdc) == hwnd)) && swapchain->get_device() == g_current_context->get_device();
 				});
 			swapchain_it != s_opengl_swapchains.end())
 		{
-			const auto swapchain = static_cast<wgl_swapchain *>(swapchain_it->second);
+			const auto swapchain = *swapchain_it;
 			swapchain->on_present(g_current_context);
 		}
 	}
@@ -1641,6 +1639,18 @@ extern "C" PROC  WINAPI wglGetProcAddress(LPCSTR lpszProc)
 		HOOK_PROC(glUniform2iv);
 		HOOK_PROC(glUniform3iv);
 		HOOK_PROC(glUniform4iv);
+		HOOK_PROC(glUniformMatrix2fv);
+		HOOK_PROC(glUniformMatrix3fv);
+		HOOK_PROC(glUniformMatrix4fv);
+		HOOK_PROC(glVertexAttribPointer);
+#endif
+#ifdef GL_VERSION_2_1
+		HOOK_PROC(glUniformMatrix2x3fv);
+		HOOK_PROC(glUniformMatrix3x2fv);
+		HOOK_PROC(glUniformMatrix2x4fv);
+		HOOK_PROC(glUniformMatrix4x2fv);
+		HOOK_PROC(glUniformMatrix3x4fv);
+		HOOK_PROC(glUniformMatrix4x3fv);
 #endif
 #ifdef GL_VERSION_3_0
 		HOOK_PROC(glMapBufferRange);
@@ -1670,6 +1680,8 @@ extern "C" PROC  WINAPI wglGetProcAddress(LPCSTR lpszProc)
 		HOOK_PROC(glUniform2uiv);
 		HOOK_PROC(glUniform3uiv);
 		HOOK_PROC(glUniform4uiv);
+		HOOK_PROC(glDeleteVertexArrays);
+		HOOK_PROC(glVertexAttribIPointer);
 #endif
 #ifdef GL_VERSION_3_1
 		HOOK_PROC(glTexBuffer);
@@ -1697,6 +1709,7 @@ extern "C" PROC  WINAPI wglGetProcAddress(LPCSTR lpszProc)
 		HOOK_PROC(glViewportArrayv);
 		HOOK_PROC(glViewportIndexedf);
 		HOOK_PROC(glViewportIndexedfv);
+		HOOK_PROC(glVertexAttribLPointer);
 #endif
 #ifdef GL_VERSION_4_2
 		HOOK_PROC(glTexStorage1D);

@@ -181,13 +181,29 @@ namespace reshade { namespace api
 	enum class resource_flags : uint32_t
 	{
 		none = 0,
+		/// <summary>
+		/// Dynamic resources can be frequently updated during a frame, with previous contents automatically being shadowed so to no affect already executing operations on the GPU.
+		/// Required for <see cref="map_access::write_discard"/>. The flag is not supported in D3D12 or Vulkan.
+		/// </summary>
 		dynamic = (1 << 3),
+		/// <summary>
+		/// Required to create <see cref="resource_view_type::texture_cube"/> or <see cref="resource_view_type::texture_cube_array"/> views of the resource.
+		/// </summary>
 		cube_compatible = (1 << 2),
+		/// <summary>
+		/// Required to use the resource with <see cref="command_list::generate_mipmaps"/>.
+		/// </summary>
 		generate_mipmaps = (1 << 0),
+		/// <summary>
+		/// Shared resources can be imported/exported from/to different graphics APIs and/or processes.
+		/// Required to use the "shared_handle" parameter of <see cref="device::create_resource"/>.
+		/// </summary>
 		shared = (1 << 1),
 		shared_nt_handle = (1 << 11),
-		structured = (1 << 6),
-		sparse_binding = (1 << 18)
+		/// <summary>
+		/// Resource is backed using sparse memory binding.
+		/// </summary>
+		sparse_binding = (1 << 18),
 	};
 	RESHADE_DEFINE_ENUM_FLAG_OPERATORS(resource_flags);
 
@@ -235,8 +251,8 @@ namespace reshade { namespace api
 	struct [[nodiscard]] resource_desc
 	{
 		constexpr resource_desc() : texture() {}
-		constexpr resource_desc(uint64_t size, memory_heap heap, resource_usage usage) :
-			type(resource_type::buffer), buffer({ size }), heap(heap), usage(usage) {}
+		constexpr resource_desc(uint64_t size, memory_heap heap, resource_usage usage, resource_flags flags = resource_flags::none) :
+			type(resource_type::buffer), buffer({ size }), heap(heap), usage(usage), flags(flags) {}
 		constexpr resource_desc(uint32_t width, uint32_t height, uint16_t layers, uint16_t levels, format format, uint16_t samples, memory_heap heap, resource_usage usage, resource_flags flags = resource_flags::none) :
 			type(resource_type::texture_2d), texture({ width, height, layers, levels, format, samples }), heap(heap), usage(usage), flags(flags) {}
 		constexpr resource_desc(resource_type type, uint32_t width, uint32_t height, uint16_t depth_or_layers, uint16_t levels, format format, uint16_t samples, memory_heap heap, resource_usage usage, resource_flags flags = resource_flags::none) :

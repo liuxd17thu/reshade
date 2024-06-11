@@ -852,7 +852,7 @@ auto reshade::opengl::convert_upload_format(api::format format, GLenum &type) ->
 		return GL_BGRA;
 	case api::format::b5g5r5x1_unorm:
 		type = GL_UNSIGNED_SHORT_1_5_5_5_REV;
-		return GL_BGR;
+		return GL_BGRA;
 	case api::format::b4g4r4a4_unorm:
 		type = GL_UNSIGNED_SHORT_4_4_4_4_REV;
 		return GL_BGRA;
@@ -1035,8 +1035,14 @@ auto reshade::opengl::convert_upload_format(GLenum format, GLenum type) -> api::
 	case GL_RGB_INTEGER:
 		switch (type)
 		{
+		case GL_BYTE:
+			return api::format::r8g8b8x8_unorm;
 		case GL_UNSIGNED_SHORT: // Used by Amnesia: A Machine for Pigs (to upload to a GL_RGB8 texture)
 			return api::format::unknown;
+		case GL_INT:
+			return api::format::r32g32b32_sint;
+		case GL_UNSIGNED_INT:
+			return api::format::r32g32b32_uint;
 		case GL_UNSIGNED_INT_10F_11F_11F_REV:
 			return api::format::r11g11b10_float;
 		case GL_FLOAT:
@@ -1049,6 +1055,8 @@ auto reshade::opengl::convert_upload_format(GLenum format, GLenum type) -> api::
 	case GL_BGR_INTEGER:
 		switch (type)
 		{
+		case GL_BYTE:
+			return api::format::b8g8r8x8_unorm;
 		case GL_UNSIGNED_SHORT: // Used by Amnesia: A Machine for Pigs (to upload to a GL_RGB8 texture)
 			return api::format::unknown;
 		case GL_UNSIGNED_SHORT_5_6_5_REV:
@@ -1091,26 +1099,6 @@ auto reshade::opengl::convert_upload_format(GLenum format, GLenum type) -> api::
 			assert(false);
 			return api::format::unknown;
 		}
-	case GL_BGRA:
-		switch (type)
-		{
-		case GL_UNSIGNED_BYTE:
-			return api::format::b8g8r8a8_unorm;
-		case GL_UNSIGNED_SHORT: // Used by Amnesia: Rebirth
-			return api::format::unknown;
-		case GL_UNSIGNED_SHORT_4_4_4_4_REV:
-			return api::format::b4g4r4a4_unorm;
-		case GL_UNSIGNED_SHORT_1_5_5_5_REV:
-			return api::format::b5g5r5a1_unorm;
-		case GL_UNSIGNED_INT_8_8_8_8:
-		case GL_UNSIGNED_INT_8_8_8_8_REV:
-			return api::format::b8g8r8a8_unorm;
-		case GL_UNSIGNED_INT_2_10_10_10_REV:
-			return api::format::b10g10r10a2_unorm;
-		default:
-			assert(false);
-			return api::format::unknown;
-		}
 	case GL_RGBA_INTEGER:
 		switch (type)
 		{
@@ -1128,6 +1116,26 @@ auto reshade::opengl::convert_upload_format(GLenum format, GLenum type) -> api::
 			return api::format::r32g32b32a32_uint;
 		case GL_UNSIGNED_INT_2_10_10_10_REV:
 			return api::format::r10g10b10a2_uint;
+		default:
+			assert(false);
+			return api::format::unknown;
+		}
+	case GL_BGRA:
+		switch (type)
+		{
+		case GL_UNSIGNED_BYTE:
+			return api::format::b8g8r8a8_unorm;
+		case GL_UNSIGNED_SHORT: // Used by Amnesia: Rebirth
+			return api::format::unknown;
+		case GL_UNSIGNED_SHORT_4_4_4_4_REV:
+			return api::format::b4g4r4a4_unorm;
+		case GL_UNSIGNED_SHORT_1_5_5_5_REV:
+			return api::format::b5g5r5a1_unorm;
+		case GL_UNSIGNED_INT_8_8_8_8:
+		case GL_UNSIGNED_INT_8_8_8_8_REV:
+			return api::format::b8g8r8a8_unorm;
+		case GL_UNSIGNED_INT_2_10_10_10_REV:
+			return api::format::b10g10r10a2_unorm;
 		default:
 			assert(false);
 			return api::format::unknown;
@@ -1186,12 +1194,26 @@ auto reshade::opengl::convert_attrib_format(api::format format, GLint &size, GLb
 
 	switch (format)
 	{
+	case api::format::r8g8b8x8_unorm:
+		normalized = GL_TRUE;
+		size = 3;
+		return GL_UNSIGNED_BYTE;
+	case api::format::b8g8r8x8_unorm:
+		normalized = GL_TRUE;
+		size = GL_BGR;
+		return GL_UNSIGNED_BYTE;
 	case api::format::r8g8b8a8_unorm:
 		normalized = GL_TRUE;
 		[[fallthrough]];
 	case api::format::r8g8b8a8_uint:
 		size = 4;
 		return GL_UNSIGNED_BYTE;
+	case api::format::r8g8b8a8_snorm:
+		normalized = GL_TRUE;
+		[[fallthrough]];
+	case api::format::r8g8b8a8_sint:
+		size = 4;
+		return GL_BYTE;
 	case api::format::b8g8r8a8_unorm:
 		normalized = GL_TRUE;
 		size = GL_BGRA;
@@ -1291,7 +1313,28 @@ auto reshade::opengl::convert_attrib_format(api::format format, GLint &size, GLb
 		return GL_FLOAT;
 	}
 
+	assert(false);
 	return GL_NONE;
+}
+auto reshade::opengl::convert_attrib_format(GLint size, GLenum type, GLboolean normalized) -> api::format
+{
+	switch (size)
+	{
+	case 1:
+		return convert_upload_format(normalized || type == GL_FLOAT || type == GL_HALF_FLOAT ? GL_RED : GL_RED_INTEGER, type);
+	case 2:
+		return convert_upload_format(normalized || type == GL_FLOAT || type == GL_HALF_FLOAT ? GL_RG : GL_RG_INTEGER, type);
+	case 3:
+		return convert_upload_format(normalized || type == GL_FLOAT || type == GL_HALF_FLOAT ? GL_RGB : GL_RGB_INTEGER, type);
+	case 4:
+		return convert_upload_format(normalized || type == GL_FLOAT || type == GL_HALF_FLOAT ? GL_RGBA : GL_RGBA_INTEGER, type);
+	case GL_BGRA:
+		assert(normalized);
+		return convert_upload_format(GL_BGRA, type);
+	default:
+		assert(false);
+		return api::format::unknown;
+	}
 }
 
 auto reshade::opengl::convert_sized_internal_format(GLenum internal_format) -> GLenum
@@ -1354,37 +1397,6 @@ auto reshade::opengl::is_depth_stencil_format(api::format format) -> GLenum
 	}
 }
 
-void reshade::opengl::convert_memory_usage_to_flags(GLenum usage, GLbitfield &flags)
-{
-	switch (usage)
-	{
-	case GL_STATIC_DRAW:
-		break;
-	case GL_STREAM_DRAW:
-		flags |= GL_MAP_WRITE_BIT;
-		break;
-	case GL_DYNAMIC_DRAW:
-		flags |= GL_MAP_WRITE_BIT | GL_DYNAMIC_STORAGE_BIT;
-		break;
-	case GL_STREAM_READ:
-	case GL_STATIC_READ:
-		flags |= GL_MAP_READ_BIT;
-		break;
-	case GL_DYNAMIC_READ:
-		flags |= GL_MAP_READ_BIT | GL_DYNAMIC_STORAGE_BIT;
-		break;
-	}
-}
-void reshade::opengl::convert_memory_flags_to_usage(GLbitfield flags, GLenum &usage)
-{
-	if ((flags & GL_MAP_WRITE_BIT) != 0)
-		usage = (flags & GL_DYNAMIC_STORAGE_BIT) != 0 ? GL_DYNAMIC_DRAW : GL_STREAM_DRAW;
-	else if ((flags & GL_MAP_READ_BIT) != 0)
-		usage = (flags & GL_DYNAMIC_STORAGE_BIT) != 0 ? GL_DYNAMIC_READ : GL_STREAM_READ;
-	else if ((flags & GL_CLIENT_STORAGE_BIT) == 0)
-		usage = GL_STATIC_DRAW;
-}
-
 auto reshade::opengl::convert_access_flags(reshade::api::map_access flags) -> GLbitfield
 {
 	switch (flags)
@@ -1417,23 +1429,33 @@ reshade::api::map_access reshade::opengl::convert_access_flags(GLbitfield flags)
 	}
 }
 
-void reshade::opengl::convert_resource_desc(const api::resource_desc &desc, GLsizeiptr &buffer_size, GLenum &usage)
+void reshade::opengl::convert_resource_desc(const api::resource_desc &desc, GLsizeiptr &buffer_size, GLbitfield &storage_flags)
 {
 	assert(desc.buffer.size <= static_cast<uint64_t>(std::numeric_limits<GLsizeiptr>::max()));
 	buffer_size = static_cast<GLsizeiptr>(desc.buffer.size);
 
 	switch (desc.heap)
 	{
+	default:
+	case api::memory_heap::unknown:
+		storage_flags = GL_MAP_READ_BIT | GL_MAP_WRITE_BIT;
+		break;
 	case api::memory_heap::gpu_only:
-		usage = GL_STATIC_DRAW;
+		storage_flags = 0;
 		break;
 	case api::memory_heap::cpu_to_gpu:
-		usage = (desc.flags & api::resource_flags::dynamic) != 0 ? GL_DYNAMIC_DRAW : GL_STREAM_DRAW;
+		storage_flags = GL_MAP_WRITE_BIT;
 		break;
 	case api::memory_heap::gpu_to_cpu:
-		usage = (desc.flags & api::resource_flags::dynamic) != 0 ? GL_DYNAMIC_READ : GL_STREAM_READ;
+		storage_flags = GL_MAP_READ_BIT;
+		break;
+	case api::memory_heap::cpu_only:
+		storage_flags = GL_MAP_READ_BIT | GL_MAP_WRITE_BIT | GL_CLIENT_STORAGE_BIT;
 		break;
 	}
+
+	if ((desc.flags & api::resource_flags::dynamic) != 0)
+		storage_flags |= GL_DYNAMIC_STORAGE_BIT;
 }
 reshade::api::resource_type reshade::opengl::convert_resource_type(GLenum target)
 {
@@ -1494,32 +1516,26 @@ reshade::api::resource_type reshade::opengl::convert_resource_type(GLenum target
 		return api::resource_type::unknown;
 	}
 }
-reshade::api::resource_desc reshade::opengl::convert_resource_desc(GLenum target, GLsizeiptr buffer_size, GLenum usage)
+reshade::api::resource_desc reshade::opengl::convert_resource_desc(GLenum target, GLsizeiptr buffer_size, GLbitfield storage_flags)
 {
 	api::resource_desc desc = {};
 	desc.type = convert_resource_type(target);
 	desc.buffer.size = buffer_size;
 	desc.buffer.stride = 0;
 
-	switch (usage)
+	switch (storage_flags & (GL_MAP_READ_BIT | GL_MAP_WRITE_BIT))
 	{
-	case GL_STATIC_DRAW:
+	case GL_MAP_READ_BIT | GL_MAP_WRITE_BIT:
+		desc.heap = api::memory_heap::unknown;
+		break;
+	case 0:
 		desc.heap = api::memory_heap::gpu_only;
 		break;
-	case GL_STREAM_DRAW:
+	case GL_MAP_WRITE_BIT:
 		desc.heap = api::memory_heap::cpu_to_gpu;
 		break;
-	case GL_DYNAMIC_DRAW:
-		desc.heap = api::memory_heap::cpu_to_gpu;
-		desc.flags |= api::resource_flags::dynamic;
-		break;
-	case GL_STREAM_READ:
-	case GL_STATIC_READ:
+	case GL_MAP_READ_BIT:
 		desc.heap = api::memory_heap::gpu_to_cpu;
-		break;
-	case GL_DYNAMIC_READ:
-		desc.heap = api::memory_heap::gpu_to_cpu;
-		desc.flags |= api::resource_flags::dynamic;
 		break;
 	}
 
@@ -1536,6 +1552,9 @@ reshade::api::resource_desc reshade::opengl::convert_resource_desc(GLenum target
 		desc.usage |= api::resource_usage::indirect_argument;
 	else
 		desc.usage |= api::resource_usage::shader_resource;
+
+	if ((storage_flags & GL_DYNAMIC_STORAGE_BIT) != 0)
+		desc.flags |= api::resource_flags::dynamic;
 
 	return desc;
 }
@@ -1565,9 +1584,9 @@ reshade::api::resource_desc reshade::opengl::convert_resource_desc(GLenum target
 	if (desc.type != api::resource_type::surface)
 		desc.usage |= api::resource_usage::shader_resource;
 
+	assert(!(target >= GL_TEXTURE_CUBE_MAP_POSITIVE_X && target <= GL_TEXTURE_CUBE_MAP_NEGATIVE_Z));
 	if (target == GL_TEXTURE_CUBE_MAP || target == GL_TEXTURE_CUBE_MAP_ARRAY ||
-		target == GL_PROXY_TEXTURE_CUBE_MAP || target == GL_PROXY_TEXTURE_CUBE_MAP_ARRAY || (
-		target >= GL_TEXTURE_CUBE_MAP_POSITIVE_X && target <= GL_TEXTURE_CUBE_MAP_NEGATIVE_Z))
+		target == GL_PROXY_TEXTURE_CUBE_MAP || target == GL_PROXY_TEXTURE_CUBE_MAP_ARRAY)
 	{
 		desc.texture.depth_or_layers *= 6;
 		desc.flags |= api::resource_flags::cube_compatible;
@@ -2121,6 +2140,7 @@ auto   reshade::opengl::convert_primitive_topology(GLenum value) -> api::primiti
 		return api::primitive_topology::point_list;
 	case GL_LINES:
 		return api::primitive_topology::line_list;
+	case GL_LINE_LOOP:
 	case GL_LINE_STRIP:
 		return api::primitive_topology::line_strip;
 	case GL_TRIANGLES:
