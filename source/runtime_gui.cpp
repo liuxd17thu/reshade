@@ -205,14 +205,16 @@ void reshade::runtime::build_font_atlas()
 	{
 		if (resolved_font_path.empty())
 			resolved_font_path = _font_path.empty() ? _default_font_path : _font_path;
-		if (!(resolve_path(resolved_font_path, ec) && atlas->AddFontFromFileTTF(resolved_font_path.u8string().c_str(), cfg.SizePixels, &cfg, atlas->GetGlyphRangesDefault()) != nullptr))
+		if (resolved_font_path == L"ProggyClean.ttf")
+			atlas->AddFontDefault(&cfg);
+		else if (!(resolve_path(resolved_font_path, ec) && atlas->AddFontFromFileTTF(resolved_font_path.u8string().c_str(), cfg.SizePixels, &cfg, atlas->GetGlyphRangesDefault()) != nullptr))
 		{
 			LOG(ERROR) << "Failed to load latin font from " << resolved_font_path << " with error code " << ec.value() << '!';
 			resolved_font_path.clear();
 		}
 
 		if (resolved_font_path.empty())
-			atlas->AddFontDefault(&cfg);
+			atlas->AddFontFromMemoryCompressedBase85TTF(Iosevka_compressed_data_base85, cfg.SizePixels, &cfg);
 
 		cfg.MergeMode = true;
 	}
@@ -221,7 +223,9 @@ void reshade::runtime::build_font_atlas()
 	// Add main font
 	resolved_font_path = _font_path.empty() ? _default_font_path : _font_path;
 	{
-		if (!resolved_font_path.empty() && !(resolve_path(resolved_font_path, ec) && atlas->AddFontFromFileTTF(resolved_font_path.u8string().c_str(), cfg.SizePixels, &cfg, glyph_ranges) != nullptr))
+		if (resolved_font_path == L"ProggyClean.ttf")
+			atlas->AddFontDefault(&cfg);
+		else if (!resolved_font_path.empty() && !(resolve_path(resolved_font_path, ec) && atlas->AddFontFromFileTTF(resolved_font_path.u8string().c_str(), cfg.SizePixels, &cfg, glyph_ranges) != nullptr))
 		{
 			LOG(ERROR) << "Failed to load font from " << resolved_font_path << " with error code " << ec.value() << '!';
 			resolved_font_path.clear();
@@ -229,7 +233,7 @@ void reshade::runtime::build_font_atlas()
 
 		// Use default font if custom font failed to load
 		if (resolved_font_path.empty())
-			atlas->AddFontDefault(&cfg);
+			atlas->AddFontFromMemoryCompressedBase85TTF(Iosevka_compressed_data_base85, cfg.SizePixels, &cfg);
 
 		// Merge icons into main font
 		cfg.MergeMode = true;
@@ -252,14 +256,16 @@ void reshade::runtime::build_font_atlas()
 		cfg = ImFontConfig();
 		cfg.SizePixels = static_cast<float>(_editor_font_size);
 
-		if (!resolved_font_path.empty() && !(resolve_path(resolved_font_path, ec) && atlas->AddFontFromFileTTF(resolved_font_path.u8string().c_str(), cfg.SizePixels, &cfg, glyph_ranges) != nullptr))
+		if (resolved_font_path == L"ProggyClean.ttf")
+			atlas->AddFontDefault(&cfg);
+		else if (!resolved_font_path.empty() && !(resolve_path(resolved_font_path, ec) && atlas->AddFontFromFileTTF(resolved_font_path.u8string().c_str(), cfg.SizePixels, &cfg, glyph_ranges) != nullptr))
 		{
 			LOG(ERROR) << "Failed to load editor font from " << resolved_font_path << " with error code " << ec.value() << '!';
 			resolved_font_path.clear();
 		}
 
 		if (resolved_font_path.empty())
-			atlas->AddFontDefault(&cfg);
+			atlas->AddFontFromMemoryCompressedBase85TTF(Iosevka_compressed_data_base85, cfg.SizePixels, &cfg);
 	}
 
 	if (atlas->Build())
@@ -284,7 +290,7 @@ void reshade::runtime::build_font_atlas()
 			cfg = ImFontConfig();
 			cfg.SizePixels = static_cast<float>(i == 0 ? _font_size : _editor_font_size);
 
-			atlas->AddFontDefault(&cfg);
+			atlas->AddFontFromMemoryCompressedBase85TTF(Iosevka_compressed_data_base85, cfg.SizePixels, &cfg);
 		}
 	}
 
@@ -2848,20 +2854,20 @@ void reshade::runtime::draw_gui_settings()
 		}
 		#pragma endregion
 
-		if (imgui::font_input_box(_("Global font"), _default_font_path.empty() ? "ProggyClean.ttf" : _default_font_path.u8string().c_str(), _font_path, _file_selection_path, _font_size))
+		if (imgui::font_input_box(_("Global font"), _default_font_path.empty() ? "Iosevka-Basic.ttf" : _default_font_path.u8string().c_str(), _font_path, _file_selection_path, _font_size))
 		{
 			modified = true;
 			_imgui_context->IO.Fonts->TexReady = false;
 		}
 
 		if (_imgui_context->IO.Fonts->Fonts[0]->ConfigDataCount > 2 && // Latin font + main font + icon font
-			imgui::font_input_box(_("Latin font"), _default_font_path.empty() ? "ProggyClean.ttf" : "-", _latin_font_path, _file_selection_path, _font_size))
+			imgui::font_input_box(_("Latin font"), _default_font_path.empty() ? "Iosevka-Basic.ttf" : "-", _latin_font_path, _file_selection_path, _font_size))
 		{
 			modified = true;
 			_imgui_context->IO.Fonts->TexReady = false;
 		}
 
-		if (imgui::font_input_box(_("Text editor font"), _default_editor_font_path.empty() ? "ProggyClean.ttf" : _default_editor_font_path.u8string().c_str(), _editor_font_path, _file_selection_path, _editor_font_size))
+		if (imgui::font_input_box(_("Text editor font"), _default_editor_font_path.empty() ? "Iosevka-Basic.ttf" : _default_editor_font_path.u8string().c_str(), _editor_font_path, _file_selection_path, _editor_font_size))
 		{
 			modified = true;
 			_imgui_context->IO.Fonts->TexReady = false;
@@ -3561,6 +3567,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	if (ImGui::CollapsingHeader("Fork Awesome"))
 	{
 		ImGui::TextUnformatted(R"(Copyright (C) 2018 Fork Awesome (https://forkawesome.github.io)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1. (http://scripts.sil.org/OFL))");
+	}
+	if (ImGui::CollapsingHeader("Iosevka (Sarasa Mono)"))
+	{
+		ImGui::TextUnformatted(R"(Site: https://typeof.net/Iosevka/
+
+Copyright (c) 2015-2024, Renzhi Li (aka. Belleve Invis, belleve@typeof.net)
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1. (http://scripts.sil.org/OFL))");
 	}
