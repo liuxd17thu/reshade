@@ -114,6 +114,8 @@ namespace reshade::imgui
 	/// </summary>
 	bool slider_with_buttons(const char *label, ImGuiDataType data_type, void *v, int components, const void *v_speed, const void *v_min, const void *v_max, const char *format = nullptr);
 
+	bool position_pad_2d(const char *label, float pos[2], const float pos_min[2], const float pos_max[2], const float pos_step[2], float aspect_ratio = 1.0f);
+
 	/// <summary>
 	/// Adds an ImGui slider widget but with an additional color preview and picker for alpha values.
 	/// </summary>

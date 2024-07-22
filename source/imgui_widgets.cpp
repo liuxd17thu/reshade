@@ -831,6 +831,68 @@ bool reshade::imgui::slider_with_buttons(const char *label, ImGuiDataType data_t
 	}
 }
 
+bool reshade::imgui::position_pad_2d(const char *label, float pos[2], const float pos_min[2], const float pos_max[2], const float pos_step[2], float aspect_ratio)
+{
+	bool modified = false;
+
+	const float button_size = ImGui::GetFrameHeight();
+	const float button_spacing = ImGui::GetStyle().ItemInnerSpacing.x;
+
+	float pad_width = ImGui::GetFrameHeight() * 12.0f;
+	float pad_height = pad_width / aspect_ratio;
+	ImVec2 pad_pos;
+
+	ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - button_spacing - button_size);
+	ImGui::SliderScalarN("##pos", ImGuiDataType_Float, pos, 2, pos_min, pos_max, "%0.4f");
+	ImGui::SameLine(0, button_spacing);
+	if (ImGui::ButtonEx(ICON_FK_PLUS"##open_pad", ImVec2(button_size, button_size)))
+	{
+		ImGui::OpenPopup("##Position Pad");
+	}
+
+	const auto io = ImGui::GetIO();
+
+	ImGui::SetNextWindowSize(ImVec2(pad_width, 0) + ImVec2(ImGui::CalcTextSize("+0.1234").x, 0) + ImVec2(5.0f * button_spacing, 0));
+
+	//ImGui::SetNextWindowSize(ImVec2(pad_width, pad_height) + ImGui::CalcTextSize("0.1234") + ImVec2(button_spacing, button_spacing));
+	if (ImGui::BeginPopup("##Position Pad"))
+	{
+		const auto draw_list = ImGui::GetWindowDrawList();
+		pad_pos = ImGui::GetCursorScreenPos();
+
+		ImGui::InvisibleButton("##pad_2d", ImVec2(pad_width, pad_height));
+
+		draw_list->AddRectFilled(pad_pos, pad_pos + ImVec2(pad_width, pad_height), ImColor(ImGui::GetStyle().Colors[ImGuiCol_FrameBg]));
+		if (ImGui::IsItemActive())
+		{
+			pos[0] = ImSaturate((io.MousePos.x - pad_pos.x) / (pad_width - 1.0f));
+			pos[1] = ImSaturate((io.MousePos.y - pad_pos.y) / (pad_height - 1.0f));
+			modified = true;
+		}
+
+		ImGui::SameLine();
+		const auto label_v_base = ImGui::GetCursorScreenPos();
+		ImGui::NewLine();
+		const auto label_h_base = ImGui::GetCursorScreenPos();
+		ImGui::Text("");
+
+		char label_x[16]; char label_y[16];
+		sprintf_s(label_x, "%+.4f", pos[0] * (pos_max[0] - pos_min[0]) + pos_min[0]);
+		sprintf_s(label_y, "%+.4f", pos[1] * (pos_max[1] - pos_min[1]) + pos_min[1]);
+		ImVec2 cursor_pos = ImVec2(pad_pos.x + pos[0] * (pad_width - 1.0f), pad_pos.y + pos[1] * (pad_height - 1.0f));
+
+		draw_list->AddLine(ImVec2(pad_pos.x, cursor_pos.y), ImVec2(pad_pos.x + pad_width, cursor_pos.y), ImColor(ImGui::GetStyle().Colors[ImGuiCol_Text]), std::ceil(ImGui::GetFontSize() / 13.0f));
+		draw_list->AddLine(ImVec2(cursor_pos.x, pad_pos.y), ImVec2(cursor_pos.x, pad_pos.y + pad_height), ImColor(ImGui::GetStyle().Colors[ImGuiCol_Text]), std::ceil(ImGui::GetFontSize() / 13.0f));
+
+		draw_list->AddText(ImVec2(label_v_base.x, cursor_pos.y - ImGui::GetFontSize() * 0.5f), ImColor(ImGui::GetStyle().Colors[ImGuiCol_Text]), label_y);
+		draw_list->AddText(ImVec2(cursor_pos.x - ImGui::CalcTextSize("0").x, label_h_base.y), ImColor(ImGui::GetStyle().Colors[ImGuiCol_Text]), label_x);
+
+		ImGui::EndPopup();
+	}
+
+	return modified;
+}
+
 bool reshade::imgui::slider_for_alpha_value(const char *label, float *v)
 {
 	const float button_size = ImGui::GetFrameHeight();

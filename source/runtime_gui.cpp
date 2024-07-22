@@ -2487,6 +2487,13 @@ void reshade::runtime::draw_gui_home()
 #endif
 void reshade::runtime::draw_gui_settings()
 {
+	static float debug_position[2] { 0.5f, 0.5f };
+	float debug_min[2] { -1, 1 }, debug_max[2] { 1, -1 }, debug_step[2] { 0.001f, 0.001f };
+	if (imgui::position_pad_2d("##debug pos", debug_position, debug_min, debug_max, debug_step, 1.0f))
+	{
+		;
+	}
+
 	if (ImGui::Button((ICON_FK_FOLDER " " + std::string(_("Open base folder in explorer"))).c_str(), ImVec2(-1, 0)))
 		utils::open_explorer(_config_path);
 
