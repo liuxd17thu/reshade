@@ -216,7 +216,7 @@ namespace reshade
 		void update_texture(texture &texture, uint32_t width, uint32_t height, uint32_t depth, const void *pixels);
 
 		void reset_uniform_value(uniform &variable);
-		void reshade::runtime::reset_uniform_value(uniform &variable, std::string &ui_bind);
+		void reset_uniform_value(uniform &variable, std::string &ui_bind);
 
 		void get_uniform_value_data(const uniform &variable, uint8_t *data, size_t size, size_t base_index) const;
 		template <typename T>
@@ -507,6 +507,7 @@ namespace reshade
 		size_t _focused_effect = std::numeric_limits<size_t>::max();
 		size_t opened_effect_tab = std::numeric_limits<size_t>::max();
 		size_t _selected_technique = std::numeric_limits<size_t>::max();
+		bool _localized_technique_name = true;
 		unsigned int _tutorial_index = 0;
 		unsigned int _effects_expanded_state = 2;
 		float _variable_editor_height = 200.0f;

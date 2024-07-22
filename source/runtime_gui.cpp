@@ -2270,27 +2270,44 @@ void reshade::runtime::draw_gui_home()
 		return; // Cannot show techniques and variables while effects are loading, since they are being modified in other threads during that time
 	}
 
+	float tech_button_width = 3 * ImGui::GetFrameHeight() + _imgui_context->Style.ItemSpacing.x;
 	if (_tutorial_index > 1)
 	{
-		if (imgui::search_input_box(_effect_filter, sizeof(_effect_filter), -((_variable_editor_tabs ? 1 : 2) * (_imgui_context->Style.ItemSpacing.x + 2.0f + button_width))))
+		const std::string lang_short = _current_language.substr(0, 2);
+
+		const float button_spacing = _imgui_context->Style.ItemSpacing.x * 0.5f;
+		if (imgui::search_input_box(_effect_filter, sizeof(_effect_filter),
+			-((_variable_editor_tabs ? 1 : 2) * (button_spacing + tech_button_width)) - (lang_short == "zh" ? (2.0f * (button_spacing + _font_size)) : button_spacing)))
 		{
 			_effects_expanded_state = 3;
 
 			for (technique &tech : _techniques)
 			{
 				std::string_view label = tech.annotation_as_string("ui_label");
+				std::string_view label_localized; get_localized_annotation(tech, label_localized, _current_language);
 				if (label.empty())
 					label = tech.name;
 
-				tech.hidden = tech.annotation_as_int("hidden") != 0 || !(filter_text(label, _effect_filter) || filter_text(_effects[tech.effect_index].source_file.filename().u8string() + build_postfix(_effects[tech.effect_index], _aurora_feature), _effect_filter));
+				tech.hidden = tech.annotation_as_int("hidden") != 0
+					|| !(
+						false // !label_localized.empty() && filter_text(label_localized, _effect_filter)
+						|| filter_text(label, _effect_filter)
+						|| filter_text(_effects[tech.effect_index].source_file.filename().u8string() + build_postfix(_effects[tech.effect_index], _aurora_feature), _effect_filter)
+					);
 			}
 		}
 
 		ImGui::SameLine();
 
+		if (lang_short == "zh")
+		{
+			imgui::toggle_button(_localized_technique_name ? "ZH" : "EN", _localized_technique_name, 2.0f * _font_size);
+			ImGui::SameLine(0, button_spacing);
+		}
+
 		ImGui::BeginDisabled(_is_in_preset_transition);
 
-		if (ImGui::Button(_("Active to top"), ImVec2(auto_save_button_spacing + button_width, 0)))
+		if (ImGui::Button(ICON_FK_TOP, ImVec2(tech_button_width, 0)))
 		{
 			std::vector<size_t> technique_indices = _technique_sorting;
 
@@ -2311,15 +2328,16 @@ void reshade::runtime::draw_gui_home()
 			else
 				_preset_is_modified = true;
 		}
-
+		ImGui::SetItemTooltip(_("Active to top"));
 		ImGui::EndDisabled();
 
 		if (!_variable_editor_tabs)
 		{
-			ImGui::SameLine();
+			ImGui::SameLine(0, button_spacing);
 
-			if (ImGui::Button((_effects_expanded_state & 2) ? _("Collapse all") : _("Expand all"), ImVec2(auto_save_button_spacing + button_width, 0)))
+			if (ImGui::Button((_effects_expanded_state & 2) ? ICON_FK_COLLAPSE : ICON_FK_EXPAND, ImVec2(tech_button_width, 0)))
 				_effects_expanded_state = (~_effects_expanded_state & 2) | 1;
+			ImGui::SetItemTooltip((_effects_expanded_state & 2) ? _("Collapse all") : _("Expand all"));
 		}
 
 		if (_tutorial_index == 2)
@@ -4914,7 +4932,11 @@ void reshade::runtime::draw_technique_editor()
 				// Gray out disabled techniques
 				ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(tech.enabled ? ImGuiCol_Text : ImGuiCol_TextDisabled));
 
-				std::string label(get_localized_annotation(tech, "ui_label", _current_language));
+				std::string label;
+				if(_localized_technique_name)
+					label = get_localized_annotation(tech, "ui_label", _current_language);
+				else
+					label = tech.annotation_as_string("ui_label");
 				if (label.empty())
 					label = tech.name;
 				if (_aurora_feature == 4 && _effects[tech.effect_index].flair_touched)
