@@ -9,6 +9,7 @@
 #include "com_ptr.hpp"
 #include "reshade_api_pipeline.hpp"
 #include <vector>
+#include <limits>
 
 namespace reshade::d3d9
 {
@@ -51,12 +52,7 @@ namespace reshade::d3d9
 		com_ptr<IDirect3DQuery9> event_queries[8];
 	};
 
-	constexpr api::resource global_index_buffer = { 0xFFFFFFFFFFFFFFF1 };
-	constexpr api::resource global_vertex_buffer = { 0xFFFFFFFFFFFFFFF2 };
-
-	constexpr api::pipeline_layout global_pipeline_layout = { 0xFFFFFFFFFFFFFFFF };
-
-	auto convert_format(api::format format, BOOL lockable = FALSE) -> D3DFORMAT;
+	auto convert_format(api::format format, BOOL lockable = FALSE, BOOL shader_usage = FALSE) -> D3DFORMAT;
 	auto convert_format(D3DFORMAT d3d_format, BOOL *lockable = nullptr) -> api::format;
 
 	void convert_memory_heap_to_d3d_pool(api::memory_heap heap, D3DPOOL &d3d_pool);
@@ -80,8 +76,8 @@ namespace reshade::d3d9
 	api::resource_desc convert_resource_desc(const D3DINDEXBUFFER_DESC &internal_desc, bool shared_handle = false);
 	api::resource_desc convert_resource_desc(const D3DVERTEXBUFFER_DESC &internal_desc, bool shared_handle = false);
 
-	void convert_input_layout_desc(uint32_t count, const api::input_element *elements, std::vector<D3DVERTEXELEMENT9> &internal_elements);
-	std::vector<api::input_element> convert_input_layout_desc(const D3DVERTEXELEMENT9 *internal_elements);
+	void convert_input_element(const api::input_element &desc, D3DVERTEXELEMENT9 &internal_desc);
+	api::input_element convert_input_element(const D3DVERTEXELEMENT9 &internal_desc);
 
 	auto convert_blend_op(D3DBLENDOP value) -> api::blend_op;
 	auto convert_blend_op(api::blend_op value) -> D3DBLENDOP;

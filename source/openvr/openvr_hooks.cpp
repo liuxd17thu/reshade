@@ -18,13 +18,16 @@
 #include "com_utils.hpp"
 #include "hook_manager.hpp"
 #include "lockfree_linear_map.hpp"
+#include <cstdio> // std::sscanf
+#include <cstring> // std::memcpy
+#include <algorithm> // std::find_if, std::swap
 #include <functional>
 #include <ivrclientcore.h>
 
 // There can only be a single global effect runtime in OpenVR (since its API is based on singletons)
 static reshade::openvr::swapchain_impl *s_vr_swapchain = nullptr;
 
-static inline vr::VRTextureBounds_t calc_side_by_side_bounds(vr::EVREye eye, const vr::VRTextureBounds_t *orig_bounds)
+static const vr::VRTextureBounds_t calc_side_by_side_bounds(vr::EVREye eye, const vr::VRTextureBounds_t *orig_bounds)
 {
 	auto bounds = (eye != vr::Eye_Right) ?
 		vr::VRTextureBounds_t { 0.0f, 0.0f, 0.5f, 1.0f } : // Left half of the texture
@@ -81,10 +84,12 @@ static vr::EVRCompositorError on_vr_submit_d3d11(vr::IVRCompositor *compositor, 
 	if (com_ptr<ID3D10Device> device10;
 		device->QueryInterface(&device10) == S_OK)
 	{
-		// Also check that the device has a proxy 'D3D10Device' interface, otherwise it is likely still a D3D11 device exposing the 'ID3D10Device interface, after 'ID3D11Device::CreateDeviceContextState' was called
+		// Also check that the device has a proxy 'D3D10Device' interface, otherwise it is likely still a D3D11 device exposing the 'ID3D10Device' interface, after 'ID3D11Device::CreateDeviceContextState' was called
 		if (const auto device10_proxy = get_private_pointer_d3dx<D3D10Device>(device10.get()))
+		{
 			// Whoops, this is actually a D3D10 texture, redirect ...
 			return on_vr_submit_d3d10(compositor, eye, reinterpret_cast<ID3D10Texture2D *>(texture), color_space, bounds, flags, submit, device10_proxy);
+		}
 	}
 
 	const auto device_proxy = get_private_pointer_d3dx<D3D11Device>(device.get());
@@ -349,7 +354,7 @@ VR_Interface_Impl(IVRCompositor, Submit, 5, 012, {
 		std::memcpy(&s_last_texture[eEye], pTexture, sizeof(vr::VRTextureWithPose_t));
 		break;
 	case vr::Submit_TextureWithDepth:
-		// This is not technically compatible with 'vr::VRTextureWithPoseAndDepth_t', but that is fine, since it's only used for storage and none of the fields are accessed directly
+		// This is not technically compatible with 'vr::VRTextureWithPoseAndDepth_t', but that is fine, since it's only used for storage and none of the members are accessed directly
 		// TODO: The depth texture bounds may be different then the side-by-side bounds which are used for submission
 		std::memcpy(&s_last_texture[eEye], pTexture, sizeof(vr::VRTextureWithDepth_t));
 		break;

@@ -5,13 +5,20 @@
 
 #include "effect_parser.hpp"
 #include "effect_codegen.hpp"
-#include <cmath> // signbit, isinf, isnan
-#include <cstdio> // snprintf
+#include <cmath> // std::isinf, std::isnan, std::signbit
 #include <cassert>
+#include <cstring> // std::memcmp
+#include <charconv> // std::from_chars, std::to_chars
 #include <algorithm> // std::find_if, std::max
 #include <unordered_set>
 
 using namespace reshadefx;
+
+inline char to_digit(unsigned int value)
+{
+	assert(value < 10);
+	return '0' + static_cast<char>(value);
+}
 
 class codegen_glsl final : public codegen
 {
@@ -62,13 +69,7 @@ private:
 	bool _uses_componentwise_and = false;
 	bool _uses_componentwise_cond = false;
 
-	static inline char to_digit(unsigned int value)
-	{
-		assert(value < 10);
-		return '0' + static_cast<char>(value);
-	}
-
-	void write_result(module &module) override
+	void write_result(effect_module &module) override
 	{
 		module = std::move(_module);
 
@@ -103,6 +104,9 @@ private:
 				"vec2 compCond(bvec2 cond, vec2 a, vec2 b) { return vec2(cond.x ? a.x : b.x, cond.y ? a.y : b.y); }\n"
 				"vec3 compCond(bvec3 cond, vec3 a, vec3 b) { return vec3(cond.x ? a.x : b.x, cond.y ? a.y : b.y, cond.z ? a.z : b.z); }\n"
 				"vec4 compCond(bvec4 cond, vec4 a, vec4 b) { return vec4(cond.x ? a.x : b.x, cond.y ? a.y : b.y, cond.z ? a.z : b.z, cond.w ? a.w : b.w); }\n"
+				"bvec2 compCond(bvec2 cond, bvec2 a, bvec2 b) { return bvec2(cond.x ? a.x : b.x, cond.y ? a.y : b.y); }\n"
+				"bvec3 compCond(bvec3 cond, bvec3 a, bvec3 b) { return bvec3(cond.x ? a.x : b.x, cond.y ? a.y : b.y, cond.z ? a.z : b.z); }\n"
+				"bvec4 compCond(bvec4 cond, bvec4 a, bvec4 b) { return bvec4(cond.x ? a.x : b.x, cond.y ? a.y : b.y, cond.z ? a.z : b.z, cond.w ? a.w : b.w); }\n"
 				"ivec2 compCond(bvec2 cond, ivec2 a, ivec2 b) { return ivec2(cond.x ? a.x : b.x, cond.y ? a.y : b.y); }\n"
 				"ivec3 compCond(bvec3 cond, ivec3 a, ivec3 b) { return ivec3(cond.x ? a.x : b.x, cond.y ? a.y : b.y, cond.z ? a.z : b.z); }\n"
 				"ivec4 compCond(bvec4 cond, ivec4 a, ivec4 b) { return ivec4(cond.x ? a.x : b.x, cond.y ? a.y : b.y, cond.z ? a.z : b.z, cond.w ? a.w : b.w); }\n"
@@ -314,6 +318,8 @@ private:
 	{
 		if (data_type.is_array())
 		{
+			assert(data_type.is_bounded_array());
+
 			type elem_type = data_type;
 			elem_type.array_length = 0;
 
@@ -363,9 +369,12 @@ private:
 					s += std::signbit(data.as_float[i]) ? "1.0/0.0/*inf*/" : "-1.0/0.0/*-inf*/";
 					break;
 				}
-				char temp[64]; // Will be null-terminated by snprintf
-				std::snprintf(temp, sizeof(temp), "%1.8e", data.as_float[i]);
-				s += temp;
+				char temp[64];
+				const std::to_chars_result res = std::to_chars(temp, temp + sizeof(temp), data.as_float[i], std::chars_format::scientific, 8);
+				if (res.ec == std::errc())
+					s.append(temp, res.ptr);
+				else
+					assert(false);
 				break;
 			default:
 				assert(false);
@@ -470,11 +479,6 @@ private:
 
 	uint32_t semantic_to_location(const std::string &semantic, uint32_t max_attributes = 1)
 	{
-		if (semantic.compare(0, 5, "COLOR") == 0)
-			return static_cast<uint32_t>(std::strtoul(semantic.c_str() + 5, nullptr, 10));
-		if (semantic.compare(0, 9, "SV_TARGET") == 0)
-			return static_cast<uint32_t>(std::strtoul(semantic.c_str() + 9, nullptr, 10));
-
 		if (const auto location_it = _semantic_to_location.find(semantic);
 			location_it != _semantic_to_location.end())
 			return location_it->second;
@@ -486,7 +490,12 @@ private:
 		digit_index++;
 
 		const std::string semantic_base = semantic.substr(0, digit_index);
-		const uint32_t semantic_digit = static_cast<uint32_t>(std::strtoul(semantic.c_str() + digit_index, nullptr, 10));
+
+		uint32_t semantic_digit = 0;
+		std::from_chars(semantic.c_str() + digit_index, semantic.c_str() + semantic.size(), semantic_digit);
+
+		if (semantic_base == "COLOR" || semantic_base == "SV_TARGET")
+			return semantic_digit;
 
 		uint32_t location = static_cast<uint32_t>(_semantic_to_location.size());
 
@@ -842,10 +851,12 @@ private:
 				'_' + std::to_string(func.num_threads[2]);
 
 		if (std::find_if(_module.entry_points.begin(), _module.entry_points.end(),
-				[&func](const entry_point &ep) { return ep.name == func.unique_name; }) != _module.entry_points.end())
+				[&func](const std::pair<std::string, shader_type> &entry_point) {
+					return entry_point.first == func.unique_name;
+				}) != _module.entry_points.end())
 			return;
 
-		_module.entry_points.push_back({ func.unique_name, func.type });
+		_module.entry_points.emplace_back(func.unique_name, func.type);
 
 		_blocks.at(0) += "#ifdef ENTRY_POINT_" + func.unique_name + '\n';
 		if (func.type == shader_type::compute)
@@ -884,9 +895,7 @@ private:
 				code += "layout(location = " + std::to_string(location + a) + ") ";
 				write_type<false, false, true>(code, type);
 				code += ' ';
-				code += escape_name(type.is_array() ?
-					name + '_' + std::to_string(a) :
-					name);
+				code += escape_name(type.is_array() ? name + '_' + std::to_string(a) : name);
 				code += ";\n";
 			}
 		};
@@ -904,8 +913,8 @@ private:
 			create_varying_variable(func.return_type, type::q_out, "_return", func.return_semantic);
 		}
 
-		const size_t num_params = func.parameter_list.size();
-		for (size_t i = 0; i < num_params; ++i)
+		const auto num_params = static_cast<unsigned int>(func.parameter_list.size());
+		for (unsigned int i = 0; i < num_params; ++i)
 		{
 			type param_type = func.parameter_list[i].type;
 			param_type.qualifiers &= ~type::q_inout;
@@ -956,7 +965,7 @@ private:
 		std::string &code = _blocks.at(_current_block);
 
 		// Handle input parameters
-		for (size_t i = 0; i < num_params; ++i)
+		for (unsigned int i = 0; i < num_params; ++i)
 		{
 			const type &param_type = func.parameter_list[i].type;
 
@@ -1142,7 +1151,7 @@ private:
 		// Call the function this entry point refers to
 		code += id_to_name(func.definition) + '(';
 
-		for (size_t i = 0; i < num_params; ++i)
+		for (unsigned int i = 0; i < num_params; ++i)
 		{
 			code += "_param" + std::to_string(i);
 
@@ -1153,7 +1162,7 @@ private:
 		code += ");\n";
 
 		// Handle output parameters
-		for (size_t i = 0; i < num_params; ++i)
+		for (unsigned int i = 0; i < num_params; ++i)
 		{
 			const type &param_type = func.parameter_list[i].type;
 			if (!param_type.has(type::q_out))
@@ -1347,9 +1356,9 @@ private:
 						const char col = (op.swizzle[0] - row) / 4;
 
 						expr_code += '[';
-						expr_code += '1' + row - 1;
+						expr_code += to_digit(row);
 						expr_code += "][";
-						expr_code += '1' + col - 1;
+						expr_code += to_digit(col);
 						expr_code += ']';
 					}
 					else

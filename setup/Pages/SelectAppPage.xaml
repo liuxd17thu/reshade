@@ -9,15 +9,15 @@
       FocusManager.FocusedElement="{Binding ElementName=ItemsListBox}">
   <DockPanel LastChildFill="True">
     <DockPanel DockPanel.Dock="Top">
-      <Label x:Uid="PageTitle" Margin="10" Padding="0" VerticalAlignment="Top" Foreground="#FF003399" FontSize="16" Content="选择一个游戏或应用程序：" />
+      <TextBlock x:Uid="PageTitle" Style="{StaticResource TitleStyle}" Text="选择一个游戏或应用程序：" />
       <ComboBox x:Name="SortBy" x:FieldModifier="private" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalContentAlignment="Center" Margin="10" Width="100" SelectedIndex="1" SelectionChanged="OnSortByChanged">
         <ComboBoxItem x:Uid="SortByRecentlyUsed">最近使用</ComboBoxItem>
         <ComboBoxItem x:Uid="SortByAZ">从A至Z</ComboBoxItem>
         <ComboBoxItem x:Uid="SortByZA">从Z至A</ComboBoxItem>
       </ComboBox>
-      <Label x:Uid="SortByBoxLabel" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center" Content="Sort by:" />
+      <TextBlock x:Uid="SortByBoxLabel" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center" Style="{StaticResource TextStyle}" Text="Sort by:" />
     </DockPanel>
-    <TextBlock x:Uid="PageDescription" DockPanel.Dock="Bottom" Margin="10,5" TextWrapping="Wrap">
+    <TextBlock x:Uid="PageDescription" DockPanel.Dock="Bottom" Margin="10,5" TextWrapping="Wrap" Style="{StaticResource TextStyle}">
       浏览并选择一个游戏，管理它的ReShade安装。
     </TextBlock>
     <StackPanel DockPanel.Dock="Bottom" Orientation="Vertical" VerticalAlignment="Bottom" Margin="10,5">
@@ -25,7 +25,7 @@
       <CheckBox x:Name="InstallShutterSECheckBox" Content="[AUR]安装时添加预置快门音效"/>
     </StackPanel>
     <Grid DockPanel.Dock="Bottom" Margin="10,5">
-      <TextBlock x:Uid="BrowseButtonDescription" HorizontalAlignment="Left" VerticalAlignment="Center" Text="没有找到想要的游戏？" />
+      <TextBlock x:Uid="BrowseButtonDescription" HorizontalAlignment="Left" VerticalAlignment="Center" Style="{StaticResource TextStyle}" Text="没有找到想要的游戏？" />
       <Button x:Uid="BrowseButton" HorizontalAlignment="Right" VerticalAlignment="Center" Width="100" Content="浏览...(_B)" Click="OnBrowseClick" />
     </Grid>
     <TextBox x:Name="PathBox" DockPanel.Dock="Bottom" Margin="10,0,10,5" HorizontalAlignment="Stretch" GotFocus="OnPathGotFocus" TextChanged="OnPathTextChanged" Text="查找" />

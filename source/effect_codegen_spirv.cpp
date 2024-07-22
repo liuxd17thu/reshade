@@ -6,8 +6,9 @@
 #include "effect_parser.hpp"
 #include "effect_codegen.hpp"
 #include <cassert>
-#include <cstring> // memcmp
-#include <algorithm> // std::find_if, std::max
+#include <cstring> // std::memcmp
+#include <charconv> // std::from_chars
+#include <algorithm> // std::find_if, std::max, std::sort
 #include <unordered_set>
 
 // Use the C++ variant of the SPIR-V headers
@@ -138,12 +139,12 @@ public:
 private:
 	struct type_lookup
 	{
-		type type;
+		reshadefx::type type;
 		bool is_ptr;
 		uint32_t array_stride;
 		std::pair<spv::StorageClass, spv::ImageFormat> storage;
 
-		friend static bool operator==(const type_lookup &lhs, const type_lookup &rhs)
+		friend bool operator==(const type_lookup &lhs, const type_lookup &rhs)
 		{
 			return lhs.type == rhs.type && lhs.is_ptr == rhs.is_ptr && lhs.array_stride == rhs.array_stride && lhs.storage == rhs.storage;
 		}
@@ -153,11 +154,11 @@ private:
 		spirv_basic_block declaration;
 		spirv_basic_block variables;
 		spirv_basic_block definition;
-		type return_type;
-		std::vector<type> param_types;
+		reshadefx::type return_type;
+		std::vector<reshadefx::type> param_types;
 		bool is_entry_point = false;
 
-		friend static bool operator==(const function_blocks &lhs, const function_blocks &rhs)
+		friend bool operator==(const function_blocks &lhs, const function_blocks &rhs)
 		{
 			if (lhs.param_types.size() != rhs.param_types.size())
 				return false;
@@ -200,7 +201,7 @@ private:
 	std::vector<spv::Id> _global_ubo_types;
 	function_blocks *_current_function = nullptr;
 
-	inline void add_location(const location &loc, spirv_basic_block &block)
+	void add_location(const location &loc, spirv_basic_block &block)
 	{
 		if (loc.source.empty() || !_debug_info)
 			return;
@@ -222,38 +223,38 @@ private:
 			.add(loc.line)
 			.add(loc.column);
 	}
-	inline spirv_instruction &add_instruction(spv::Op op, spv::Id type = 0)
+	spirv_instruction &add_instruction(spv::Op op, spv::Id type = 0)
 	{
 		assert(is_in_function() && is_in_block());
 
 		return add_instruction(op, type, *_current_block_data);
 	}
-	inline spirv_instruction &add_instruction(spv::Op op, spv::Id type, spirv_basic_block &block)
+	spirv_instruction &add_instruction(spv::Op op, spv::Id type, spirv_basic_block &block)
 	{
 		spirv_instruction &instruction = add_instruction_without_result(op, block);
 		instruction.type = type;
 		instruction.result = make_id();
 		return instruction;
 	}
-	inline spirv_instruction &add_instruction(spv::Op op, spv::Id type, spirv_basic_block &block, spv::Id &result)
+	spirv_instruction &add_instruction(spv::Op op, spv::Id type, spirv_basic_block &block, spv::Id &result)
 	{
 		spirv_instruction &instruction = add_instruction_without_result(op, block);
 		instruction.type = type;
 		instruction.result = result = make_id();
 		return instruction;
 	}
-	inline spirv_instruction &add_instruction_without_result(spv::Op op)
+	spirv_instruction &add_instruction_without_result(spv::Op op)
 	{
 		assert(is_in_function() && is_in_block());
 
 		return add_instruction_without_result(op, *_current_block_data);
 	}
-	inline spirv_instruction &add_instruction_without_result(spv::Op op, spirv_basic_block &block)
+	spirv_instruction &add_instruction_without_result(spv::Op op, spirv_basic_block &block)
 	{
 		return block.instructions.emplace_back(op);
 	}
 
-	void write_result(module &module) override
+	void write_result(effect_module &module) override
 	{
 		// First initialize the UBO type now that all member types are known
 		if (_global_ubo_type != 0)
@@ -400,7 +401,7 @@ private:
 			elem_type_id = convert_type(elem_info, false, storage, format);
 
 			// Make sure we don't get any dynamic arrays here
-			assert(info.array_length > 0);
+			assert(info.is_bounded_array());
 
 			const spv::Id array_length_id = emit_constant(info.array_length);
 
@@ -609,11 +610,6 @@ private:
 
 	uint32_t semantic_to_location(const std::string &semantic, uint32_t max_attributes = 1)
 	{
-		if (semantic.compare(0, 5, "COLOR") == 0)
-			return static_cast<uint32_t>(std::strtoul(semantic.c_str() + 5, nullptr, 10));
-		if (semantic.compare(0, 9, "SV_TARGET") == 0)
-			return static_cast<uint32_t>(std::strtoul(semantic.c_str() + 9, nullptr, 10));
-
 		if (const auto it = _semantic_to_location.find(semantic);
 			it != _semantic_to_location.end())
 			return it->second;
@@ -624,8 +620,13 @@ private:
 			digit_index--;
 		digit_index++;
 
-		const uint32_t semantic_digit = static_cast<uint32_t>(std::strtoul(semantic.c_str() + digit_index, nullptr, 10));
 		const std::string semantic_base = semantic.substr(0, digit_index);
+
+		uint32_t semantic_digit = 0;
+		std::from_chars(semantic.c_str() + digit_index, semantic.c_str() + semantic.size(), semantic_digit);
+
+		if (semantic_base == "COLOR" || semantic_base == "SV_TARGET")
+			return semantic_digit;
 
 		uint32_t location = static_cast<uint32_t>(_semantic_to_location.size());
 
@@ -718,7 +719,7 @@ private:
 		}
 	}
 
-	inline void add_name(id id, const char *name)
+	void add_name(id id, const char *name)
 	{
 		if (!_debug_info)
 			return;
@@ -729,14 +730,14 @@ private:
 			.add(id)
 			.add_string(name);
 	}
-	inline void add_builtin(id id, spv::BuiltIn builtin)
+	void add_builtin(id id, spv::BuiltIn builtin)
 	{
 		add_instruction_without_result(spv::OpDecorate, _annotations)
 			.add(id)
 			.add(spv::DecorationBuiltIn)
 			.add(builtin);
 	}
-	inline void add_decoration(id id, spv::Decoration decoration, std::initializer_list<uint32_t> values = {})
+	void add_decoration(id id, spv::Decoration decoration, std::initializer_list<uint32_t> values = {})
 	{
 		// https://www.khronos.org/registry/spir-v/specs/unified1/SPIRV.html#OpDecorate
 		add_instruction_without_result(spv::OpDecorate, _annotations)
@@ -744,7 +745,7 @@ private:
 			.add(decoration)
 			.add(values.begin(), values.end());
 	}
-	inline void add_member_name(id id, uint32_t member_index, const char *name)
+	void add_member_name(id id, uint32_t member_index, const char *name)
 	{
 		if (!_debug_info)
 			return;
@@ -756,7 +757,7 @@ private:
 			.add(member_index)
 			.add_string(name);
 	}
-	inline void add_member_builtin(id id, uint32_t member_index, spv::BuiltIn builtin)
+	void add_member_builtin(id id, uint32_t member_index, spv::BuiltIn builtin)
 	{
 		add_instruction_without_result(spv::OpMemberDecorate, _annotations)
 			.add(id)
@@ -764,7 +765,7 @@ private:
 			.add(spv::DecorationBuiltIn)
 			.add(builtin);
 	}
-	inline void add_member_decoration(id id, uint32_t member_index, spv::Decoration decoration, std::initializer_list<uint32_t> values = {})
+	void add_member_decoration(id id, uint32_t member_index, spv::Decoration decoration, std::initializer_list<uint32_t> values = {})
 	{
 		// https://www.khronos.org/registry/spir-v/specs/unified1/SPIRV.html#OpMemberDecorate
 		add_instruction_without_result(spv::OpMemberDecorate, _annotations)
@@ -773,7 +774,7 @@ private:
 			.add(decoration)
 			.add(values.begin(), values.end());
 	}
-	inline void add_capability(spv::Capability capability)
+	void add_capability(spv::Capability capability)
 	{
 		_capabilities.insert(capability);
 	}
@@ -1083,10 +1084,12 @@ private:
 				'_' + std::to_string(func.num_threads[2]);
 
 		if (std::find_if(_module.entry_points.begin(), _module.entry_points.end(),
-				[&func](const entry_point &ep) { return ep.name == func.unique_name; }) != _module.entry_points.end())
+				[&func](const std::pair<std::string, shader_type> &entry_point) {
+					return entry_point.first == func.unique_name;
+				}) != _module.entry_points.end())
 			return;
 
-		_module.entry_points.push_back({ func.unique_name, func.type });
+		_module.entry_points.emplace_back(func.unique_name, func.type);
 
 		spv::Id position_variable = 0;
 		spv::Id point_size_variable = 0;
@@ -1820,7 +1823,7 @@ private:
 		spv::Id result;
 		if (data_type.is_array())
 		{
-			assert(data_type.array_length > 0); // Unsized arrays cannot be constants
+			assert(data_type.is_bounded_array()); // Unbounded arrays cannot be constants
 
 			type elem_type = data_type;
 			elem_type.array_length = 0;

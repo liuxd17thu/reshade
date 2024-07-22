@@ -8,7 +8,7 @@
       Width="Auto" Height="Auto"
       FocusManager.FocusedElement="{Binding ElementName=UpdateButton}">
   <DockPanel>
-    <Label x:Uid="PageTitle" DockPanel.Dock="Top" Margin="10" Padding="0" VerticalAlignment="Top" Foreground="#FF003399" FontSize="16" Content="选择要进行的操作：" />
+    <TextBlock x:Uid="PageTitle" DockPanel.Dock="Top" Style="{StaticResource TitleStyle}" Text="选择要进行的操作：" />
     <TextBlock x:Uid="PageDescription" DockPanel.Dock="Top" Margin="10,5" TextWrapping="Wrap">
       目标游戏已有一个ReShade安装，要如何处理它？
     </TextBlock>

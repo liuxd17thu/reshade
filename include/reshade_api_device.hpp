@@ -10,8 +10,9 @@
 namespace reshade { namespace api
 {
 	/// <summary>
-	/// The underlying render API a device is using, as returned by <see cref="device::get_api"/>.
+	/// Underlying graphics API a device is using.
 	/// </summary>
+	/// <seealso cref="device::get_api"/>
 	enum class device_api
 	{
 		/// <summary>Direct3D 9</summary>
@@ -35,8 +36,9 @@ namespace reshade { namespace api
 	};
 
 	/// <summary>
-	/// The available features a device may support.
+	/// Optional capabilities a device may support, depending on the underlying graphics API and hardware.
 	/// </summary>
+	/// <seealso cref="device::check_capability"/>
 	enum class device_caps
 	{
 		/// <summary>
@@ -56,7 +58,7 @@ namespace reshade { namespace api
 		hull_and_domain_shader,
 		/// <summary>
 		/// Specifies whether logic operations are available in the blend state.
-		/// If this feature is not present, the <see cref="blend_desc::logic_op_enable"/> and <see cref="blend_desc::logic_op"/> fields are ignored.
+		/// If this feature is not present, <see cref="blend_desc::logic_op_enable"/> and <see cref="blend_desc::logic_op"/> are ignored.
 		/// </summary>
 		logic_op,
 		/// <summary>
@@ -76,7 +78,7 @@ namespace reshade { namespace api
 		fill_mode_non_solid,
 		/// <summary>
 		/// Specifies whether conservative rasterization is supported.
-		/// If this feature is not present, the <see cref="rasterizer_desc::conservative_rasterization"/> field must be 0.
+		/// If this feature is not present, <see cref="rasterizer_desc::conservative_rasterization"/> must be 0.
 		/// </summary>
 		conservative_rasterization,
 		/// <summary>
@@ -136,7 +138,7 @@ namespace reshade { namespace api
 		copy_query_heap_results,
 		/// <summary>
 		/// Specifies whether comparison sampling is supported.
-		/// If this feature is not present, the <see cref="sampler_desc::compare_op"/> field is ignored and the compare filter types have no effect.
+		/// If this feature is not present, <see cref="sampler_desc::compare_op"/> is ignored and the compare filter types have no effect.
 		/// </summary>
 		sampler_compare,
 		/// <summary>
@@ -187,12 +189,13 @@ namespace reshade { namespace api
 	};
 
 	/// <summary>
-	/// The available properties a device may report.
+	/// Properties that may be queried from a device.
 	/// </summary>
+	/// <seealso cref="device::get_property"/>
 	enum class device_properties
 	{
 		/// <summary>
-		/// Version of the underlying render API the device is using.
+		/// Version of the underlying graphics API the device is using.
 		/// Data is a 32-bit unsigned integer value.
 		/// </summary>
 		api_version = 1,
@@ -202,18 +205,18 @@ namespace reshade { namespace api
 		/// </summary>
 		driver_version,
 		/// <summary>
-		/// PCI vendor ID of the primary adapter/physical device associated with the logical render device.
+		/// PCI vendor ID of the hardware associated with the logical render device.
 		/// Data is a 32-bit unsigned integer value.
 		/// </summary>
 		vendor_id,
 		/// <summary>
-		/// PCI device ID of the primary adapter/physical device associated with the logical render device.
+		/// PCI device ID of the hardware associated with the logical render device.
 		/// Data is a 32-bit unsigned integer value.
 		/// </summary>
 		device_id,
 		/// <summary>
-		/// Description text of the primary adapter/physical device associated with the logical render device.
-		/// Data is an array of 256 byte-characters representing a null-terminated string.
+		/// Description text of the hardware associated with the logical render device.
+		/// Data is an array of 256 byte-sized characters representing a null-terminated string.
 		/// </summary>
 		description,
 		/// <summary>
@@ -265,7 +268,8 @@ namespace reshade { namespace api
 		/// <summary>
 		/// Gets a reference to user-defined data from the object that was previously allocated via <see cref="create_private_data"/>.
 		/// </summary>
-		template <typename T> inline T &get_private_data() const
+		template <typename T>
+		T &get_private_data() const
 		{
 			uint64_t res;
 			get_private_data(reinterpret_cast<const uint8_t *>(&__uuidof(T)), &res);
@@ -274,7 +278,8 @@ namespace reshade { namespace api
 		/// <summary>
 		/// Allocates user-defined data and stores it in the object.
 		/// </summary>
-		template <typename T, typename... Args> inline T &create_private_data(Args &&... args)
+		template <typename T, typename... Args>
+		T &create_private_data(Args &&... args)
 		{
 			uint64_t res = reinterpret_cast<uintptr_t>(new T(static_cast<Args &&>(args)...));
 			set_private_data(reinterpret_cast<const uint8_t *>(&__uuidof(T)),  res);
@@ -283,7 +288,8 @@ namespace reshade { namespace api
 		/// <summary>
 		/// Frees user-defined data that was previously allocated via <see cref="create_private_data"/>.
 		/// </summary>
-		template <typename T> inline void destroy_private_data()
+		template <typename T>
+		void destroy_private_data()
 		{
 			uint64_t res;
 			get_private_data(reinterpret_cast<const uint8_t *>(&__uuidof(T)), &res);
@@ -319,13 +325,13 @@ namespace reshade { namespace api
 		/// Creates a new sampler state object.
 		/// </summary>
 		/// <param name="desc">Description of the sampler to create.</param>
-		/// <param name="out_handle">Pointer to a variable that is set to the handle of the created sampler.</param>
-		/// <returns><see langword="true"/> if the sampler was successfully created, <see langword="false"/> otherwise (in this case <paramref name="out_handle"/> is set to zero).</returns>
-		virtual bool create_sampler(const sampler_desc &desc, sampler *out_handle) = 0;
+		/// <param name="out_sampler">Pointer to a variable that is set to the handle of the created sampler.</param>
+		/// <returns><see langword="true"/> if the sampler was successfully created, <see langword="false"/> otherwise (in this case <paramref name="out_sampler"/> is set to zero).</returns>
+		virtual bool create_sampler(const sampler_desc &desc, sampler *out_sampler) = 0;
 		/// <summary>
 		/// Instantly destroys a sampler that was previously created via <see cref="create_sampler"/>.
 		/// </summary>
-		virtual void destroy_sampler(sampler handle) = 0;
+		virtual void destroy_sampler(sampler sampler) = 0;
 
 		/// <summary>
 		/// Allocates and creates a new resource.
@@ -333,15 +339,15 @@ namespace reshade { namespace api
 		/// <param name="desc">Description of the resource to create.</param>
 		/// <param name="initial_data">Optional data to upload to the resource after creation. This should point to an array of <see cref="mapped_subresource"/>, one for each subresource (mipmap levels and array layers). Can be <see langword="nullptr"/> to indicate no initial data to upload.</param>
 		/// <param name="initial_state">Initial state of the resource after creation. This can later be changed via <see cref="command_list::barrier"/>. It should also be part of the <see cref="resource_desc::usage"/> flags of the description.</param>
-		/// <param name="out_handle">Pointer to a variable that is set to the handle of the created resource.</param>
+		/// <param name="out_resource">Pointer to a variable that is set to the handle of the created resource.</param>
 		/// <param name="shared_handle">Optional pointer to a variable of type <c>HANDLE</c> used when <see cref="resource_desc::flags"/> contains <see cref="resource_flags::shared"/>. When that variable is a <see langword="nullptr"/>, it is set to the exported shared handle of the created resource. When that variable is a valid handle, the resource is imported from that shared handle.</param>
-		/// <returns><see langword="true"/> if the resource was successfully created, <see langword="false"/> otherwise (in this case <paramref name="out_handle"/> is set to zero).</returns>
-		virtual bool create_resource(const resource_desc &desc, const subresource_data *initial_data, resource_usage initial_state, resource *out_handle, void **shared_handle = nullptr) = 0;
+		/// <returns><see langword="true"/> if the resource was successfully created, <see langword="false"/> otherwise (in this case <paramref name="out_resource"/> is set to zero).</returns>
+		virtual bool create_resource(const resource_desc &desc, const subresource_data *initial_data, resource_usage initial_state, resource *out_resource, void **shared_handle = nullptr) = 0;
 		/// <summary>
 		/// Instantly destroys a resource that was previously created via <see cref="create_resource"/> and frees its memory.
 		/// Make sure the resource is no longer in use on the GPU (via any command list that may reference it and is still being executed) before doing this (e.g. with <see cref="command_queue::wait_idle"/>) and never try to destroy resources created by the application!
 		/// </summary>
-		virtual void destroy_resource(resource handle) = 0;
+		virtual void destroy_resource(resource resource) = 0;
 
 		/// <summary>
 		/// Gets the description of the specified resource.
@@ -354,13 +360,13 @@ namespace reshade { namespace api
 		/// <param name="resource">Resource to create the view to.</param>
 		/// <param name="usage_type">Usage type of the resource view to create. Set to <see cref="resource_usage::shader_resource"/> to create a shader resource view, <see cref="resource_usage::depth_stencil"/> for a depth-stencil view, <see cref="resource_usage::render_target"/> for a render target etc.</param>
 		/// <param name="desc">Description of the resource view to create.</param>
-		/// <param name="out_handle">Pointer to a variable that is set to the handle of the created resource view.</param>
-		/// <returns><see langword="true"/> if the resource view was successfully created, <see langword="false"/> otherwise (in this case <paramref name="out_handle"/> is set to zero).</returns>
-		virtual bool create_resource_view(resource resource, resource_usage usage_type, const resource_view_desc &desc, resource_view *out_handle) = 0;
+		/// <param name="out_view">Pointer to a variable that is set to the handle of the created resource view.</param>
+		/// <returns><see langword="true"/> if the resource view was successfully created, <see langword="false"/> otherwise (in this case <paramref name="out_view"/> is set to zero).</returns>
+		virtual bool create_resource_view(resource resource, resource_usage usage_type, const resource_view_desc &desc, resource_view *out_view) = 0;
 		/// <summary>
 		/// Instantly destroys a resource view that was previously created via <see cref="create_resource_view"/>.
 		/// </summary>
-		virtual void destroy_resource_view(resource_view handle) = 0;
+		virtual void destroy_resource_view(resource_view view) = 0;
 
 		/// <summary>
 		/// Gets the handle to the underlying resource the specified resource <paramref name="view"/> was created for.
@@ -429,52 +435,52 @@ namespace reshade { namespace api
 		/// <param name="layout">Pipeline layout to use.</param>
 		/// <param name="subobject_count">Number of sub-objects.</param>
 		/// <param name="subobjects">Pointer to the first element of an array of sub-objects that describe this pipeline.</param>
-		/// <param name="out_handle">Pointer to a variable that is set to the handle of the created pipeline state object.</param>
-		/// <returns><see langword="true"/> if the pipeline state object was successfully created, <see langword="false"/> otherwise (in this case <paramref name="out_handle"/> is set to zero).</returns>
-		virtual bool create_pipeline(pipeline_layout layout, uint32_t subobject_count, const pipeline_subobject *subobjects, pipeline *out_handle) = 0;
+		/// <param name="out_pipeline">Pointer to a variable that is set to the handle of the created pipeline state object.</param>
+		/// <returns><see langword="true"/> if the pipeline state object was successfully created, <see langword="false"/> otherwise (in this case <paramref name="out_pipeline"/> is set to zero).</returns>
+		virtual bool create_pipeline(pipeline_layout layout, uint32_t subobject_count, const pipeline_subobject *subobjects, pipeline *out_pipeline) = 0;
 		/// <summary>
 		/// Instantly destroys a pipeline state object that was previously created via <see cref="create_pipeline"/>.
 		/// </summary>
-		virtual void destroy_pipeline(pipeline handle) = 0;
+		virtual void destroy_pipeline(pipeline pipeline) = 0;
 
 		/// <summary>
 		/// Creates a new pipeline layout.
 		/// </summary>
 		/// <param name="param_count">Number of layout parameters.</param>
 		/// <param name="params">Pointer to the first element of an array of layout parameters that describe this pipeline layout.</param>
-		/// <param name="out_handle">Pointer to a variable that is set to the handle of the created pipeline layout.</param>
-		/// <returns><see langword="true"/> if the pipeline layout was successfully created, <see langword="false"/> otherwise (in this case <paramref name="out_handle"/> is set to zero).</returns>
-		virtual bool create_pipeline_layout(uint32_t param_count, const pipeline_layout_param *params, pipeline_layout *out_handle) = 0;
+		/// <param name="out_layout">Pointer to a variable that is set to the handle of the created pipeline layout.</param>
+		/// <returns><see langword="true"/> if the pipeline layout was successfully created, <see langword="false"/> otherwise (in this case <paramref name="out_layout"/> is set to zero).</returns>
+		virtual bool create_pipeline_layout(uint32_t param_count, const pipeline_layout_param *params, pipeline_layout *out_layout) = 0;
 		/// <summary>
 		/// Instantly destroys a pipeline layout that was previously created via <see cref="create_pipeline_layout"/>.
 		/// </summary>
-		virtual void destroy_pipeline_layout(pipeline_layout handle) = 0;
+		virtual void destroy_pipeline_layout(pipeline_layout layout) = 0;
 
 		/// <summary>
-		/// Allocates a descriptor table from an internal heap.
+		/// Allocates a descriptor table from an internal descriptor heap.
 		/// </summary>
 		/// <param name="layout">Pipeline layout that contains a parameter that describes the descriptor table.</param>
 		/// <param name="param">Index of the pipeline layout parameter that describes the descriptor table.</param>
-		/// <param name="out_handle">Pointer to a a variable that is set to the handles of the created descriptor table.</param>
-		/// <returns><see langword="true"/> if the descriptor table was successfully allocated, <see langword="false"/> otherwise (in this case <paramref name="out_handle"/> is set to zeroe).</returns>
-		inline  bool allocate_descriptor_table(pipeline_layout layout, uint32_t param, descriptor_table *out_handle) { return allocate_descriptor_tables(1, layout, param, out_handle); }
+		/// <param name="out_table">Pointer to a a variable that is set to the handles of the created descriptor table.</param>
+		/// <returns><see langword="true"/> if the descriptor table was successfully allocated, <see langword="false"/> otherwise (in this case <paramref name="out_table"/> is set to zeroe).</returns>
+		bool allocate_descriptor_table(pipeline_layout layout, uint32_t param, descriptor_table *out_table) { return allocate_descriptor_tables(1, layout, param, out_table); }
 		/// <summary>
-		/// Allocates one or more descriptor tables from an internal heap.
+		/// Allocates one or more descriptor tables from an internal descriptor heap.
 		/// </summary>
 		/// <param name="count">Number of descriptor tables to allocate.</param>
-		/// <param name="layout">Pipeline layout that contains a parameter that describes the descriptor table.</param>
-		/// <param name="param">Index of the pipeline layout parameter that describes the descriptor table.</param>
-		/// <param name="out_handles">Pointer to the first element of an array of handles with at least <paramref name="count"/> elements that is filled with the handles of the created descriptor tables.</param>
-		/// <returns><see langword="true"/> if the descriptor tables were successfully allocated, <see langword="false"/> otherwise (in this case <paramref name="out_handles"/> is filled with zeroes).</returns>
-		virtual bool allocate_descriptor_tables(uint32_t count, pipeline_layout layout, uint32_t param, descriptor_table *out_handles) = 0;
+		/// <param name="layout">Pipeline layout that contains a parameter that describes the descriptor tables.</param>
+		/// <param name="param">Index of the pipeline layout parameter that describes the descriptor tables.</param>
+		/// <param name="out_tables">Pointer to the first element of an array of handles with at least <paramref name="count"/> elements that is filled with the handles of the created descriptor tables.</param>
+		/// <returns><see langword="true"/> if the descriptor tables were successfully allocated, <see langword="false"/> otherwise (in this case <paramref name="out_tables"/> is filled with zeroes).</returns>
+		virtual bool allocate_descriptor_tables(uint32_t count, pipeline_layout layout, uint32_t param, descriptor_table *out_tables) = 0;
 		/// <summary>
-		/// Frees a descriptor table that was previously allocated via <see cref="create_descriptor_table"/>.
+		/// Frees a descriptor table that was previously allocated via <see cref="allocate_descriptor_table"/>.
 		/// </summary>
-		inline  void free_descriptor_table(descriptor_table handle) { free_descriptor_tables(1, &handle); }
+		void free_descriptor_table(descriptor_table table) { free_descriptor_tables(1, &table); }
 		/// <summary>
-		/// Frees one or more descriptor tables that were previously allocated via <see cref="create_descriptor_tables"/>.
+		/// Frees one or more descriptor tables that were previously allocated via <see cref="allocate_descriptor_tables"/>.
 		/// </summary>
-		virtual void free_descriptor_tables(uint32_t count, const descriptor_table *handles) = 0;
+		virtual void free_descriptor_tables(uint32_t count, const descriptor_table *tables) = 0;
 
 		/// <summary>
 		/// Gets the offset (in descriptors) of the specified binding in the underlying descriptor heap of a descriptor table.
@@ -490,7 +496,7 @@ namespace reshade { namespace api
 		/// Copies the contents of a descriptor table to another descriptor table.
 		/// </summary>
 		/// <param name="copy">Descriptor table copy to process.</param>
-		inline  void copy_descriptors(const descriptor_table_copy &copy) { copy_descriptor_tables(1, &copy); }
+		void copy_descriptors(const descriptor_table_copy &copy) { copy_descriptor_tables(1, &copy); }
 		/// <summary>
 		/// Copies the contents between multiple descriptor tables.
 		/// </summary>
@@ -501,7 +507,7 @@ namespace reshade { namespace api
 		/// Updates the contents of a descriptor table with the specified descriptors.
 		/// </summary>
 		/// <param name="update">Descriptor table update to process.</param>
-		inline  void update_descriptors(const descriptor_table_update &update) { update_descriptor_tables(1, &update); }
+		void update_descriptors(const descriptor_table_update &update) { update_descriptor_tables(1, &update); }
 		/// <summary>
 		/// Updates the contents of multiple descriptor tables with the specified descriptors.
 		/// </summary>
@@ -514,13 +520,13 @@ namespace reshade { namespace api
 		/// </summary>
 		/// <param name="type">Type of queries that will be used with this query heap.</param>
 		/// <param name="size">Number of queries to allocate in the query heap.</param>
-		/// <param name="out_handle">Pointer to a variable that is set to the handle of the created query heap.</param>
-		/// <returns><see langword="true"/> if the query heap was successfully created, <see langword="false"/> otherwise (in this case <paramref name="out_handle"/> is set to zero).</returns>
-		virtual bool create_query_heap(query_type type, uint32_t size, query_heap *out_handle) = 0;
+		/// <param name="out_heap">Pointer to a variable that is set to the handle of the created query heap.</param>
+		/// <returns><see langword="true"/> if the query heap was successfully created, <see langword="false"/> otherwise (in this case <paramref name="out_heap"/> is set to zero).</returns>
+		virtual bool create_query_heap(query_type type, uint32_t size, query_heap *out_heap) = 0;
 		/// <summary>
 		/// Instantly destroys a query heap that was previously created via <see cref="create_query_heap"/>.
 		/// </summary>
-		virtual void destroy_query_heap(query_heap handle) = 0;
+		virtual void destroy_query_heap(query_heap heap) = 0;
 
 		/// <summary>
 		/// Gets the results of queries in a query heap.
@@ -536,29 +542,29 @@ namespace reshade { namespace api
 		/// <summary>
 		/// Associates a name with a resource, for easier debugging in external tools.
 		/// </summary>
-		/// <param name="handle">Resource to associate a name with.</param>
+		/// <param name="resource">Resource to associate a name with.</param>
 		/// <param name="name">Null-terminated name string.</param>
-		virtual void set_resource_name(resource handle, const char *name) = 0;
+		virtual void set_resource_name(resource resource, const char *name) = 0;
 		/// <summary>
 		/// Associates a name with a resource view, for easier debugging in external tools.
 		/// </summary>
-		/// <param name="handle">Resource view to associate a name with.</param>
+		/// <param name="view">Resource view to associate a name with.</param>
 		/// <param name="name">Null-terminated name string.</param>
-		virtual void set_resource_view_name(resource_view handle, const char *name) = 0;
+		virtual void set_resource_view_name(resource_view view, const char *name) = 0;
 
 		/// <summary>
 		/// Creates a new fence synchronization object.
 		/// </summary>
 		/// <param name="initial_value">The initial value for the fence.</param>
 		/// <param name="flags">Fence creation options.</param>
-		/// <param name="out_handle">Pointer to a variable that is set to the handle of the created fence.</param>
+		/// <param name="out_fence">Pointer to a variable that is set to the handle of the created fence.</param>
 		/// <param name="shared_handle">Optional pointer to a variable of type <c>HANDLE</c> used when <paramref name="flags"/> contains <see cref="fence_flags::shared"/>. When that variable is a <see langword="nullptr"/>, it is set to the exported shared handle of the created fence. When that variable is a valid handle, the fence is imported from that shared handle.</param>
-		/// <returns><see langword="true"/> if the fence was successfully created, <see langword="false"/> otherwise (in this case <paramref name="out_handle"/> is set to zero).</returns>
-		virtual bool create_fence(uint64_t initial_value, fence_flags flags, fence *out_handle, void **shared_handle = nullptr) = 0;
+		/// <returns><see langword="true"/> if the fence was successfully created, <see langword="false"/> otherwise (in this case <paramref name="out_fence"/> is set to zero).</returns>
+		virtual bool create_fence(uint64_t initial_value, fence_flags flags, fence *out_fence, void **shared_handle = nullptr) = 0;
 		/// <summary>
 		/// Instantly destroys a fence that was previously created via <see cref="create_fence"/>.
 		/// </summary>
-		virtual void destroy_fence(fence handle) = 0;
+		virtual void destroy_fence(fence fence) = 0;
 
 		/// <summary>
 		/// Gets the current value of the specified fence.
@@ -592,9 +598,9 @@ namespace reshade { namespace api
 		/// <summary>
 		/// Gets the GPU address for a resource view.
 		/// </summary>
-		/// <param name="handle">Resource view to query.</param>
+		/// <param name="view">Resource view to query.</param>
 		/// <returns>GPU address of the resource view, or zero in case of failure or when no fixed GPU address exists.</returns>
-		virtual uint64_t get_resource_view_gpu_address(resource_view handle) const = 0;
+		virtual uint64_t get_resource_view_gpu_address(resource_view view) const = 0;
 
 		/// <summary>
 		/// Gets the required acceleration structure size needed to build the specified data.
@@ -633,8 +639,9 @@ namespace reshade { namespace api
 	};
 
 	/// <summary>
-	/// The available indirect command types.
+	/// Type of an indirect draw/dispatch command.
 	/// </summary>
+	/// <seealso cref="command_list::draw_or_dispatch_indirect"/>
 	enum class indirect_command
 	{
 		unknown,
@@ -662,7 +669,7 @@ namespace reshade { namespace api
 		/// <param name="resource">Resource to transition.</param>
 		/// <param name="old_state">Usage flags describing how the <paramref name="resource"/> was used before this barrier.</param>
 		/// <param name="new_state">Usage flags describing how the <paramref name="resource"/> will be used after this barrier.</param>
-		inline  void barrier(resource resource, resource_usage old_state, resource_usage new_state) { barrier(1, &resource, &old_state, &new_state); }
+		void barrier(resource resource, resource_usage old_state, resource_usage new_state) { barrier(1, &resource, &old_state, &new_state); }
 		/// <summary>
 		/// Adds a barrier for the specified <paramref name="resources"/> to the command stream.
 		/// </summary>
@@ -707,7 +714,7 @@ namespace reshade { namespace api
 		/// </summary>
 		/// <param name="state">Pipeline state to update.</param>
 		/// <param name="value">Value to update the pipeline state to.</param>
-		inline  void bind_pipeline_state(dynamic_state state, uint32_t value) { bind_pipeline_states(1, &state, &value); }
+		void bind_pipeline_state(dynamic_state state, uint32_t value) { bind_pipeline_states(1, &state, &value); }
 		/// <summary>
 		/// Updates the specfified pipeline <paramref name="states"/> to the specified <paramref name="values"/>.
 		/// This is only valid for states that have been listed in the dynamic states provided at creation of the currently bound pipeline state object (<see cref="pipeline_subobject_type::dynamic_pipeline_states"/>).
@@ -761,7 +768,7 @@ namespace reshade { namespace api
 		/// <param name="layout">Pipeline layout that describes the descriptors.</param>
 		/// <param name="param">Index of the pipeline <paramref name="layout"/> parameter that describes the descriptor table (root parameter index in D3D12, descriptor set index in Vulkan).</param>
 		/// <param name="table">Descriptor table to bind.</param>
-		inline  void bind_descriptor_table(shader_stage stages, pipeline_layout layout, uint32_t param, descriptor_table table) { bind_descriptor_tables(stages, layout, param, 1, &table); }
+		void bind_descriptor_table(shader_stage stages, pipeline_layout layout, uint32_t param, descriptor_table table) { bind_descriptor_tables(stages, layout, param, 1, &table); }
 		/// <summary>
 		/// Binds an array of descriptor tables.
 		/// </summary>
@@ -786,7 +793,7 @@ namespace reshade { namespace api
 		/// <param name="buffer">Vertex buffer resource. This resources must have been created with the <see cref="resource_usage::vertex_buffer"/> usage.</param>
 		/// <param name="offset">Offset (in bytes) from the start of the vertex buffer to the first vertex element to use.</param>
 		/// <param name="stride">Size (in bytes) of the vertex element that will be used from the vertex buffer (is added to an element offset to advance to the next).</param>
-		inline  void bind_vertex_buffer(uint32_t index, resource buffer, uint64_t offset, uint32_t stride) { bind_vertex_buffers(index, 1, &buffer, &offset, &stride); }
+		void bind_vertex_buffer(uint32_t index, resource buffer, uint64_t offset, uint32_t stride) { bind_vertex_buffers(index, 1, &buffer, &offset, &stride); }
 		/// <summary>
 		/// Binds an array of vertex buffers to the input-assembler stage.
 		/// </summary>
@@ -1102,8 +1109,9 @@ namespace reshade { namespace api
 	};
 
 	/// <summary>
-	/// A list of flags that represent the available command queue types, as returned by <see cref="command_queue::get_type"/>.
+	/// Command queue type flags, which can be combined to describe the capabilities of a command queue.
 	/// </summary>
+	/// <seealso cref="command_queue::get_type"/>
 	enum class command_queue_type
 	{
 		graphics = 0x1,
@@ -1200,15 +1208,26 @@ namespace reshade { namespace api
 
 		/// <summary>
 		/// Defines how the back buffers should be swapped when a present occurs.
-		/// <para>Depending on the render API this can be a 'D3DSWAPEFFECT', 'DXGI_SWAP_EFFECT', 'WGL_SWAP_METHOD_ARB' or 'VkPresentModeKHR' value.</para>
+		/// <para>Depending on the graphics API this can be a 'D3DSWAPEFFECT', 'DXGI_SWAP_EFFECT', 'WGL_SWAP_METHOD_ARB' or 'VkPresentModeKHR' value.</para>
 		/// </summary>
 		uint32_t present_mode = 0;
 
 		/// <summary>
 		/// Swap chain creation flags.
-		/// <para>Depending on the render API this can be a 'D3DPRESENT', 'DXGI_PRESENT', 'PFD_*' or 'VkSwapchainCreateFlagsKHR' value.</para>
+		/// <para>Depending on the graphics API this can be a 'D3DPRESENT', 'DXGI_PRESENT', 'PFD_*' or 'VkSwapchainCreateFlagsKHR' value.</para>
 		/// </summary>
 		uint32_t present_flags = 0;
+
+		/// <summary>
+		/// Initial fullscreen state.
+		/// </summary>
+		bool fullscreen_state = false;
+
+		/// <summary>
+		/// Refresh rate of the display in fullscreen mode, in Hertz.
+		/// Set to zero to use the default.
+		/// </summary>
+		float fullscreen_refresh_rate = 0;
 	};
 
 	/// <summary>
@@ -1236,7 +1255,7 @@ namespace reshade { namespace api
 		/// <summary>
 		/// Gets the current back buffer resource.
 		/// </summary>
-		inline  resource get_current_back_buffer() { return get_back_buffer(get_current_back_buffer_index()); }
+		resource get_current_back_buffer() { return get_back_buffer(get_current_back_buffer_index()); }
 		/// <summary>
 		/// Gets the index of the back buffer resource that can currently be rendered into.
 		/// </summary>

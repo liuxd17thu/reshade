@@ -4,14 +4,15 @@
  */
 
 #include "effect_expression.hpp"
-#include <cmath> // fmod
+#include <cmath> // std::fmod
 #include <cassert>
-#include <cstring> // memcpy, memset
-#include <algorithm> // std::min, std::max
+#include <cstring> // std::memcpy, std::memset
+#include <algorithm> // std::max, std::min
 
 reshadefx::type reshadefx::type::merge(const type &lhs, const type &rhs)
 {
-	type result = { std::max(lhs.base, rhs.base) };
+	type result;
+	result.base = std::max(lhs.base, rhs.base);
 
 	// Non-numeric types cannot be vectors or matrices
 	if (!result.is_numeric())
@@ -34,10 +35,13 @@ reshadefx::type reshadefx::type::merge(const type &lhs, const type &rhs)
 	// Some qualifiers propagate to the result
 	result.qualifiers = (lhs.qualifiers & type::q_precise) | (rhs.qualifiers & type::q_precise);
 
+	// Cannot merge array types, assume no arrays
+	result.array_length = 0;
+	assert(lhs.array_length == 0 && rhs.array_length == 0);
+
 	// In case this is a structure, assume they are the same
 	result.definition = rhs.definition;
 	assert(lhs.definition == rhs.definition || lhs.definition == 0);
-	assert(lhs.array_length == 0 && rhs.array_length == 0);
 
 	return result;
 }
@@ -141,7 +145,7 @@ std::string reshadefx::type::description() const
 		result = "storage3D<float" + std::to_string(rows) + '>';
 		break;
 	case t_function:
-		result = "function";
+		assert(false);
 		break;
 	}
 

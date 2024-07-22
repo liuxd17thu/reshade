@@ -7,7 +7,7 @@
 #include <reshade.hpp>
 #include <vector>
 #include <shared_mutex>
-#include <algorithm>
+#include <algorithm> // std::remove
 #include "localization.hpp"
 
 using namespace reshade::api;

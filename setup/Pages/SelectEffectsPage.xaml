@@ -10,11 +10,11 @@
       FocusManager.FocusedElement="{Binding ElementName=ItemsListBox}">
   <DockPanel LastChildFill="True">
     <DockPanel DockPanel.Dock="Top">
-      <Label x:Uid="PageTitle" Margin="10" Padding="0" VerticalAlignment="Top" Foreground="#FF003399" FontSize="16" Content="选择要安装的效果：" />
-      <Button x:Uid="CheckAllButton" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center" Width="100" Margin="10" Content="全部不选(_A)" Click="OnCheckAllClick" KeyboardNavigation.TabIndex="2" />
+      <TextBlock x:Uid="PageTitle" Style="{StaticResource TitleStyle}" Text="选择要安装的效果：" />
+      <Button x:Uid="CheckAllButton" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center" Width="100" Margin="10" Content="Uncheck _all" Click="OnCheckAllClick" KeyboardNavigation.TabIndex="2" />
     </DockPanel>
     <StackPanel DockPanel.Dock="Top">
-      <TextBlock x:Uid="PageDescription" DockPanel.Dock="Top" Margin="10,5" TextWrapping="Wrap">
+      <TextBlock x:Uid="PageDescription" DockPanel.Dock="Top" Margin="10,5" TextWrapping="Wrap" Style="{StaticResource TextStyle}">
         选择所有需要安装或更新的效果文件。未勾选的不会被安装或改动。<LineBreak/>
         如果你想使用AuroraShade的汉化效果器和预设，请在下面按需勾选。<LineBreak/>
         选择AuroraShade汉化版效果器时，会无视以下来自ReShade官方源的着色器。
@@ -34,7 +34,7 @@
       <TextBox x:Name="PresetPathBox" Grid.Column="0" IsReadOnly="True" Text="" />
       <Button x:Uid="BrowseButton" Grid.Column="2" Content="浏览...(_B)" Click="OnBrowsePresetClick" />
     </Grid>
-    <TextBlock x:Uid="PresetPathDescription" DockPanel.Dock="Bottom" Margin="10,5">
+    <TextBlock x:Uid="PresetPathDescription" DockPanel.Dock="Bottom" Margin="10,5" Style="{StaticResource TextStyle}">
       也可以选择一个预设文件，只安装其中用到的效果：
     </TextBlock>
     <ListBox x:Name="ItemsListBox" x:FieldModifier="private" Margin="10,5" HorizontalContentAlignment="Stretch" VirtualizingPanel.ScrollUnit="Pixel" ItemsSource="{Binding Items}" d:ItemsSource="{Binding Items}">

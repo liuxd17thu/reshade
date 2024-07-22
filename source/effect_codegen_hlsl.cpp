@@ -5,14 +5,20 @@
 
 #include "effect_parser.hpp"
 #include "effect_codegen.hpp"
-#include <cmath> // std::signbit, std::isinf, std::isnan
+#include <cmath> // std::isinf, std::isnan, std::signbit
 #include <cctype> // std::tolower
-#include <cstdio> // std::snprintf
 #include <cassert>
-#include <cstring> // stricmp
-#include <algorithm> // std::find_if, std::max
+#include <cstring> // stricmp, std::memcmp
+#include <charconv> // std::from_chars, std::to_chars
+#include <algorithm> // std::equal, std::find_if, std::max
 
 using namespace reshadefx;
+
+inline char to_digit(unsigned int value)
+{
+	assert(value < 10);
+	return '0' + static_cast<char>(value);
+}
 
 class codegen_hlsl final : public codegen
 {
@@ -53,13 +59,7 @@ private:
 	bool _uses_bitwise_cast = false;
 	bool _uses_bitwise_intrinsics = false;
 
-	static inline char to_digit(unsigned int value)
-	{
-		assert(value < 10);
-		return '0' + static_cast<char>(value);
-	}
-
-	void write_result(module &module) override
+	void write_result(effect_module &module) override
 	{
 		module = std::move(_module);
 
@@ -411,6 +411,8 @@ private:
 	{
 		if (data_type.is_array())
 		{
+			assert(data_type.is_bounded_array());
+
 			type elem_type = data_type;
 			elem_type.array_length = 0;
 
@@ -468,9 +470,12 @@ private:
 					s += std::signbit(data.as_float[i]) ? "1.#INF" : "-1.#INF";
 					break;
 				}
-				char temp[64]; // Will be null-terminated by snprintf
-				std::snprintf(temp, sizeof(temp), "%1.8e", data.as_float[i]);
-				s += temp;
+				char temp[64];
+				const std::to_chars_result res = std::to_chars(temp, temp + sizeof(temp), data.as_float[i], std::chars_format::scientific, 8);
+				if (res.ec == std::errc())
+					s.append(temp, res.ptr);
+				else
+					assert(false);
 				break;
 			default:
 				assert(false);
@@ -595,7 +600,9 @@ private:
 			digit_index++;
 
 			const std::string semantic_base = semantic.substr(0, digit_index);
-			const uint32_t semantic_digit = static_cast<uint32_t>(std::strtoul(semantic.c_str() + digit_index, nullptr, 10));
+
+			uint32_t semantic_digit = 0;
+			std::from_chars(semantic.c_str() + digit_index, semantic.c_str() + semantic.size(), semantic_digit);
 
 			if (semantic_base == "TEXCOORD")
 			{
@@ -772,8 +779,7 @@ private:
 				code += "SamplerState __s" + std::to_string(info.binding) + " : register(s" + std::to_string(info.binding) + ");\n";
 			}
 
-			assert(info.srgb == 0 || info.srgb == 1);
-			info.texture_binding = tex_info.binding + info.srgb; // Offset binding by one to choose the SRGB variant
+			info.texture_binding = tex_info.binding + (info.srgb ? 1 : 0); // Offset binding by one to choose the SRGB variant
 
 			write_location(code, loc);
 
@@ -1025,10 +1031,12 @@ private:
 			func.unique_name = 'E' + func.unique_name;
 
 		if (std::find_if(_module.entry_points.begin(), _module.entry_points.end(),
-				[&func](const entry_point &ep) { return ep.name == func.unique_name; }) != _module.entry_points.end())
+				[&func](const std::pair<std::string, shader_type> &entry_point) {
+					return entry_point.first == func.unique_name;
+				}) != _module.entry_points.end())
 			return;
 
-		_module.entry_points.push_back({ func.unique_name, func.type });
+		_module.entry_points.emplace_back(func.unique_name, func.type);
 
 		// Only have to rewrite the entry point function signature in shader model 3 and for compute (to write "numthreads" attribute)
 		if (_shader_model >= 40 && func.type != shader_type::compute)
@@ -1072,7 +1080,7 @@ private:
 			{
 				for (const struct_member_info &member : get_struct(param.type.definition).member_list)
 					if (is_position_semantic(member.semantic))
-						position_variable_name = param.name + '.' + member.name;
+						position_variable_name = id_to_name(param.definition) + '.' + member.name;
 			}
 
 			if (is_color_semantic(param.semantic))
@@ -1083,7 +1091,7 @@ private:
 			{
 				if (func.type == shader_type::vertex)
 					// Keep track of the position output variable
-					position_variable_name = param.name;
+					position_variable_name = id_to_name(param.definition);
 				else if (func.type == shader_type::pixel)
 					// Change the position input semantic in pixel shaders
 					param.semantic = "VPOS";
@@ -1105,7 +1113,7 @@ private:
 		for (struct_member_info &param : entry_point.parameter_list)
 		{
 			if (is_color_semantic(param.semantic))
-				code += '\t' + param.name + " = float4(0.0, 0.0, 0.0, 0.0);\n";
+				code += '\t' + id_to_name(param.definition) + " = float4(0.0, 0.0, 0.0, 0.0);\n";
 		}
 
 		code += '\t';
@@ -1124,13 +1132,13 @@ private:
 
 		for (size_t i = 0, num_params = func.parameter_list.size(); i < num_params; ++i)
 		{
-			code += func.parameter_list[i].name;
+			code += id_to_name(entry_point.parameter_list[i].definition);
 
 			if (is_color_semantic(func.parameter_list[i].semantic))
 			{
 				code += '.';
-				for (unsigned int k = 0; k < func.parameter_list[i].type.rows; k++)
-					code += "xyzw"[k];
+				for (unsigned int c = 0; c < func.parameter_list[i].type.rows; c++)
+					code += "xyzw"[c];
 			}
 
 			if (i < num_params - 1)
@@ -1142,7 +1150,7 @@ private:
 		// Cast the output value to a four-component vector
 		if (is_color_semantic(func.return_semantic))
 		{
-			for (unsigned int i = 0; i < (4 - func.return_type.rows); i++)
+			for (unsigned int c = 0; c < (4 - func.return_type.rows); c++)
 				code += ", 0.0";
 			code += ')';
 		}
@@ -1526,17 +1534,7 @@ private:
 
 		code += '\t';
 
-		if (_shader_model >= 40 && (
-			(intrinsic >= tex1Dsize0 && intrinsic <= tex3Dsize2) ||
-			(intrinsic >= atomicAdd0 && intrinsic <= atomicCompareExchange1) ||
-			(!(res_type.is_floating_point() || _shader_model >= 67) && (intrinsic >= tex1D0 && intrinsic <= tex3Dlod1))))
-		{
-			// Implementation of the 'tex2Dsize' intrinsic passes the result variable into 'GetDimensions' as output argument
-			// Same with the atomic intrinsics, which use the last parameter to return the previous value of the target
-			write_type(code, res_type);
-			code += ' ' + id_to_name(res) + "; ";
-		}
-		else if (!res_type.is_void())
+		if (!res_type.is_void())
 		{
 			write_type(code, res_type);
 			code += ' ' + id_to_name(res) + " = ";

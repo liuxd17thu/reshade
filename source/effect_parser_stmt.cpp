@@ -7,8 +7,8 @@
 #include "effect_parser.hpp"
 #include "effect_codegen.hpp"
 #include <cctype> // std::toupper
-#include <limits>
 #include <cassert>
+#include <algorithm> // std::max, std::replace, std::transform
 #include <functional>
 #include <string_view>
 
@@ -1179,8 +1179,11 @@ bool reshadefx::parser::parse_function(type type, std::string name, shader_type 
 		}
 
 		if (param.type.is_unbounded_array())
-			parse_success = false,
+		{
+			parse_success = false;
 			error(param.location, 3072, '\'' + param.name + "': array dimensions of function parameters must be explicit");
+			param.type.array_length = 0;
+		}
 
 		// Handle parameter type semantic
 		if (accept(':'))
@@ -1218,6 +1221,34 @@ bool reshadefx::parser::parse_function(type type, std::string name, shader_type 
 				if (param.semantic.back() == '0' && (param.semantic[param.semantic.size() - 2] < '0' || param.semantic[param.semantic.size() - 2] > '9'))
 					param.semantic.pop_back();
 			}
+		}
+
+		// Handle default argument
+		if (accept('='))
+		{
+			expression default_value_exp;
+			if (!parse_expression_multary(default_value_exp))
+			{
+				parse_success = false;
+				expect_parenthesis = false;
+				consume_until(')');
+				break;
+			}
+
+			default_value_exp.add_cast_operation(param.type);
+
+			if (!default_value_exp.is_constant)
+				parse_success = false,
+				error(default_value_exp.location, 3011, '\'' + param.name + "': value must be a literal expression");
+
+			param.default_value = std::move(default_value_exp.constant);
+			param.has_default_value = true;
+		}
+		else
+		{
+			if (!info.parameter_list.empty() && info.parameter_list.back().has_default_value)
+				parse_success = false,
+				error(param.location, 3044, '\'' + name + "': missing default value for parameter '" + param.name + '\'');
 		}
 
 		info.parameter_list.push_back(std::move(param));
@@ -1724,7 +1755,7 @@ bool reshadefx::parser::parse_technique_pass(pass_info &info)
 
 	bool parse_success = true;
 	bool targets_support_srgb = true;
-	function_info vs_info, ps_info, cs_info;
+	function_info vs_info = {}, ps_info = {}, cs_info = {};
 
 	if (!expect('{'))
 		return false;
@@ -2052,24 +2083,21 @@ bool reshadefx::parser::parse_technique_pass(pass_info &info)
 			if (!info.vs_entry_point.empty())
 				warning(pass_location, 3089, "pass is specifying both 'VertexShader' and 'ComputeShader' which cannot be used together");
 			if (!info.ps_entry_point.empty())
-				warning(pass_location, 3089,  "pass is specifying both 'PixelShader' and 'ComputeShader' which cannot be used together");
+				warning(pass_location, 3089, "pass is specifying both 'PixelShader' and 'ComputeShader' which cannot be used together");
 
 			for (codegen::id id : cs_info.referenced_samplers)
 				info.samplers.push_back(_codegen->get_sampler(id));
 			for (codegen::id id : cs_info.referenced_storages)
 				info.storages.push_back(_codegen->get_storage(id));
 		}
-		else if (info.vs_entry_point.empty() || info.ps_entry_point.empty())
-		{
-			parse_success = false;
-
-			if (info.vs_entry_point.empty())
-				error(pass_location, 3012, "pass is missing 'VertexShader' property");
-			if (info.ps_entry_point.empty())
-				error(pass_location, 3012,  "pass is missing 'PixelShader' property");
-		}
 		else
 		{
+			if (info.vs_entry_point.empty())
+			{
+				parse_success = false;
+				error(pass_location, 3012, "pass is missing 'VertexShader' property");
+			}
+
 			// Verify that shader signatures between VS and PS match (both semantics and interpolation qualifiers)
 			std::unordered_map<std::string_view, type> vs_semantic_mapping;
 			if (vs_info.return_semantic.empty())
@@ -2137,21 +2165,30 @@ bool reshadefx::parser::parse_technique_pass(pass_info &info)
 				}
 			}
 
-			for (codegen::id id : vs_info.referenced_samplers)
-				info.samplers.push_back(_codegen->get_sampler(id));
-			for (codegen::id id : ps_info.referenced_samplers)
-				info.samplers.push_back(_codegen->get_sampler(id));
+			std::unordered_set<uint32_t> referenced_samplers = std::move(vs_info.referenced_samplers);
+			referenced_samplers.insert(ps_info.referenced_samplers.begin(), ps_info.referenced_samplers.end());
+			for (codegen::id id : referenced_samplers)
+			{
+				const sampler_info &sampler = _codegen->get_sampler(id);
+				if (std::find(std::begin(info.render_target_names), std::end(info.render_target_names), sampler.texture_name) != std::end(info.render_target_names))
+					error(pass_location, 3020, '\'' + sampler.texture_name + "': cannot sample from texture that is also used as render target in the same pass");
+
+				info.samplers.push_back(sampler);
+			}
+
 			if (!vs_info.referenced_storages.empty() || !ps_info.referenced_storages.empty())
 			{
 				parse_success = false;
 				error(pass_location, 3667, "storage writes are only valid in compute shaders");
 			}
-		}
 
-		// Verify render target format supports sRGB writes if enabled
-		if (info.srgb_write_enable && !targets_support_srgb)
-			parse_success = false,
-			error(pass_location, 4582, "one or more render target(s) do not support sRGB writes (only textures with RGBA8 format do)");
+			// Verify render target format supports sRGB writes if enabled
+			if (info.srgb_write_enable && !targets_support_srgb)
+			{
+				parse_success = false;
+				error(pass_location, 4582, "one or more render target(s) do not support sRGB writes (only textures with RGBA8 format do)");
+			}
+		}
 	}
 
 	return expect('}') && parse_success;

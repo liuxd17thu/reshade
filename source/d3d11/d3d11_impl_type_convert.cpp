@@ -4,8 +4,8 @@
  */
 
 #include "d3d11_impl_type_convert.hpp"
-#include <limits>
 #include <cassert>
+#include <algorithm> // std::copy_n
 
 auto reshade::d3d11::convert_format(api::format format) -> DXGI_FORMAT
 {
@@ -298,7 +298,7 @@ void reshade::d3d11::convert_resource_desc(const api::resource_desc &desc, D3D11
 
 	if (desc.buffer.stride != 0 && (desc.usage & (api::resource_usage::vertex_buffer | api::resource_usage::index_buffer | api::resource_usage::constant_buffer | api::resource_usage::stream_output)) == 0)
 		internal_desc.MiscFlags |= D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
-	else if ((desc.usage & (api::resource_usage::shader_resource | api::resource_usage::unordered_access)) != 0)
+	else if ((desc.usage & (api::resource_usage::shader_resource | api::resource_usage::unordered_access)) != 0 && (desc.usage & api::resource_usage::constant_buffer) == 0)
 		internal_desc.MiscFlags |= D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
 }
 void reshade::d3d11::convert_resource_desc(const api::resource_desc &desc, D3D11_TEXTURE1D_DESC &internal_desc)
@@ -581,6 +581,12 @@ void reshade::d3d11::convert_resource_view_desc(const api::resource_view_desc &d
 		internal_desc.Buffer.FirstElement = static_cast<UINT>(desc.buffer.offset);
 		assert(desc.buffer.size <= std::numeric_limits<UINT>::max());
 		internal_desc.Buffer.NumElements = static_cast<UINT>(desc.buffer.size);
+
+		if (internal_desc.Format == DXGI_FORMAT_R32_TYPELESS)
+		{
+			internal_desc.ViewDimension = D3D11_SRV_DIMENSION_BUFFEREX;
+			internal_desc.BufferEx.Flags |= D3D11_BUFFEREX_SRV_FLAG_RAW;
+		}
 		break;
 	case api::resource_view_type::texture_1d:
 		internal_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE1D;
@@ -676,6 +682,11 @@ void reshade::d3d11::convert_resource_view_desc(const api::resource_view_desc &d
 		internal_desc.Buffer.FirstElement = static_cast<UINT>(desc.buffer.offset);
 		assert(desc.buffer.size <= std::numeric_limits<UINT>::max());
 		internal_desc.Buffer.NumElements = static_cast<UINT>(desc.buffer.size);
+
+		if (internal_desc.Format == DXGI_FORMAT_R32_TYPELESS)
+			internal_desc.Buffer.Flags |= D3D11_BUFFER_UAV_FLAG_RAW;
+		else
+			internal_desc.Buffer.Flags &= ~D3D11_BUFFER_UAV_FLAG_RAW;
 		break;
 	case api::resource_view_type::texture_1d:
 		internal_desc.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE1D;
@@ -913,10 +924,10 @@ reshade::api::resource_view_desc reshade::d3d11::convert_resource_view_desc(cons
 			desc.texture.layer_count = internal_desc.TextureCubeArray.NumCubes * 6;
 		break;
 	case D3D11_SRV_DIMENSION_BUFFEREX:
-		// Do not set type to 'resource_view_type::buffer', since that would translate to D3D11_SRV_DIMENSION_BUFFER on the conversion back
+		desc.type = api::resource_view_type::buffer;
 		desc.buffer.offset = internal_desc.BufferEx.FirstElement;
 		desc.buffer.size = internal_desc.BufferEx.NumElements;
-		// Missing fields: D3D11_BUFFEREX_SRV::Flags
+		assert(((internal_desc.BufferEx.Flags & D3D11_BUFFEREX_SRV_FLAG_RAW) != 0) == (internal_desc.Format == DXGI_FORMAT_R32_TYPELESS));
 		break;
 	}
 	return desc;
@@ -963,6 +974,7 @@ reshade::api::resource_view_desc reshade::d3d11::convert_resource_view_desc(cons
 		desc.buffer.offset = internal_desc.Buffer.FirstElement;
 		desc.buffer.size = internal_desc.Buffer.NumElements;
 		// Missing fields: D3D11_BUFFER_UAV::Flags
+		assert(((internal_desc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW) != 0) == (internal_desc.Format == DXGI_FORMAT_R32_TYPELESS));
 		break;
 	case D3D11_UAV_DIMENSION_TEXTURE1D:
 		desc.type = api::resource_view_type::texture_1d;
@@ -1023,49 +1035,32 @@ reshade::api::resource_view_desc reshade::d3d11::convert_resource_view_desc(cons
 	}
 }
 
-void reshade::d3d11::convert_input_layout_desc(uint32_t count, const api::input_element *elements, std::vector<D3D11_INPUT_ELEMENT_DESC> &internal_elements)
+void reshade::d3d11::convert_input_element(const api::input_element &desc, D3D11_INPUT_ELEMENT_DESC &internal_desc)
 {
-	internal_elements.reserve(count);
+	internal_desc.SemanticName = desc.semantic;
+	internal_desc.SemanticIndex = desc.semantic_index;
+	internal_desc.Format = convert_format(desc.format);
+	internal_desc.InputSlot = desc.buffer_binding;
+	internal_desc.AlignedByteOffset = desc.offset;
+	internal_desc.InputSlotClass = desc.instance_step_rate > 0 ? D3D11_INPUT_PER_INSTANCE_DATA : D3D11_INPUT_PER_VERTEX_DATA;
+	internal_desc.InstanceDataStepRate = desc.instance_step_rate;
 
-	for (uint32_t i = 0; i < count; ++i)
+	if (desc.semantic == nullptr)
 	{
-		const api::input_element &element = elements[i];
-
-		D3D11_INPUT_ELEMENT_DESC &internal_element = internal_elements.emplace_back();
-		internal_element.SemanticName = element.semantic;
-		internal_element.SemanticIndex = element.semantic_index;
-		internal_element.Format = convert_format(element.format);
-		internal_element.InputSlot = element.buffer_binding;
-		internal_element.AlignedByteOffset = element.offset;
-		internal_element.InputSlotClass = element.instance_step_rate > 0 ? D3D11_INPUT_PER_INSTANCE_DATA : D3D11_INPUT_PER_VERTEX_DATA;
-		internal_element.InstanceDataStepRate = element.instance_step_rate;
-
-		if (element.semantic == nullptr)
-		{
-			internal_element.SemanticName = "TEXCOORD";
-			internal_element.SemanticIndex = element.location;
-		}
+		internal_desc.SemanticName = "TEXCOORD";
+		internal_desc.SemanticIndex = desc.location;
 	}
 }
-std::vector<reshade::api::input_element> reshade::d3d11::convert_input_layout_desc(UINT count, const D3D11_INPUT_ELEMENT_DESC *internal_elements)
+reshade::api::input_element reshade::d3d11::convert_input_element(const D3D11_INPUT_ELEMENT_DESC &internal_desc)
 {
-	std::vector<api::input_element> elements;
-	elements.reserve(count);
-
-	for (UINT i = 0; i < count; ++i)
-	{
-		const D3D11_INPUT_ELEMENT_DESC &internal_element = internal_elements[i];
-
-		api::input_element &element = elements.emplace_back();
-		element.semantic = internal_element.SemanticName;
-		element.semantic_index = internal_element.SemanticIndex;
-		element.format = convert_format(internal_element.Format);
-		element.buffer_binding = internal_element.InputSlot;
-		element.offset = internal_element.AlignedByteOffset;
-		element.instance_step_rate = internal_element.InstanceDataStepRate;
-	}
-
-	return elements;
+	api::input_element desc = {};
+	desc.semantic = internal_desc.SemanticName;
+	desc.semantic_index = internal_desc.SemanticIndex;
+	desc.format = convert_format(internal_desc.Format);
+	desc.buffer_binding = internal_desc.InputSlot;
+	desc.offset = internal_desc.AlignedByteOffset;
+	desc.instance_step_rate = internal_desc.InstanceDataStepRate;
+	return desc;
 }
 
 void reshade::d3d11::convert_blend_desc(const api::blend_desc &desc, D3D11_BLEND_DESC &internal_desc)

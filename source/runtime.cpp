@@ -20,11 +20,14 @@
 #include "reshade_api_object_impl.hpp"
 #include <set>
 #include <thread>
-#include <cctype>
-#include <cstring>
 #include <fstream>
-#include <algorithm>
-#include <numeric>
+#include <cmath> // std::abs, std::fmod
+#include <cctype> // std::toupper
+#include <cwctype> // std::towlower
+#include <cstdlib> // std::malloc, std::rand, std::strtod, std::strtol
+#include <cstring> // std::memcpy, std::memset, std::strlen
+#include <charconv> // std::to_chars
+#include <algorithm> // std::all_of, std::copy_n, std::equal, std::fill_n, std::find, std::find_if, std::for_each, std::max, std::min, std::replace, std::remove, std::remove_if, std::reverse, std::search, std::sort, std::stable_sort, std::swap, std::transform
 #include <fpng.h>
 #include <stb_image.h>
 #include <stb_image_dds.h>
@@ -168,48 +171,6 @@ static std::vector<std::filesystem::path> find_files(const std::vector<std::file
 	}
 
 	return files;
-}
-
-static inline int format_color_bit_depth(reshade::api::format value)
-{
-	switch (value)
-	{
-	default:
-		assert(false);
-		return 0;
-	case reshade::api::format::b5g6r5_unorm:
-	case reshade::api::format::b5g5r5a1_unorm:
-	case reshade::api::format::b5g5r5x1_unorm:
-		return 5;
-	case reshade::api::format::r8g8b8a8_typeless:
-	case reshade::api::format::r8g8b8a8_unorm:
-	case reshade::api::format::r8g8b8a8_unorm_srgb:
-	case reshade::api::format::r8g8b8x8_unorm:
-	case reshade::api::format::r8g8b8x8_unorm_srgb:
-	case reshade::api::format::b8g8r8a8_typeless:
-	case reshade::api::format::b8g8r8a8_unorm:
-	case reshade::api::format::b8g8r8a8_unorm_srgb:
-	case reshade::api::format::b8g8r8x8_typeless:
-	case reshade::api::format::b8g8r8x8_unorm:
-	case reshade::api::format::b8g8r8x8_unorm_srgb:
-		return 8;
-	case reshade::api::format::r10g10b10a2_typeless:
-	case reshade::api::format::r10g10b10a2_unorm:
-	case reshade::api::format::r10g10b10a2_xr_bias:
-	case reshade::api::format::b10g10r10a2_typeless:
-	case reshade::api::format::b10g10r10a2_unorm:
-		return 10;
-	case reshade::api::format::r11g11b10_float:
-		return 11;
-	case reshade::api::format::r16g16b16a16_typeless:
-	case reshade::api::format::r16g16b16a16_float:
-		return 16;
-	case reshade::api::format::r32g32b32_typeless:
-	case reshade::api::format::r32g32b32_float:
-	case reshade::api::format::r32g32b32a32_typeless:
-	case reshade::api::format::r32g32b32a32_float:
-		return 32;
-	}
 }
 #endif
 
@@ -1537,8 +1498,9 @@ void reshade::runtime::load_current_preset()
 		else
 			disable_technique(tech);
 
-		preset.get({}, "Key" + unique_name, tech.toggle_key_data);
-		preset.get({}, "Key" + tech.name + build_postfix(_effects[tech.effect_index], _aurora_feature), tech.toggle_key_data);
+		if (!preset.get({}, "Key" + unique_name, tech.toggle_key_data) &&
+			!preset.get({}, "Key" + tech.name + build_postfix(_effects[tech.effect_index], _aurora_feature), tech.toggle_key_data))
+			std::memset(tech.toggle_key_data, 0, sizeof(tech.toggle_key_data));
 	}
 
 	// Reverse queue so that effects are enabled in the order they are defined in the preset (since the queue is worked from back to front)
@@ -1861,7 +1823,7 @@ bool reshade::runtime::switch_to_next_preset(std::filesystem::path filter_path, 
 		// Only add those files that are matching the filter text
 		if (filter_text.empty() ||
 			std::search(preset_name.cbegin(), preset_name.cend(), filter_text.native().begin(), filter_text.native().end(),
-				[](auto c1, auto c2) { return towlower(c1) == towlower(c2); }) != preset_name.cend())
+				[](auto c1, auto c2) { return std::towlower(c1) == std::towlower(c2); }) != preset_name.cend())
 			preset_paths.push_back(std::move(preset_path));
 	}
 
@@ -1901,7 +1863,7 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 	attributes += "width=" + std::to_string(_effect_width) + ';';
 	attributes += "height=" + std::to_string(_effect_height) + ';';
 	attributes += "color_space=" + std::to_string(static_cast<uint32_t>(_back_buffer_color_space)) + ';';
-	attributes += "color_bit_depth=" + std::to_string(format_color_bit_depth(_effect_color_format)) + ';';
+	attributes += "color_bit_depth=" + std::to_string(api::format_bit_depth(_effect_color_format)) + ';';
 	attributes += "version=" + std::to_string(VERSION_MAJOR * 10000 + VERSION_MINOR * 100 + VERSION_REVISION) + ';';
 	attributes += "performance_mode=" + std::string(_performance_mode ? "1" : "0") + ';';
 	attributes += "vendor=" + std::to_string(_vendor_id) + ';';
@@ -2005,6 +1967,11 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 		effect.source_file = source_file;
 		effect.source_hash = source_hash;
 	}
+	else if (!effect.compiled)
+	{
+		// Clear any errors from a previous failed loading attempt (since it will now try again and append to the errors list)
+		effect.errors.clear();
+	}
 
 	if (_effect_load_skipping && !force_load)
 	{
@@ -2046,7 +2013,7 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 		pp.add_macro_definition("BUFFER_RCP_WIDTH", "(1.0 / BUFFER_WIDTH)");
 		pp.add_macro_definition("BUFFER_RCP_HEIGHT", "(1.0 / BUFFER_HEIGHT)");
 		pp.add_macro_definition("BUFFER_COLOR_SPACE", std::to_string(static_cast<uint32_t>(_back_buffer_color_space)));
-		pp.add_macro_definition("BUFFER_COLOR_BIT_DEPTH", std::to_string(format_color_bit_depth(_effect_color_format)));
+		pp.add_macro_definition("BUFFER_COLOR_BIT_DEPTH", std::to_string(api::format_bit_depth(_effect_color_format)));
 
 		if (_ui_bind_support)
 		{
@@ -2303,7 +2270,12 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 							code_preamble += std::to_string(constant.initializer_value.as_uint[i]);
 							break;
 						case reshadefx::type::t_float:
-							code_preamble += std::to_string(constant.initializer_value.as_float[i]);
+							char temp[64];
+							const std::to_chars_result res = std::to_chars(temp, temp + sizeof(temp), constant.initializer_value.as_float[i], std::chars_format::scientific, 8);
+							if (res.ec == std::errc())
+								code_preamble.append(temp, res.ptr);
+							else
+								assert(false);
 							break;
 						}
 
@@ -2325,309 +2297,312 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 
 	if ( effect.compiled && (effect.preprocessed || source_cached))
 	{
-		// Compile shader modules
-		for (const reshadefx::entry_point &entry_point : effect.module.entry_points)
+		if (effect.assembly.empty())
 		{
-			if (entry_point.type == reshadefx::shader_type::compute && !_device->check_capability(api::device_caps::compute_shader))
+			// Compile shader modules
+			for (const std::pair<std::string, reshadefx::shader_type> &entry_point : effect.module.entry_points)
 			{
-				effect.errors += "error: " + entry_point.name + ": compute shaders are not supported in D3D9/D3D10\n";
-				effect.compiled = false;
-				break;
-			}
-
-			std::string &cso = effect.assembly[entry_point.name];
-			std::string &cso_text = effect.assembly_text[entry_point.name];
-
-			if ((_renderer_id & 0xF0000) == 0)
-			{
-				assert(_d3d_compiler_module != nullptr);
-
-				// Copy string, since this has to be repeated for every entry point
-				std::string hlsl = code_preamble;
-
-				if (_renderer_id == 0x9000)
+				if (entry_point.second == reshadefx::shader_type::compute && !_device->check_capability(api::device_caps::compute_shader))
 				{
-					// Create SEMANTIC_PIXEL_SIZE constants
-					hlsl += "#define COLOR_PIXEL_SIZE 1.0 / " + std::to_string(_effect_width) + ", 1.0 / " + std::to_string(_effect_height) + '\n';
+					effect.errors += "error: " + entry_point.first + ": compute shaders are not supported in D3D9/D3D10\n";
+					effect.compiled = false;
+					break;
+				}
 
-					uint32_t semantic_index = 0;
-					for (const reshadefx::texture_info &tex : effect.module.textures)
+				std::string &cso = effect.assembly[entry_point.first];
+				std::string &cso_text = effect.assembly_text[entry_point.first];
+
+				if ((_renderer_id & 0xF0000) == 0)
+				{
+					assert(_d3d_compiler_module != nullptr);
+
+					// Copy string, since this has to be repeated for every entry point
+					std::string hlsl = code_preamble;
+
+					if (_renderer_id == 0x9000)
 					{
-						if (tex.semantic.empty() || tex.semantic == "COLOR")
-							continue;
+						// Create SEMANTIC_PIXEL_SIZE constants
+						hlsl += "#define COLOR_PIXEL_SIZE 1.0 / " + std::to_string(_effect_width) + ", 1.0 / " + std::to_string(_effect_height) + '\n';
 
-						semantic_index++;
-						assert((effect.uniform_data_storage.size() / 16) <= (255 - semantic_index));
+						uint32_t semantic_index = 0;
+						for (const reshadefx::texture_info &tex : effect.module.textures)
+						{
+							if (tex.semantic.empty() || tex.semantic == "COLOR")
+								continue;
 
-						// Avoid duplicate declarations if the semantic was used multiple times
-						if (hlsl.find(tex.semantic + "_PIXEL_SIZE") == std::string::npos)
-							hlsl += "uniform float2 " + tex.semantic + "_PIXEL_SIZE : register(c" + std::to_string(255 - semantic_index) + ");\n";
+							semantic_index++;
+							assert((effect.uniform_data_storage.size() / 16) <= (255 - semantic_index));
+
+							// Avoid duplicate declarations if the semantic was used multiple times
+							if (hlsl.find(tex.semantic + "_PIXEL_SIZE") == std::string::npos)
+								hlsl += "uniform float2 " + tex.semantic + "_PIXEL_SIZE : register(c" + std::to_string(255 - semantic_index) + ");\n";
+						}
 					}
-				}
 
-				hlsl += "#line 1\n"; // Reset line number, so it matches what is shown when viewing the generated code
-				hlsl.append(effect.module.code.data(), effect.module.code.size());
+					hlsl += "#line 1\n"; // Reset line number, so it matches what is shown when viewing the generated code
+					hlsl.append(effect.module.code.data(), effect.module.code.size());
 
-				// Overwrite position semantic in pixel shaders
-				const D3D_SHADER_MACRO ps_defines[] = {
-					{ "POSITION", "VPOS" }, { nullptr, nullptr }
-				};
+					// Overwrite position semantic in pixel shaders
+					const D3D_SHADER_MACRO ps_defines[] = {
+						{ "POSITION", "VPOS" }, { nullptr, nullptr }
+					};
 
-				std::string profile;
-				switch (entry_point.type)
-				{
-				case reshadefx::shader_type::vertex:
-					profile = "vs";
-					break;
-				case reshadefx::shader_type::pixel:
-					profile = "ps";
-					break;
-				case reshadefx::shader_type::compute:
-					profile = "cs";
-					break;
-				}
+					std::string profile;
+					switch (entry_point.second)
+					{
+					case reshadefx::shader_type::vertex:
+						profile = "vs";
+						break;
+					case reshadefx::shader_type::pixel:
+						profile = "ps";
+						break;
+					case reshadefx::shader_type::compute:
+						profile = "cs";
+						break;
+					}
 
-				switch (_renderer_id)
-				{
-				default:
-				case D3D_FEATURE_LEVEL_11_0:
-					profile += "_5_0";
-					break;
-				case D3D_FEATURE_LEVEL_10_1:
-					profile += "_4_1";
-					break;
-				case D3D_FEATURE_LEVEL_10_0:
-					profile += "_4_0";
-					break;
-				case D3D_FEATURE_LEVEL_9_1:
-				case D3D_FEATURE_LEVEL_9_2:
-					profile += "_4_0_level_9_1";
-					break;
-				case D3D_FEATURE_LEVEL_9_3:
-					profile += "_4_0_level_9_3";
-					break;
-				case 0x9000:
-					profile += "_3_0";
-					break;
-				}
+					switch (_renderer_id)
+					{
+					default:
+					case D3D_FEATURE_LEVEL_11_0:
+						profile += "_5_0";
+						break;
+					case D3D_FEATURE_LEVEL_10_1:
+						profile += "_4_1";
+						break;
+					case D3D_FEATURE_LEVEL_10_0:
+						profile += "_4_0";
+						break;
+					case D3D_FEATURE_LEVEL_9_1:
+					case D3D_FEATURE_LEVEL_9_2:
+						profile += "_4_0_level_9_1";
+						break;
+					case D3D_FEATURE_LEVEL_9_3:
+						profile += "_4_0_level_9_3";
+						break;
+					case 0x9000:
+						profile += "_3_0";
+						break;
+					}
 
-				UINT compile_flags = 0;
-				if (skip_optimization)
-					compile_flags |= D3DCOMPILE_SKIP_OPTIMIZATION;
-				else if (_performance_mode)
-					compile_flags |= D3DCOMPILE_OPTIMIZATION_LEVEL3;
-				if (_renderer_id >= D3D_FEATURE_LEVEL_10_0)
-					compile_flags |= D3DCOMPILE_ENABLE_STRICTNESS;
+					UINT compile_flags = 0;
+					if (skip_optimization)
+						compile_flags |= D3DCOMPILE_SKIP_OPTIMIZATION;
+					else if (_performance_mode)
+						compile_flags |= D3DCOMPILE_OPTIMIZATION_LEVEL3;
+					if (_renderer_id >= D3D_FEATURE_LEVEL_10_0)
+						compile_flags |= D3DCOMPILE_ENABLE_STRICTNESS;
 #ifndef NDEBUG
-				compile_flags |= D3DCOMPILE_DEBUG;
+					compile_flags |= D3DCOMPILE_DEBUG;
 #endif
 
-				std::string hlsl_attributes;
-				hlsl_attributes += "entrypoint=" + entry_point.name + ';';
-				hlsl_attributes += "profile=" + profile + ';';
-				hlsl_attributes += "flags=" + std::to_string(compile_flags) + ';';
+					std::string hlsl_attributes;
+					hlsl_attributes += "entrypoint=" + entry_point.first + ';';
+					hlsl_attributes += "profile=" + profile + ';';
+					hlsl_attributes += "flags=" + std::to_string(compile_flags) + ';';
 
-				const std::string cache_id =
-					effect.source_file.stem().u8string() + '-' + entry_point.name + '-' + std::to_string(_renderer_id) + '-' +
-					std::to_string(std::hash<std::string_view>()(hlsl_attributes) ^ std::hash<std::string_view>()(hlsl));
+					const std::string cache_id =
+						effect.source_file.stem().u8string() + '-' + entry_point.first + '-' + std::to_string(_renderer_id) + '-' +
+						std::to_string(std::hash<std::string_view>()(hlsl_attributes) ^ std::hash<std::string_view>()(hlsl));
 
-				if (!load_effect_cache(cache_id, "cso", cso))
-				{
-					const auto D3DCompile = reinterpret_cast<pD3DCompile>(GetProcAddress(static_cast<HMODULE>(_d3d_compiler_module), "D3DCompile"));
-					assert(D3DCompile != nullptr);
-
-					com_ptr<ID3DBlob> d3d_compiled, d3d_errors;
-					const HRESULT hr = D3DCompile(
-						hlsl.data(), hlsl.size(),
-						nullptr, entry_point.type == reshadefx::shader_type::pixel ? ps_defines : nullptr, nullptr,
-						entry_point.name.c_str(),
-						profile.c_str(),
-						compile_flags, 0,
-						&d3d_compiled, &d3d_errors);
-
-					std::string d3d_errors_string;
-					if (d3d_errors != nullptr) // Append warnings to the output error string as well
-						d3d_errors_string.assign(static_cast<const char *>(d3d_errors->GetBufferPointer()), d3d_errors->GetBufferSize() - 1); // Subtracting one to not append the null-terminator as well
-					d3d_errors.reset();
-
-					// De-duplicate error lines (D3DCompiler sometimes repeats the same error multiple times)
-					for (size_t line_offset = 0, next_line_offset; (next_line_offset = d3d_errors_string.find('\n', line_offset)) != std::string::npos; line_offset = next_line_offset + 1)
+					if (!load_effect_cache(cache_id, "cso", cso))
 					{
-						const std::string_view cur_line(d3d_errors_string.data() + line_offset, next_line_offset - line_offset);
+						const auto D3DCompile = reinterpret_cast<pD3DCompile>(GetProcAddress(static_cast<HMODULE>(_d3d_compiler_module), "D3DCompile"));
+						assert(D3DCompile != nullptr);
 
-						if (const size_t end_offset = d3d_errors_string.find('\n', next_line_offset + 1);
-							end_offset != std::string::npos)
+						com_ptr<ID3DBlob> d3d_compiled, d3d_errors;
+						const HRESULT hr = D3DCompile(
+							hlsl.data(), hlsl.size(),
+							nullptr, entry_point.second == reshadefx::shader_type::pixel ? ps_defines : nullptr, nullptr,
+							entry_point.first.c_str(),
+							profile.c_str(),
+							compile_flags, 0,
+							&d3d_compiled, &d3d_errors);
+
+						std::string d3d_errors_string;
+						if (d3d_errors != nullptr) // Append warnings to the output error string as well
+							d3d_errors_string.assign(static_cast<const char *>(d3d_errors->GetBufferPointer()), d3d_errors->GetBufferSize() - 1); // Subtracting one to not append the null-terminator as well
+						d3d_errors.reset();
+
+						// De-duplicate error lines (D3DCompiler sometimes repeats the same error multiple times)
+						for (size_t line_offset = 0, next_line_offset; (next_line_offset = d3d_errors_string.find('\n', line_offset)) != std::string::npos; line_offset = next_line_offset + 1)
 						{
-							const std::string_view next_line(d3d_errors_string.data() + next_line_offset + 1, end_offset - next_line_offset - 1);
-							if (cur_line == next_line)
+							const std::string_view cur_line(d3d_errors_string.data() + line_offset, next_line_offset - line_offset);
+
+							if (const size_t end_offset = d3d_errors_string.find('\n', next_line_offset + 1);
+								end_offset != std::string::npos)
 							{
-								d3d_errors_string.erase(next_line_offset, end_offset - next_line_offset);
+								const std::string_view next_line(d3d_errors_string.data() + next_line_offset + 1, end_offset - next_line_offset - 1);
+								if (cur_line == next_line)
+								{
+									d3d_errors_string.erase(next_line_offset, end_offset - next_line_offset);
+									next_line_offset = line_offset - 1;
+								}
+							}
+
+							// Also remove D3DCompiler warnings about 'groupshared' specifier used in VS/PS modules
+							if (cur_line.find("X3579") != std::string_view::npos)
+							{
+								d3d_errors_string.erase(line_offset, next_line_offset + 1 - line_offset);
 								next_line_offset = line_offset - 1;
 							}
 						}
 
-						// Also remove D3DCompiler warnings about 'groupshared' specifier used in VS/PS modules
-						if (cur_line.find("X3579") != std::string_view::npos)
+						if (FAILED(hr))
 						{
-							d3d_errors_string.erase(line_offset, next_line_offset + 1 - line_offset);
-							next_line_offset = line_offset - 1;
+							// Add a prefix with the offending entry point name for generic error messages like an out of memory notification
+							if (d3d_errors_string.find("error") == std::string::npos)
+								effect.errors += "error: " + entry_point.first + ": ";
+
+							effect.errors += d3d_errors_string;
+							effect.compiled = false;
+							break;
 						}
+						else
+						{
+							// Append warnings
+							effect.errors += d3d_errors_string;
+						}
+
+						cso.resize(d3d_compiled->GetBufferSize());
+						std::memcpy(cso.data(), d3d_compiled->GetBufferPointer(), cso.size());
+
+						save_effect_cache(cache_id, "cso", cso);
 					}
 
-					if (FAILED(hr))
+					if (!load_effect_cache(cache_id, "asm", cso_text))
 					{
-						// Add a prefix with the offending entry point name for generic error messages like an out of memory notification
-						if (d3d_errors_string.find("error") == std::string::npos)
-							effect.errors += "error: " + entry_point.name + ": ";
+						const auto D3DDisassemble = reinterpret_cast<pD3DDisassemble>(GetProcAddress(static_cast<HMODULE>(_d3d_compiler_module), "D3DDisassemble"));
+						assert(D3DDisassemble != nullptr);
 
-						effect.errors += d3d_errors_string;
-						effect.compiled = false;
-						break;
+						com_ptr<ID3DBlob> d3d_disassembled;
+						if (SUCCEEDED(D3DDisassemble(cso.data(), cso.size(), 0, nullptr, &d3d_disassembled)))
+							cso_text.assign(static_cast<const char *>(d3d_disassembled->GetBufferPointer()), d3d_disassembled->GetBufferSize() - 1);
+
+						save_effect_cache(cache_id, "asm", cso_text);
 					}
-					else
+				}
+				else if (_renderer_id < 0x20000)
+				{
+					std::string glsl = "#version 430\n#define ENTRY_POINT_" + entry_point.first + " 1\n";
+
+					if (entry_point.second != reshadefx::shader_type::pixel)
 					{
-						// Append warnings
-						effect.errors += d3d_errors_string;
+						// OpenGL does not allow using 'discard' in the vertex shader profile
+						glsl += "#define discard\n";
+						// 'dFdx', 'dFdx' and 'fwidth' too are only available in fragment shaders
+						glsl += "#define dFdx(x) x\n";
+						glsl += "#define dFdy(y) y\n";
+						glsl += "#define fwidth(p) p\n";
+					}
+					if (entry_point.second != reshadefx::shader_type::compute)
+					{
+						// OpenGL does not allow using 'shared' in vertex/fragment shader profile
+						glsl += "#define shared\n";
+						glsl += "#define atomicAdd(a, b) a\n";
+						glsl += "#define atomicAnd(a, b) a\n";
+						glsl += "#define atomicOr(a, b) a\n";
+						glsl += "#define atomicXor(a, b) a\n";
+						glsl += "#define atomicMin(a, b) a\n";
+						glsl += "#define atomicMax(a, b) a\n";
+						glsl += "#define atomicExchange(a, b) a\n";
+						glsl += "#define atomicCompSwap(a, b, c) a\n";
+						// Barrier intrinsics are only available in compute shaders
+						glsl += "#define barrier()\n";
+						glsl += "#define memoryBarrier()\n";
+						glsl += "#define groupMemoryBarrier()\n";
 					}
 
-					cso.resize(d3d_compiled->GetBufferSize());
-					std::memcpy(cso.data(), d3d_compiled->GetBufferPointer(), cso.size());
+					glsl += code_preamble;
+					glsl += "#line 1 0\n"; // Reset line number, so it matches what is shown when viewing the generated code
+					glsl.append(effect.module.code.data(), effect.module.code.size());
 
-					save_effect_cache(cache_id, "cso", cso);
+					cso_text = cso = std::move(glsl);
 				}
-
-				if (!load_effect_cache(cache_id, "asm", cso_text))
+				else
 				{
-					const auto D3DDisassemble = reinterpret_cast<pD3DDisassemble>(GetProcAddress(static_cast<HMODULE>(_d3d_compiler_module), "D3DDisassemble"));
-					assert(D3DDisassemble != nullptr);
-
-					com_ptr<ID3DBlob> d3d_disassembled;
-					if (SUCCEEDED(D3DDisassemble(cso.data(), cso.size(), 0, nullptr, &d3d_disassembled)))
-						cso_text.assign(static_cast<const char *>(d3d_disassembled->GetBufferPointer()), d3d_disassembled->GetBufferSize() - 1);
-
-					save_effect_cache(cache_id, "asm", cso_text);
-				}
-			}
-			else if (_renderer_id < 0x20000)
-			{
-				std::string glsl = "#version 430\n#define ENTRY_POINT_" + entry_point.name + " 1\n";
-
-				if (entry_point.type != reshadefx::shader_type::pixel)
-				{
-					// OpenGL does not allow using 'discard' in the vertex shader profile
-					glsl += "#define discard\n";
-					// 'dFdx', 'dFdx' and 'fwidth' too are only available in fragment shaders
-					glsl += "#define dFdx(x) x\n";
-					glsl += "#define dFdy(y) y\n";
-					glsl += "#define fwidth(p) p\n";
-				}
-				if (entry_point.type != reshadefx::shader_type::compute)
-				{
-					// OpenGL does not allow using 'shared' in vertex/fragment shader profile
-					glsl += "#define shared\n";
-					glsl += "#define atomicAdd(a, b) a\n";
-					glsl += "#define atomicAnd(a, b) a\n";
-					glsl += "#define atomicOr(a, b) a\n";
-					glsl += "#define atomicXor(a, b) a\n";
-					glsl += "#define atomicMin(a, b) a\n";
-					glsl += "#define atomicMax(a, b) a\n";
-					glsl += "#define atomicExchange(a, b) a\n";
-					glsl += "#define atomicCompSwap(a, b, c) a\n";
-					// Barrier intrinsics are only available in compute shaders
-					glsl += "#define barrier()\n";
-					glsl += "#define memoryBarrier()\n";
-					glsl += "#define groupMemoryBarrier()\n";
-				}
-
-				glsl += code_preamble;
-				glsl += "#line 1 0\n"; // Reset line number, so it matches what is shown when viewing the generated code
-				glsl.append(effect.module.code.data(), effect.module.code.size());
-
-				cso_text = cso = std::move(glsl);
-			}
-			else
-			{
-				assert(_renderer_id >= 0x14600); // Core since OpenGL 4.6 (see https://www.khronos.org/opengl/wiki/SPIR-V)
+					assert(_renderer_id >= 0x14600); // Core since OpenGL 4.6 (see https://www.khronos.org/opengl/wiki/SPIR-V)
 
 #if 1
-				// There are various issues with SPIR-V modules that have multiple entry points on all major GPU vendors.
-				// On AMD for instance creating a graphics pipeline just fails with a generic 'VK_ERROR_OUT_OF_HOST_MEMORY'. On NVIDIA artifacts occur on some driver versions.
-				// To work around these problems, create a separate shader module for every entry point and rewrite the SPIR-V module for each to remove all but a single entry point (and associated functions/variables).
-				uint32_t current_function = 0, current_function_offset = 0;
-				// Copy SPIR-V, so that all but the current entry point are only removed from that copy
-				std::vector<uint32_t> spirv(reinterpret_cast<const uint32_t *>(effect.module.code.data()), reinterpret_cast<const uint32_t *>(effect.module.code.data() + effect.module.code.size()));
-				std::vector<uint32_t> functions_to_remove, variables_to_remove;
+					// There are various issues with SPIR-V modules that have multiple entry points on all major GPU vendors.
+					// On AMD for instance creating a graphics pipeline just fails with a generic 'VK_ERROR_OUT_OF_HOST_MEMORY'. On NVIDIA artifacts occur on some driver versions.
+					// To work around these problems, create a separate shader module for every entry point and rewrite the SPIR-V module for each to remove all but a single entry point (and associated functions/variables).
+					uint32_t current_function = 0, current_function_offset = 0;
+					// Copy SPIR-V, so that all but the current entry point are only removed from that copy
+					std::vector<uint32_t> spirv(reinterpret_cast<const uint32_t *>(effect.module.code.data()), reinterpret_cast<const uint32_t *>(effect.module.code.data() + effect.module.code.size()));
+					std::vector<uint32_t> functions_to_remove, variables_to_remove;
 
-				for (uint32_t inst = 5 /* Skip SPIR-V header information */; inst < spirv.size();)
-				{
-					const uint32_t op = spirv[inst] & 0xFFFF;
-					const uint32_t len = (spirv[inst] >> 16) & 0xFFFF;
-					assert(len != 0);
-
-					switch (op)
+					for (uint32_t inst = 5 /* Skip SPIR-V header information */; inst < spirv.size();)
 					{
-					case 15 /* OpEntryPoint */:
-						// Look for any non-matching entry points
-						if (entry_point.name != reinterpret_cast<const char *>(&spirv[inst + 3]))
-						{
-							functions_to_remove.push_back(spirv[inst + 2]);
+						const uint32_t op = spirv[inst] & 0xFFFF;
+						const uint32_t len = (spirv[inst] >> 16) & 0xFFFF;
+						assert(len != 0);
 
-							// Get interface variables
-							for (uint32_t k = inst + 3 + static_cast<uint32_t>((std::strlen(reinterpret_cast<const char *>(&spirv[inst + 3])) + 4) / 4); k < inst + len; ++k)
-								variables_to_remove.push_back(spirv[k]);
+						switch (op)
+						{
+						case 15 /* OpEntryPoint */:
+							// Look for any non-matching entry points
+							if (entry_point.first != reinterpret_cast<const char *>(&spirv[inst + 3]))
+							{
+								functions_to_remove.push_back(spirv[inst + 2]);
 
-							// Remove this entry point from the module
-							spirv.erase(spirv.begin() + inst, spirv.begin() + inst + len);
-							continue;
+								// Get interface variables
+								for (uint32_t k = inst + 3 + static_cast<uint32_t>((std::strlen(reinterpret_cast<const char *>(&spirv[inst + 3])) + 4) / 4); k < inst + len; ++k)
+									variables_to_remove.push_back(spirv[k]);
+
+								// Remove this entry point from the module
+								spirv.erase(spirv.begin() + inst, spirv.begin() + inst + len);
+								continue;
+							}
+							break;
+						case 16 /* OpExecutionMode */:
+							if (std::find(functions_to_remove.begin(), functions_to_remove.end(), spirv[inst + 1]) != functions_to_remove.end())
+							{
+								spirv.erase(spirv.begin() + inst, spirv.begin() + inst + len);
+								continue;
+							}
+							break;
+						case 59 /* OpVariable */:
+							// Remove all declarations of the interface variables for non-matching entry points
+							if (std::find(variables_to_remove.begin(), variables_to_remove.end(), spirv[inst + 2]) != variables_to_remove.end())
+							{
+								spirv.erase(spirv.begin() + inst, spirv.begin() + inst + len);
+								continue;
+							}
+							break;
+						case 71 /* OpDecorate */:
+							// Remove all decorations targeting any of the interface variables for non-matching entry points
+							if (std::find(variables_to_remove.begin(), variables_to_remove.end(), spirv[inst + 1]) != variables_to_remove.end())
+							{
+								spirv.erase(spirv.begin() + inst, spirv.begin() + inst + len);
+								continue;
+							}
+							break;
+						case 54 /* OpFunction */:
+							current_function = spirv[inst + 2];
+							current_function_offset = inst;
+							break;
+						case 56 /* OpFunctionEnd */:
+							// Remove all function definitions for non-matching entry points
+							if (std::find(functions_to_remove.begin(), functions_to_remove.end(), current_function) != functions_to_remove.end())
+							{
+								spirv.erase(spirv.begin() + current_function_offset, spirv.begin() + inst + len);
+								inst = current_function_offset;
+								continue;
+							}
+							break;
 						}
-						break;
-					case 16 /* OpExecutionMode */:
-						if (std::find(functions_to_remove.begin(), functions_to_remove.end(), spirv[inst + 1]) != functions_to_remove.end())
-						{
-							spirv.erase(spirv.begin() + inst, spirv.begin() + inst + len);
-							continue;
-						}
-						break;
-					case 59 /* OpVariable */:
-						// Remove all declarations of the interface variables for non-matching entry points
-						if (std::find(variables_to_remove.begin(), variables_to_remove.end(), spirv[inst + 2]) != variables_to_remove.end())
-						{
-							spirv.erase(spirv.begin() + inst, spirv.begin() + inst + len);
-							continue;
-						}
-						break;
-					case 71 /* OpDecorate */:
-						// Remove all decorations targeting any of the interface variables for non-matching entry points
-						if (std::find(variables_to_remove.begin(), variables_to_remove.end(), spirv[inst + 1]) != variables_to_remove.end())
-						{
-							spirv.erase(spirv.begin() + inst, spirv.begin() + inst + len);
-							continue;
-						}
-						break;
-					case 54 /* OpFunction */:
-						current_function = spirv[inst + 2];
-						current_function_offset = inst;
-						break;
-					case 56 /* OpFunctionEnd */:
-						// Remove all function definitions for non-matching entry points
-						if (std::find(functions_to_remove.begin(), functions_to_remove.end(), current_function) != functions_to_remove.end())
-						{
-							spirv.erase(spirv.begin() + current_function_offset, spirv.begin() + inst + len);
-							inst = current_function_offset;
-							continue;
-						}
-						break;
+
+						inst += len;
 					}
 
-					inst += len;
-				}
-
-				cso.resize(spirv.size() * sizeof(uint32_t));
-				std::memcpy(cso.data(), spirv.data(), cso.size());
+					cso.resize(spirv.size() * sizeof(uint32_t));
+					std::memcpy(cso.data(), spirv.data(), cso.size());
 #else
-				cso.resize(effect.module.code.size());
-				std::memcpy(cso.data(), effect.module.code.data(), effect.module.code.size());
+					cso.resize(effect.module.code.size());
+					std::memcpy(cso.data(), effect.module.code.data(), effect.module.code.size());
 #endif
+				}
 			}
 		}
 
@@ -2674,7 +2649,7 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 					effect.errors += ") already created a texture with a different image file\n";
 				}
 
-				if (existing_texture->semantic == "COLOR" && format_color_bit_depth(_effect_color_format) != 8)
+				if (existing_texture->semantic == "COLOR" && api::format_bit_depth(_effect_color_format) != 8)
 				{
 					for (const reshadefx::sampler_info &sampler_info : effect.module.samplers)
 					{
@@ -3032,34 +3007,38 @@ bool reshade::runtime::create_effect(size_t effect_index)
 			else
 			{
 				api::shader_desc vs_desc = {};
-				const std::string &vs = effect.assembly.at(pass_info.vs_entry_point);
-				vs_desc.code = vs.data();
-				vs_desc.code_size = vs.size();
-				if (_renderer_id & 0x20000)
+				if (!pass_info.vs_entry_point.empty())
 				{
-					vs_desc.entry_point = pass_info.vs_entry_point.c_str();
-					vs_desc.spec_constants = static_cast<uint32_t>(effect.module.spec_constants.size());
-					vs_desc.spec_constant_ids = spec_constants.data();
-					vs_desc.spec_constant_values = spec_data.data();
-				}
+					const std::string &vs = effect.assembly.at(pass_info.vs_entry_point);
+					vs_desc.code = vs.data();
+					vs_desc.code_size = vs.size();
+					if (_renderer_id & 0x20000)
+					{
+						vs_desc.entry_point = pass_info.vs_entry_point.c_str();
+						vs_desc.spec_constants = static_cast<uint32_t>(effect.module.spec_constants.size());
+						vs_desc.spec_constant_ids = spec_constants.data();
+						vs_desc.spec_constant_values = spec_data.data();
+					}
 
-				subobjects.push_back({ api::pipeline_subobject_type::vertex_shader, 1, &vs_desc });
+					subobjects.push_back({ api::pipeline_subobject_type::vertex_shader, 1, &vs_desc });
+				}
 
 				api::shader_desc ps_desc = {};
-				const std::string &ps = effect.assembly.at(pass_info.ps_entry_point);
-				ps_desc.code = ps.data();
-				ps_desc.code_size = ps.size();
-				if (_renderer_id & 0x20000)
+				if (!pass_info.ps_entry_point.empty())
 				{
-					ps_desc.entry_point = pass_info.ps_entry_point.c_str();
-					ps_desc.spec_constants = static_cast<uint32_t>(effect.module.spec_constants.size());
-					ps_desc.spec_constant_ids = spec_constants.data();
-					ps_desc.spec_constant_values = spec_data.data();
+					const std::string &ps = effect.assembly.at(pass_info.ps_entry_point);
+					ps_desc.code = ps.data();
+					ps_desc.code_size = ps.size();
+					if (_renderer_id & 0x20000)
+					{
+						ps_desc.entry_point = pass_info.ps_entry_point.c_str();
+						ps_desc.spec_constants = static_cast<uint32_t>(effect.module.spec_constants.size());
+						ps_desc.spec_constant_ids = spec_constants.data();
+						ps_desc.spec_constant_values = spec_data.data();
+					}
+
+					subobjects.push_back({ api::pipeline_subobject_type::pixel_shader, 1, &ps_desc });
 				}
-
-				subobjects.push_back({ api::pipeline_subobject_type::pixel_shader, 1, &ps_desc });
-
-				assert(pass_info.srgb_write_enable < 2);
 
 				api::format render_target_formats[8] = {};
 
@@ -3111,6 +3090,7 @@ bool reshade::runtime::create_effect(size_t effect_index)
 				}
 
 				subobjects.push_back({ api::pipeline_subobject_type::max_vertex_count, 1, &pass_info.num_vertices });
+
 				api::primitive_topology topology = static_cast<api::primitive_topology>(pass_info.topology);
 				subobjects.push_back({ api::pipeline_subobject_type::primitive_topology, 1, &topology });
 
@@ -3270,13 +3250,11 @@ bool reshade::runtime::create_effect(size_t effect_index)
 							write.table,
 							write.binding,
 							sampler_with_resource_view ? sampler_descriptors[info.binding].sampler : api::sampler { 0 },
-							!!info.srgb
+							info.srgb
 						});
 					}
 					else
 					{
-						assert(info.srgb < 2);
-
 						srv = sampler_texture->srv[info.srgb];
 					}
 
@@ -3958,10 +3936,10 @@ void reshade::runtime::load_effects(bool force_load_all)
 
 	// Now that we have a list of files, load them in parallel
 	// Split workload into batches instead of launching a thread for every file to avoid launch overhead and stutters due to too many threads being in flight
-	size_t num_splits = std::min<size_t>(effect_files.size(), std::max<size_t>(std::thread::hardware_concurrency(), 2u) - 1);
+	size_t num_splits = std::min(effect_files.size(), static_cast<size_t>(std::max(std::thread::hardware_concurrency(), 2u) - 1));
 #ifndef _WIN64
 	// Limit number of threads in 32-bit due to the limited about of address space being available there and compilation being memory hungry
-	num_splits = std::min<size_t>(num_splits, 4);
+	num_splits = std::min(num_splits, static_cast<size_t>(4));
 #endif
 
 	// Keep track of the spawned threads, so the runtime cannot be destroyed while they are still running
@@ -4155,7 +4133,7 @@ bool reshade::runtime::update_effect_color_and_stencil_tex(uint32_t width, uint3
 
 #if RESHADE_ADDON
 	// Reload effects to update 'BUFFER_WIDTH', 'BUFFER_HEIGHT' and 'BUFFER_COLOR_BIT_DEPTH' definitions (unless this is the 'update_effect_color_and_stencil_tex' call in 'on_init')
-	const bool force_reload = _is_initialized && (width != _effect_width || height != _effect_height || format_color_bit_depth(color_format_typeless) != format_color_bit_depth(_effect_color_format));
+	const bool force_reload = _is_initialized && (width != _effect_width || height != _effect_height || api::format_bit_depth(color_format_typeless) != api::format_bit_depth(_effect_color_format));
 #endif
 
 	_effect_width = width;
@@ -4401,7 +4379,7 @@ void reshade::runtime::render_effects(api::command_list *cmd_list, api::resource
 					const float max = variable.annotation_as_float("max", 0, 1.0f);
 					const float step_min = variable.annotation_as_float("step", 0);
 					const float step_max = variable.annotation_as_float("step", 1);
-					float increment = step_max == 0 ? step_min : (step_min + std::fmodf(static_cast<float>(std::rand()), step_max - step_min + 1));
+					float increment = step_max == 0 ? step_min : (step_min + std::fmod(static_cast<float>(std::rand()), step_max - step_min + 1));
 					const float smoothing = variable.annotation_as_float("smoothing");
 
 					float value[2] = { 0, 0 };
@@ -5011,7 +4989,7 @@ void reshade::runtime::reset_uniform_value(uniform &variable)
 		return;
 	}
 
-	static const reshadefx::constant zero = {};
+	const reshadefx::constant zero = {};
 
 	// Need to use typed setters, to ensure values are properly forced to floating point in D3D9
 	for (size_t i = 0, array_length = (variable.type.is_array() ? variable.type.array_length : 1u); i < array_length; ++i)
@@ -5084,7 +5062,7 @@ void reshade::runtime::reset_uniform_value(uniform &variable, std::string &bind_
 	}
 }
 
-static inline bool force_floating_point_value(const reshadefx::type &type, uint32_t renderer_id)
+static bool force_floating_point_value(const reshadefx::type &type, uint32_t renderer_id)
 {
 	if (renderer_id == 0x9000)
 		return true; // All uniform variables are floating-point in D3D9
