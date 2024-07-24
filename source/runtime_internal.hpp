@@ -167,6 +167,7 @@ namespace reshade
 
 		bool hidden = false;
 		bool enabled = false;
+		bool selected = false;
 		bool enabled_in_screenshot = true;
 		int64_t time_left = 0;
 

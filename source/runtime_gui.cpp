@@ -2014,12 +2014,15 @@ void reshade::runtime::draw_gui_home()
 				if (ImGui::RadioButton(feature_string[i].c_str(), &_aurora_feature, feature_id[i]))
 					modified = true;
 			}
-			ImGui::Separator();
 			ImGui::Checkbox(_("Auto detect"), &_aurora_auto_feature);
 			if (modified) {
 				save_config();
 				ImGui::CloseCurrentPopup();
 			}
+			ImGui::Separator();
+			ImGui::RadioButton("Studio", &_studio_mode, true);
+			ImGui::SameLine();
+			ImGui::RadioButton("Legacy", &_studio_mode, false);
 			ImGui::EndPopup();
 		}
 
@@ -2374,8 +2377,13 @@ void reshade::runtime::draw_gui_home()
 			_performance_mode ? 0 : (17 /* splitter */ + (bottom_height + (_tutorial_index == 3 ? 175 : 0))));
 		bottom_height = std::min(bottom_height, ImGui::GetContentRegionAvail().y - 20.0f);
 
-		if (ImGui::BeginChild("##techniques", ImVec2(0, -bottom_height), ImGuiChildFlags_Border))
+		if(_studio_mode == 1)
+			ImGui::BeginTabBar("##workspace_tabbar", ImGuiTabBarFlags_FittingPolicyDefault_);
+
+		ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.5);
+		if (_studio_mode == 0 || ImGui::BeginTabItem("WORKSPACE##WORKSPACE", 0, ImGuiTabItemFlags_NoReorder))
 		{
+			ImGui::BeginChild("##workspace_region", ImVec2(0, -bottom_height), ImGuiChildFlags_Border);
 			if (_effect_load_skipping && _show_force_load_effects_button)
 			{
 				const size_t skipped_effects = std::count_if(_effects.cbegin(), _effects.cend(),
@@ -2397,10 +2405,31 @@ void reshade::runtime::draw_gui_home()
 			}
 
 			ImGui::BeginDisabled(_is_in_preset_transition);
-			draw_technique_editor();
+			if (_studio_mode == 0)
+				draw_technique_editor(0);
+			else
+				draw_technique_editor(1);
 			ImGui::EndDisabled();
+
+			ImGui::EndChild();
+
+			if(_studio_mode)
+				ImGui::EndTabItem();
 		}
-		ImGui::EndChild();
+
+		ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.5);
+		if (_studio_mode == 0 || ImGui::BeginTabItem("LIBRARY##LIBRARY", 0, ImGuiTabItemFlags_NoReorder))
+		{
+			ImGui::BeginChild("##library_region", ImVec2(0, -bottom_height), ImGuiChildFlags_Border);
+			ImGui::BeginDisabled(_is_in_preset_transition);
+			draw_technique_editor(2);
+			ImGui::EndDisabled();
+			ImGui::EndChild();
+			if(_studio_mode == 1)
+				ImGui::EndTabItem();
+		}
+		if(_studio_mode == 1)
+			ImGui::EndTabBar();
 
 		if (_tutorial_index == 2)
 			ImGui::PopStyleColor();
@@ -4736,8 +4765,11 @@ void reshade::runtime::draw_variable_editor()
 		ImGui::EndTabBar();
 	ImGui::EndChild();
 }
-void reshade::runtime::draw_technique_editor()
+void reshade::runtime::draw_technique_editor(int tab_status)
 {
+	// 0: Legacy:			Reorder		ErrorInfo		ContextMenu
+	// 1: WORKSPACE:		yes			part			part
+	// 2: LIBRARY:			no			yes				part
 	if (_has_reloaded_after_init && _effects.empty())
 	{
 		ImGui::TextColored(COLOR_YELLOW, _("No effect files (.fx) found in the configured effect search paths%c"), _effect_search_paths.empty() ? '.' : ':');
@@ -4748,7 +4780,7 @@ void reshade::runtime::draw_technique_editor()
 		return;
 	}
 
-	if (!_last_reload_successful)
+	if (!_last_reload_successful && tab_status != 1)
 	{
 		// Add fake items at the top for effects that failed to compile
 		for (size_t effect_index = 0; effect_index < _effects.size(); ++effect_index)
@@ -4901,6 +4933,8 @@ void reshade::runtime::draw_technique_editor()
 
 			// Skip hidden techniques
 			if (tech.hidden || !_effects[tech.effect_index].compiled)
+				continue;
+			if (tab_status == 1 && !tech.enabled)
 				continue;
 
 			bool modified = false;
@@ -5303,7 +5337,7 @@ void reshade::runtime::draw_technique_editor()
 	}
 
 	// Move the selected technique to the position of the mouse in the list
-	if (_selected_technique < _technique_sorting.size() && ImGui::IsMouseDragging(ImGuiMouseButton_Left))
+	if (tab_status != 2 && _selected_technique < _technique_sorting.size() && ImGui::IsMouseDragging(ImGuiMouseButton_Left))
 	{
 		if (hovered_technique_index < _technique_sorting.size() && hovered_technique_index != _selected_technique)
 		{
@@ -5366,6 +5400,11 @@ void reshade::runtime::draw_technique_editor()
 		if (ImGuiWindow *const statistics_window = ImGui::FindWindowByName("###statistics"))
 			statistics_window->DrawList->CmdBuffer.clear();
 	}
+}
+
+void reshade::runtime::draw_technique_editor_v2()
+{
+	;
 }
 
 void reshade::runtime::open_code_editor(size_t effect_index, const std::string &entry_point)

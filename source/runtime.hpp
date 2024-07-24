@@ -299,6 +299,7 @@ namespace reshade
 		bool _ui_bind_support = true;
 		int _aurora_feature = 1;
 		bool _aurora_auto_feature = false;
+		int _studio_mode = 1;
 
 		std::vector<std::pair<std::string, std::string>> _global_preprocessor_definitions;
 		std::unordered_map<std::string, std::vector<std::pair<std::string, std::string>>> _preset_preprocessor_definitions;
@@ -323,6 +324,7 @@ namespace reshade
 		std::vector<effect> _effects;
 		std::vector<texture> _textures;
 		std::vector<technique> _techniques;
+		std::unordered_set<technique> _technique_selected;
 		std::vector<size_t> _technique_sorting;
 #endif
 		std::vector<std::thread> _worker_threads;
@@ -441,7 +443,8 @@ namespace reshade
 #endif
 #if RESHADE_FX
 		void draw_variable_editor();
-		void draw_technique_editor();
+		void draw_technique_editor(int tab_status = 0);
+		void draw_technique_editor_v2();
 #endif
 
 		bool init_imgui_resources();

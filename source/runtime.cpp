@@ -1693,9 +1693,12 @@ void reshade::runtime::aurora4_clean_preset(ini_file &preset)
 			technique_list.push_back(unique_name);
 		if (tech.enabled || tech.toggle_key_data[0] != 0)
 			effect_name_list.insert(_effects[tech.effect_index].source_file.filename().u8string());
-
-		// Keep track of the order of all techniques and not just the enabled ones
-		sorted_technique_list.push_back(unique_name);
+		if (_studio_mode)
+			if (tech.selected)
+				sorted_technique_list.push_back(unique_name);
+		else
+			// Keep track of the order of all techniques and not just the enabled ones
+			sorted_technique_list.push_back(unique_name);
 	}
 	std::vector<std::string> recorded_effects;
 	preset.get_section_names(recorded_effects);
