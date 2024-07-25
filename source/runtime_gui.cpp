@@ -2277,7 +2277,7 @@ void reshade::runtime::draw_gui_home()
 
 		const float button_spacing = _imgui_context->Style.ItemSpacing.x * 0.5f;
 		if (imgui::search_input_box(_effect_filter, sizeof(_effect_filter),
-			-((_variable_editor_tabs ? 1 : 2) * (button_spacing + tech_button_width)) - (lang_short == "zh" ? (2.0f * (button_spacing + _font_size)) : button_spacing)))
+			-((_variable_editor_tabs ? 1 : 2) * (button_spacing + tech_button_width)) - (lang_short == "zh" ? (2.0f * _font_size + 4.0f * button_spacing) : button_spacing)))
 		{
 			_effects_expanded_state = 3;
 
@@ -2301,7 +2301,7 @@ void reshade::runtime::draw_gui_home()
 
 		if (lang_short == "zh")
 		{
-			imgui::toggle_button(_localized_technique_name ? "ZH" : "EN", _localized_technique_name, 2.0f * _font_size);
+			imgui::toggle_button(_localized_technique_name ? "ZH" : "EN", _localized_technique_name, 2.0f * _font_size + 2.0f * button_spacing);
 			ImGui::SameLine(0, button_spacing);
 		}
 

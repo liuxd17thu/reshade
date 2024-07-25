@@ -1228,20 +1228,24 @@ void reshade::runtime::load_current_preset()
 	_flairs.clear(); _flairs.push_back(":");
 	_flairs.insert(_flairs.end(), std::make_move_iterator(tmp_flair.begin()), std::make_move_iterator(tmp_flair.end()));
 
-	if (_aurora_auto_feature)
-		_aurora_feature = [&]() -> int {
-			// gshade 4 check
-			if (_flairs.size() > 1)
-				return 4;
-			// gshade 3 check
-			std::vector<std::string> &check_tech_list = sorted_technique_list.empty() ? technique_list : sorted_technique_list;
-			auto tech_it = std::find_if(check_tech_list.begin(), check_tech_list.end(), [](const std::string &it) {
-				return it.find('+') != it.npos;
-			});
-			if (tech_it != check_tech_list.end())
-				return 3;
-			return 1;
+	auto preset_classify = [&]() -> int {
+		// gshade 4 check
+		if (_flairs.size() > 1)
+			return 4;
+		// gshade 3 check
+		std::vector<std::string> &check_tech_list = sorted_technique_list.empty() ? technique_list : sorted_technique_list;
+		auto tech_it = std::find_if(check_tech_list.begin(), check_tech_list.end(), [](const std::string &it) {
+			return it.find('+') != it.npos;
+		});
+		if (tech_it != check_tech_list.end())
+			return 3;
+		return 1;
 		}();
+
+	if (_aurora_auto_feature)
+		_aurora_feature = preset_classify;
+	else if (preset_classify != 1 && _aurora_feature != preset_classify)
+		_auto_save_preset = false;
 
 	bool aurora3_reload = false;
 	if (_aurora_feature == 3)
