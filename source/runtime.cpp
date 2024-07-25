@@ -1236,7 +1236,8 @@ void reshade::runtime::load_current_preset()
 		// gshade 3 check
 		std::vector<std::string> &check_tech_list = sorted_technique_list.empty() ? technique_list : sorted_technique_list;
 		auto tech_it = std::find_if(check_tech_list.begin(), check_tech_list.end(), [](const std::string &it) {
-			return it.find('+') != it.npos;
+			auto p = it.rfind('+'), a = it.find('@');
+			return p != std::string::npos && a == std::string::npos && it.substr(p + 1).find('.') == std::string::npos;
 		});
 		if (tech_it != check_tech_list.end())
 			return 3;
