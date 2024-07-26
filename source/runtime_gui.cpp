@@ -1793,7 +1793,6 @@ void reshade::runtime::draw_gui_home()
 	if (_performance_mode && _tutorial_index <= 3)
 		_tutorial_index = 4;
 
-	const float auto_save_button_spacing = 2.0f;
 	const float button_width = 12.5f * _font_size;
 
 	if (_tutorial_index > 0)
@@ -1839,7 +1838,7 @@ void reshade::runtime::draw_gui_home()
 		ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
 
 		const auto browse_button_pos = ImGui::GetCursorScreenPos();
-		const auto browse_button_width = ImGui::GetContentRegionAvail().x - (button_height + button_spacing + _imgui_context->Style.ItemSpacing.x + auto_save_button_spacing + button_width);
+		const auto browse_button_width = ImGui::GetContentRegionAvail().x - (button_height + button_spacing + _imgui_context->Style.ItemSpacing.x + button_width);
 
 		if (ImGui::ButtonEx((_current_preset_path.stem().u8string() + "###browse_button").c_str(), ImVec2(browse_button_width, 0), ImGuiButtonFlags_NoNavFocus))
 		{
@@ -2270,14 +2269,14 @@ void reshade::runtime::draw_gui_home()
 		return; // Cannot show techniques and variables while effects are loading, since they are being modified in other threads during that time
 	}
 
-	float tech_button_width = 3 * ImGui::GetFrameHeight() + _imgui_context->Style.ItemSpacing.x;
+	float tech_button_width = (10.5f * _font_size - 1.5 * _imgui_context->Style.ItemSpacing.x - ImGui::GetFrameHeight()) * 0.5f;
 	if (_tutorial_index > 1)
 	{
 		const std::string lang_short = _current_language.substr(0, 2);
 
 		const float button_spacing = _imgui_context->Style.ItemSpacing.x * 0.5f;
 		if (imgui::search_input_box(_effect_filter, sizeof(_effect_filter),
-			-((_variable_editor_tabs ? 1 : 2) * (button_spacing + tech_button_width)) - (lang_short == "zh" ? (2.0f * _font_size + 4.0f * button_spacing) : button_spacing)))
+			-((_variable_editor_tabs ? 1 : 2) * (button_spacing + tech_button_width)) - (lang_short == "zh" ? (2.0f * _font_size + 2.0 * button_spacing) : button_spacing)))
 		{
 			_effects_expanded_state = 3;
 
@@ -2301,7 +2300,7 @@ void reshade::runtime::draw_gui_home()
 
 		if (lang_short == "zh")
 		{
-			imgui::toggle_button(_localized_technique_name ? "ZH" : "EN", _localized_technique_name, 2.0f * _font_size + 2.0f * button_spacing);
+			imgui::toggle_button(_localized_technique_name ? "ZH" : "EN", _localized_technique_name, 2.0f * _font_size);
 			ImGui::SameLine(0, button_spacing);
 		}
 
@@ -2453,7 +2452,7 @@ void reshade::runtime::draw_gui_home()
 	{
 		ImGui::Spacing();
 
-		if (ImGui::Button((ICON_FK_REFRESH " " + std::string(_("Reload"))).c_str(), ImVec2(-(auto_save_button_spacing + button_width), 0)))
+		if (ImGui::Button((ICON_FK_REFRESH " " + std::string(_("Reload"))).c_str(), ImVec2(-button_width, 0)))
 		{
 			std::filesystem::path backup_current_path = _current_preset_path;
 			load_config(); // Reload configuration too
