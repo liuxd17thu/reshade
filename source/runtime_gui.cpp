@@ -4930,11 +4930,13 @@ void reshade::runtime::draw_technique_editor(int tab_status)
 		const size_t technique_index = _technique_sorting[index];
 		{
 			reshade::technique &tech = _techniques[technique_index];
+			std::string unique_name = tech.name + '@' + _effects[tech.effect_index].source_file.filename().u8string()
+				+ build_postfix(_effects[tech.effect_index], _aurora_feature == 3 ? 3 : 0);
 
 			// Skip hidden techniques
 			if (tech.hidden || !_effects[tech.effect_index].compiled)
 				continue;
-			if (tab_status == 1 && !tech.enabled)
+			if (tab_status == 1 && !(tech.selected || tech.enabled))
 				continue;
 
 			bool modified = false;
@@ -4979,15 +4981,23 @@ void reshade::runtime::draw_technique_editor(int tab_status)
 					label += build_postfix(_effects[tech.effect_index], _aurora_feature);
 				label += " [" + effect.source_file.filename().u8string() + ']';
 
-				if (bool status = tech.enabled;
+				if (bool status = tab_status == 2 ? (tech.enabled || tech.selected) : tech.enabled;
 					ImGui::Checkbox(label.c_str(), &status) && !force_enabled)
 				{
 					modified = true;
 
 					if (status)
+					{
+						if (tab_status == 2)
+							tech.selected = true;
 						enable_technique(tech);
+					}
 					else
+					{
+						if (tab_status == 2)
+							tech.selected = false;
 						disable_technique(tech);
+					}
 				}
 
 				ImGui::PopStyleColor();

@@ -1490,6 +1490,10 @@ void reshade::runtime::load_current_preset()
 		const std::string unique_name = tech.name + '@' + _effects[tech.effect_index].source_file.filename().u8string()
 			+ build_postfix(_effects[tech.effect_index], _aurora_feature == 3 ? 3 : 0);
 
+		const std::string raw_effect_name = _effects[tech.effect_index].source_file.filename().u8string();
+		const std::string effect_name = (_aurora_feature == 3 || (_aurora_feature == 4 && _effects[tech.effect_index].flair_touched)) ? (raw_effect_name + build_postfix(_effects[tech.effect_index], _aurora_feature)) : raw_effect_name;
+		tech.selected = tech.enabled || preset.has(raw_effect_name);
+
 		// Ignore preset if "enabled" annotation is set
 		if (tech.annotation_as_int("enabled") ||
 			std::find(technique_list.cbegin(), technique_list.cend(), unique_name) != technique_list.cend() ||
@@ -1541,7 +1545,8 @@ void reshade::runtime::save_current_preset() const
 			effect_list.insert(tech.effect_index);
 
 		// Keep track of the order of all techniques and not just the enabled ones
-		sorted_technique_list.push_back(unique_name);
+		if (!_studio_mode || tech.enabled || tech.selected)
+			sorted_technique_list.push_back(unique_name);
 
 		if (tech.toggle_key_data[0] != 0)
 			preset.set({}, "Key" + unique_name, tech.toggle_key_data);
@@ -1684,6 +1689,9 @@ void reshade::runtime::aurora4_clean_preset(ini_file &preset)
 	{
 		const technique &tech = _techniques[technique_index];
 
+		const std::string raw_effect_name = _effects[tech.effect_index].source_file.filename().u8string();
+		const std::string effect_name = (_aurora_feature == 3 || (_aurora_feature == 4 && _effects[tech.effect_index].flair_touched)) ? (raw_effect_name + build_postfix(_effects[tech.effect_index], _aurora_feature)) : raw_effect_name;
+
 		if (tech.annotation_as_uint("nosave"))
 			continue;
 
@@ -1694,11 +1702,15 @@ void reshade::runtime::aurora4_clean_preset(ini_file &preset)
 		if (tech.enabled || tech.toggle_key_data[0] != 0)
 			effect_name_list.insert(_effects[tech.effect_index].source_file.filename().u8string());
 		if (_studio_mode)
-			if (tech.selected)
+		{
+			if (tech.selected || tech.enabled)
 				sorted_technique_list.push_back(unique_name);
+		}
 		else
+		{
 			// Keep track of the order of all techniques and not just the enabled ones
 			sorted_technique_list.push_back(unique_name);
+		}
 	}
 	std::vector<std::string> recorded_effects;
 	preset.get_section_names(recorded_effects);

@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <atomic>
 #include <shared_mutex>
+#include <unordered_set>
 
 class ini_file;
 namespace reshadefx { struct sampler_info; }
@@ -324,7 +325,7 @@ namespace reshade
 		std::vector<effect> _effects;
 		std::vector<texture> _textures;
 		std::vector<technique> _techniques;
-		std::unordered_set<technique> _technique_selected;
+		std::unordered_set<std::string> _technique_collected;
 		std::vector<size_t> _technique_sorting;
 #endif
 		std::vector<std::thread> _worker_threads;
