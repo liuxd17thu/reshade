@@ -4066,9 +4066,16 @@ void reshade::runtime::draw_variable_editor()
 				auto origin_preset = ini_file(_current_preset_path);
 				std::unordered_map<std::string, std::vector<std::string>> section;
 				origin_preset.get(effect_name, section);
+				std::vector<std::pair<std::string, std::string>> pp_origin_kv;
+				preset.get(effect_name, "PreprocessorDefinitions", pp_origin_kv);
 
 				preset.remove_section(effect_name);
 				preset.set(effect_name, section);
+
+				std::vector<std::pair<std::string, std::string>> pp_new_kv;
+				preset.get(effect_name, "PreprocessorDefinitions", pp_new_kv);
+				if(pp_origin_kv != pp_new_kv)
+					_preset_preprocessor_definitions[effect_name] = pp_new_kv;
 				reload_effect(effect_index);
 			}
 		}
