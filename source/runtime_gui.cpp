@@ -21,6 +21,7 @@
 #include "fonts/aurora.inl"
 #include "fonts/glyph_ranges.hpp"
 #include <fstream>
+#include <sstream>
 #include <cmath> // std::abs, std::ceil, std::floor
 #include <cctype> // std::tolower
 #include <cstdlib> // std::lldiv, std::strtol
