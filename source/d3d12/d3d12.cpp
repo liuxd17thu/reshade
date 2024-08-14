@@ -14,22 +14,27 @@ extern thread_local bool g_in_dxgi_runtime;
 
 extern "C" HRESULT WINAPI D3D12CreateDevice(IUnknown *pAdapter, D3D_FEATURE_LEVEL MinimumFeatureLevel, REFIID riid, void **ppDevice)
 {
+	const auto trampoline = reshade::hooks::call(D3D12CreateDevice);
+
 	// Pass on unmodified in case this called from within 'Direct3DCreate9', which indicates that the D3D9 runtime is trying to create an internal device for D3D9on12, which should not be hooked
 	if (g_in_dxgi_runtime)
-		return reshade::hooks::call(D3D12CreateDevice)(pAdapter, MinimumFeatureLevel, riid, ppDevice);
+		return trampoline(pAdapter, MinimumFeatureLevel, riid, ppDevice);
 
 	// Need to lock during device creation to ensure an existing device proxy cannot be destroyed in while it is queried below
 	const std::unique_lock<std::shared_mutex> lock(g_adapter_mutex);
 
-	LOG(INFO) << "Redirecting " << "D3D12CreateDevice" << '(' << "pAdapter = " << pAdapter << ", MinimumFeatureLevel = " << std::hex << MinimumFeatureLevel << std::dec << ", riid = " << riid << ", ppDevice = " << ppDevice << ')' << " ...";
+	reshade::log::message(
+		reshade::log::level::info,
+		"Redirecting D3D12CreateDevice(pAdapter = %p, MinimumFeatureLevel = %x, riid = %s, ppDevice = %p) ...",
+		pAdapter, MinimumFeatureLevel, reshade::log::iid_to_string(riid).c_str(), ppDevice);
 
 	// NVIDIA Ansel creates a D3D11 device internally, so to avoid hooking that, set the flag that forces 'D3D11CreateDevice' to return early
 	g_in_dxgi_runtime = true;
-	const HRESULT hr = reshade::hooks::call(D3D12CreateDevice)(pAdapter, MinimumFeatureLevel, riid, ppDevice);
+	const HRESULT hr = trampoline(pAdapter, MinimumFeatureLevel, riid, ppDevice);
 	g_in_dxgi_runtime = false;
 	if (FAILED(hr))
 	{
-		LOG(WARN) << "D3D12CreateDevice" << " failed with error code " << hr << '.';
+		reshade::log::message(reshade::log::level::warning, "D3D12CreateDevice failed with error code %s.", reshade::log::hr_to_string(hr).c_str());
 		return hr;
 	}
 
@@ -50,13 +55,16 @@ extern "C" HRESULT WINAPI D3D12CreateDevice(IUnknown *pAdapter, D3D_FEATURE_LEVE
 	if (device_proxy->check_and_upgrade_interface(riid))
 	{
 #if RESHADE_VERBOSE_LOG
-		LOG(DEBUG) << "Returning " << "ID3D12Device" << device_proxy->_interface_version << " object " << device_proxy << " (" << device_proxy->_orig << ").";
+		reshade::log::message(
+			reshade::log::level::debug,
+			"Returning ID3D12Device%hu object %p (%p).",
+			device_proxy->_interface_version, device_proxy, device_proxy->_orig);
 #endif
 		*ppDevice = device_proxy;
 	}
 	else // Do not hook object if we do not support the requested interface
 	{
-		LOG(WARN) << "Unknown interface " << riid << " in " << "D3D12CreateDevice" << '.';
+		reshade::log::message(reshade::log::level::warning, "Unknown interface %s in D3D12CreateDevice.", reshade::log::iid_to_string(riid).c_str());
 
 		if (device_proxy != device_proxy_existing)
 			delete device_proxy; // Delete instead of release to keep reference count untouched

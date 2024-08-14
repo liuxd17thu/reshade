@@ -10,13 +10,14 @@
 #include <cctype> // std::toupper
 #include <cassert>
 #include <algorithm> // std::min, std::sort, std::transform
+#include <utf8/core.h>
 
 static std::shared_mutex s_ini_cache_mutex;
 static std::unordered_map<std::wstring, std::unique_ptr<ini_file>> s_ini_cache;
 
 ini_file &reshade::global_config()
 {
-	return ini_file::load_cache(g_target_executable_path.parent_path() / L"ReShade.ini");
+	return ini_file::load_cache(g_reshade_base_path / L"ReShade.ini");
 }
 
 ini_file::ini_file(const std::filesystem::path &path) : _path(path)
@@ -41,9 +42,8 @@ bool ini_file::load()
 	_modified = false;
 	_modified_at = modified_at;
 
-	file.imbue(std::locale("en-us.UTF-8"));
-	// Remove BOM (0xefbbbf means 0xfeff)
-	if (file.get() != 0xef || file.get() != 0xbb || file.get() != 0xbf)
+	// Remove BOM
+	if (file.get() != utf8::bom[0] || file.get() != utf8::bom[1] || file.get() != utf8::bom[2])
 		file.seekg(0, std::ios::beg);
 
 	std::string line, section;
@@ -179,8 +179,6 @@ bool ini_file::save()
 	std::ofstream file(_path);
 	if (!file)
 		return false;
-
-	file.imbue(std::locale("en-us.UTF-8"));
 
 	const std::string str = data.str();
 

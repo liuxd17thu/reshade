@@ -213,7 +213,7 @@ void reshade::runtime::build_font_atlas()
 			atlas->AddFontDefault(&cfg);
 		else if (!(resolve_path(resolved_font_path, ec) && atlas->AddFontFromFileTTF(resolved_font_path.u8string().c_str(), cfg.SizePixels, &cfg, atlas->GetGlyphRangesDefault()) != nullptr))
 		{
-			LOG(ERROR) << "Failed to load latin font from " << resolved_font_path << " with error code " << ec.value() << '!';
+			log::message(log::level::error, "Failed to load latin font from '%s' with error code %d!", resolved_font_path.u8string().c_str(), ec.value());
 			resolved_font_path.clear();
 		}
 
@@ -231,7 +231,7 @@ void reshade::runtime::build_font_atlas()
 			atlas->AddFontDefault(&cfg);
 		else if (!resolved_font_path.empty() && !(resolve_path(resolved_font_path, ec) && atlas->AddFontFromFileTTF(resolved_font_path.u8string().c_str(), cfg.SizePixels, &cfg, glyph_ranges) != nullptr))
 		{
-			LOG(ERROR) << "Failed to load font from " << resolved_font_path << " with error code " << ec.value() << '!';
+			log::message(log::level::error, "Failed to load font from '%s' with error code %d!", resolved_font_path.u8string().c_str(), ec.value());
 			resolved_font_path.clear();
 		}
 
@@ -264,7 +264,7 @@ void reshade::runtime::build_font_atlas()
 			atlas->AddFontDefault(&cfg);
 		else if (!resolved_font_path.empty() && !(resolve_path(resolved_font_path, ec) && atlas->AddFontFromFileTTF(resolved_font_path.u8string().c_str(), cfg.SizePixels, &cfg, glyph_ranges) != nullptr))
 		{
-			LOG(ERROR) << "Failed to load editor font from " << resolved_font_path << " with error code " << ec.value() << '!';
+			log::message(log::level::error, "Failed to load editor font from '%s' with error code %d!", resolved_font_path.u8string().c_str(), ec.value());
 			resolved_font_path.clear();
 		}
 
@@ -275,12 +275,12 @@ void reshade::runtime::build_font_atlas()
 	if (atlas->Build())
 	{
 #if RESHADE_VERBOSE_LOG
-		LOG(DEBUG) << "Font atlas size: " << atlas->TexWidth << 'x' << atlas->TexHeight;
+		log::message(log::level::debug, "Font atlas size: %dx%d", atlas->TexWidth, atlas->TexHeight);
 #endif
 	}
 	else
 	{
-		LOG(ERROR) << "Failed to build font atlas!";
+		log::message(log::level::error, "Failed to build font atlas!");
 
 		_font_path.clear();
 		_latin_font_path.clear();
@@ -322,7 +322,7 @@ void reshade::runtime::build_font_atlas()
 			api::resource_desc(width, height, 1, 1, api::format::r8g8b8a8_unorm, 1, api::memory_heap::gpu_only, api::resource_usage::shader_resource),
 			&initial_data, api::resource_usage::shader_resource, &_font_atlas_tex))
 	{
-		LOG(ERROR) << "Failed to create front atlas resource!";
+		log::message(log::level::error, "Failed to create front atlas resource!");
 		return;
 	}
 
@@ -331,7 +331,7 @@ void reshade::runtime::build_font_atlas()
 
 	if (!_device->create_resource_view(_font_atlas_tex, api::resource_usage::shader_resource, api::resource_view_desc(api::format::r8g8b8a8_unorm), &_font_atlas_srv))
 	{
-		LOG(ERROR) << "Failed to create font atlas resource view!";
+		log::message(log::level::error, "Failed to create font atlas resource view!");
 		return;
 	}
 
@@ -1299,14 +1299,15 @@ void reshade::runtime::draw_gui()
 #endif
 
 	ImVec2 viewport_offset = ImVec2(0, 0);
+	const bool show_spinner = _reload_count > 1 && _tutorial_index != 0;
 
 	// Create ImGui widgets and windows
-	if (show_splash_window)
+	if (show_splash_window && !(show_spinner && show_overlay))
 	{
 		ImGui::SetNextWindowPos(_imgui_context->Style.WindowPadding);
 		ImGui::SetNextWindowSize(ImVec2(imgui_io.DisplaySize.x - 20.0f, 0.0f));
 		ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 1.0f);
-		ImGui::PushStyleColor(ImGuiCol_FrameBg, _imgui_context->Style.Colors[ImGuiCol_FrameBg] * ImVec4(1.0f, 1.0f, 1.0f, 0.5f));
+		ImGui::PushStyleColor(ImGuiCol_FrameBg, _imgui_context->Style.Colors[ImGuiCol_FrameBg] * ImVec4(1.0f, 1.0f, 1.0f, show_spinner ? 0.0f : 0.5f));
 		ImGui::Begin("Splash Window", nullptr,
 			ImGuiWindowFlags_NoDecoration |
 			ImGuiWindowFlags_NoNav |
@@ -1316,10 +1317,14 @@ void reshade::runtime::draw_gui()
 			ImGuiWindowFlags_NoDocking |
 			ImGuiWindowFlags_NoFocusOnAppearing);
 
-		ImGui::Text("AuroraShade %s (Based on ReShade %s)", VERSION_STRING_CN2, VERSION_STRING_PRODUCT);
-
-		if (_reload_count <= 1 || _tutorial_index == 0)
+		if (show_spinner)
 		{
+			imgui::spinner((_effects.size() - _reload_remaining_effects) / float(_effects.size()), 16, 10);
+		}
+		else
+		{
+			ImGui::Text("AuroraShade %s (Based on ReShade %s)", VERSION_STRING_CN2, VERSION_STRING_PRODUCT);
+
 //			if ((s_latest_version[0] > VERSION_MAJOR) ||
 //				(s_latest_version[0] == VERSION_MAJOR && s_latest_version[1] > VERSION_MINOR) ||
 //				(s_latest_version[0] == VERSION_MAJOR && s_latest_version[1] == VERSION_MINOR && s_latest_version[2] > VERSION_REVISION))
@@ -1334,77 +1339,77 @@ void reshade::runtime::draw_gui()
 				// ImGui::Text(_("Visit %s for news, updates, effects and discussion."), "https://reshade.me");
 				ImGui::Text("Developed by BarricadeMKXX.");
 			}
-		}
 
-		ImGui::Spacing();
+			ImGui::Spacing();
 
 #if RESHADE_FX
-		if (_reload_remaining_effects != 0 && _reload_remaining_effects != std::numeric_limits<size_t>::max())
-		{
-			ImGui::ProgressBar((_effects.size() - _reload_remaining_effects) / float(_effects.size()), ImVec2(-1, 0), "");
-			ImGui::SameLine(15);
-			ImGui::Text(_(
-				"Compiling (%zu effects remaining) ... "
-				"This might take a while. The application could become unresponsive for some time."),
-				_reload_remaining_effects.load());
-		}
-		else
-#endif
-		{
-			ImGui::ProgressBar(0.0f, ImVec2(-1, 0), "");
-			ImGui::SameLine(15);
-
-			if (_input == nullptr)
+			if (_reload_remaining_effects != 0 && _reload_remaining_effects != std::numeric_limits<size_t>::max())
 			{
-				ImGui::TextColored(COLOR_YELLOW, _("No keyboard or mouse input available."));
-				if (_input_gamepad != nullptr)
+				ImGui::ProgressBar((_effects.size() - _reload_remaining_effects) / float(_effects.size()), ImVec2(-1, 0), "");
+				ImGui::SameLine(15);
+				ImGui::Text(_(
+					"Compiling (%zu effects remaining) ... "
+					"This might take a while. The application could become unresponsive for some time."),
+					_reload_remaining_effects.load());
+			}
+			else
+#endif
+			{
+				ImGui::ProgressBar(0.0f, ImVec2(-1, 0), "");
+				ImGui::SameLine(15);
+
+				if (_input == nullptr)
 				{
-					ImGui::SameLine();
-					ImGui::TextColored(COLOR_YELLOW, _("Use gamepad instead: Press 'left + right shoulder + start button' to open the configuration overlay."));
+					ImGui::TextColored(COLOR_YELLOW, _("No keyboard or mouse input available."));
+					if (_input_gamepad != nullptr)
+					{
+						ImGui::SameLine();
+						ImGui::TextColored(COLOR_YELLOW, _("Use gamepad instead: Press 'left + right shoulder + start button' to open the configuration overlay."));
+					}
+				}
+#if RESHADE_FX
+				else if (_tutorial_index == 0)
+				{
+					const std::string label = _("AuroraShade is now installed successfully! Press '%s' to start the tutorial.");
+					const size_t key_offset = label.find("%s");
+
+					ImGui::TextUnformatted(label.c_str(), label.c_str() + key_offset);
+					ImGui::SameLine(0.0f, 0.0f);
+					ImGui::TextColored(_imgui_context->Style.Colors[ImGuiCol_CheckMark], "%s", input::key_name(_overlay_key_data).c_str());
+					ImGui::SameLine(0.0f, 0.0f);
+					ImGui::TextUnformatted(label.c_str() + key_offset + 2, label.c_str() + label.size());
+				}
+#endif
+				else
+				{
+					const std::string label = _("Press '%s' to open the configuration overlay.");
+					const size_t key_offset = label.find("%s");
+
+					ImGui::TextUnformatted(label.c_str(), label.c_str() + key_offset);
+					ImGui::SameLine(0.0f, 0.0f);
+					ImGui::TextColored(_imgui_context->Style.Colors[ImGuiCol_CheckMark], "%s", input::key_name(_overlay_key_data).c_str());
+					ImGui::SameLine(0.0f, 0.0f);
+					ImGui::TextUnformatted(label.c_str() + key_offset + 2, label.c_str() + label.size());
 				}
 			}
-#if RESHADE_FX
-			else if (_tutorial_index == 0)
-			{
-				const std::string label = _("AuroraShade is now installed successfully! Press '%s' to start the tutorial.");
-				const size_t key_offset = label.find("%s");
 
-				ImGui::TextUnformatted(label.c_str(), label.c_str() + key_offset);
-				ImGui::SameLine(0.0f, 0.0f);
-				ImGui::TextColored(_imgui_context->Style.Colors[ImGuiCol_CheckMark], "%s", input::key_name(_overlay_key_data).c_str());
-				ImGui::SameLine(0.0f, 0.0f);
-				ImGui::TextUnformatted(label.c_str() + key_offset + 2, label.c_str() + label.size());
-			}
-#endif
-			else
-			{
-				const std::string label = _("Press '%s' to open the configuration overlay.");
-				const size_t key_offset = label.find("%s");
-
-				ImGui::TextUnformatted(label.c_str(), label.c_str() + key_offset);
-				ImGui::SameLine(0.0f, 0.0f);
-				ImGui::TextColored(_imgui_context->Style.Colors[ImGuiCol_CheckMark], "%s", input::key_name(_overlay_key_data).c_str());
-				ImGui::SameLine(0.0f, 0.0f);
-				ImGui::TextUnformatted(label.c_str() + key_offset + 2, label.c_str() + label.size());
-			}
-		}
-
-		std::string error_message;
+			std::string error_message;
 #if RESHADE_ADDON
-		if (!addon_all_loaded)
-			error_message += _("There were errors loading some add-ons."),
-			error_message += ' ';
+			if (!addon_all_loaded)
+				error_message += _("There were errors loading some add-ons."),
+				error_message += ' ';
 #endif
 #if RESHADE_FX
-		if (!_last_reload_successful)
-			error_message += _("There were errors loading some effects."),
-			error_message += ' ';
+			if (!_last_reload_successful)
+				error_message += _("There were errors loading some effects."),
+				error_message += ' ';
 #endif
-		if (!error_message.empty())
-		{
-			error_message += _("Check the log for more details.");
-			ImGui::Spacing();
-			ImGui::TextColored(COLOR_RED, error_message.c_str());
+			if (!error_message.empty())
+			{
+				error_message += _("Check the log for more details.");
+				ImGui::Spacing();
+				ImGui::TextColored(COLOR_RED, error_message.c_str());
+			}
 		}
 
 		viewport_offset.y += ImGui::GetWindowHeight() + _imgui_context->Style.WindowPadding.x; // Add small space between windows
@@ -2073,7 +2078,7 @@ void reshade::runtime::draw_gui_home()
 						}
 						else if (!_template_preset_path.empty() && !std::filesystem::copy_file(_template_preset_path, new_preset_path, std::filesystem::copy_options::overwrite_existing, ec))
 						{
-							LOG(ERROR) << "Failed to copy preset template " << _template_preset_path << " to " << new_preset_path << " with error code " << ec.value() << '!';
+							log::message(log::level::error, "Failed to copy preset template '%s' to '%s' with error code %d!", _template_preset_path.u8string().c_str(), new_preset_path.u8string().c_str(), ec.value());
 						}
 					}
 				}
@@ -2261,11 +2266,8 @@ void reshade::runtime::draw_gui_home()
 
 	if (_reload_remaining_effects != std::numeric_limits<size_t>::max())
 	{
-		std::string loading_message = ICON_FK_REFRESH " ";
-		loading_message += _("Loading ...");
-		loading_message += " ";
-		ImGui::SetCursorPos((ImGui::GetWindowSize() - ImGui::CalcTextSize(loading_message.c_str())) * 0.5f);
-		ImGui::TextUnformatted(loading_message.c_str(), loading_message.c_str() + loading_message.size());
+		ImGui::SetCursorPos(ImGui::GetWindowSize() * 0.5f - ImVec2(21, 21));
+		imgui::spinner((_effects.size() - _reload_remaining_effects) / float(_effects.size()), 16, 10);
 		return; // Cannot show techniques and variables while effects are loading, since they are being modified in other threads during that time
 	}
 
@@ -2355,8 +2357,10 @@ void reshade::runtime::draw_gui_home()
 		if (!_last_reload_successful)
 		{
 			ImGui::PushTextWrapPos();
-			ImGui::TextColored(COLOR_RED, _("There were errors loading some effects."));
-			ImGui::TextColored(COLOR_RED, _("Hover the cursor over any red entries below to see the error messages and/or check the log for more details."));
+			ImGui::PushStyleColor(ImGuiCol_Text, COLOR_RED);
+			ImGui::TextUnformatted(_("There were errors loading some effects."));
+			ImGui::TextUnformatted(_("Hover the cursor over any red entries below to see the error messages and/or check the log for more details."));
+			ImGui::PopStyleColor();
 			ImGui::PopTextWrapPos();
 			ImGui::Spacing();
 		}
@@ -3080,10 +3084,10 @@ void reshade::runtime::draw_gui_statistics()
 			ImGui::Text("DEV_%X", _device_id);
 		else
 			ImGui::TextUnformatted("Unknown");
-		ImGui::Text("0x%X", std::hash<std::string>()(g_target_executable_path.stem().u8string()) & 0xFFFFFFFF);
+		ImGui::Text("0x%X", static_cast<unsigned int>(std::hash<std::string>()(g_target_executable_path.stem().u8string()) & 0xFFFFFFFF));
 		ImGui::Text("%.0f ms", std::chrono::duration_cast<std::chrono::nanoseconds>(_last_present_time - _start_time).count() * 1e-6f);
 #if RESHADE_FX
-		ImGui::Text("format %u (%u bpc)", _effect_color_format, api::format_bit_depth(_effect_color_format));
+		ImGui::Text("Format %u (%u bpc)", static_cast<unsigned int>(_effect_color_format), api::format_bit_depth(_effect_color_format));
 #endif
 		ImGui::Text("%*.3f ms", gpu_digits + 4, _last_frame_duration.count() * 1e-6f);
 #if RESHADE_FX
@@ -3441,21 +3445,15 @@ void reshade::runtime::draw_gui_log()
 
 	if (ImGui::BeginChild("##log", ImVec2(0, -(ImGui::GetFrameHeightWithSpacing() + _imgui_context->Style.ItemSpacing.y)), ImGuiChildFlags_Border, _log_wordwrap ? 0 : ImGuiWindowFlags_AlwaysHorizontalScrollbar))
 	{
-		// Limit number of log lines to read, to avoid stalling when log gets too big
-		constexpr size_t LINE_LIMIT = 1000;
-
 		const uintmax_t file_size = std::filesystem::file_size(log_path, ec);
 		if (filter_changed || _last_log_size != file_size)
 		{
 			_log_lines.clear();
 			std::ifstream log_file(log_path);
-			for (std::string line; std::getline(log_file, line) && _log_lines.size() < LINE_LIMIT;)
+			for (std::string line; std::getline(log_file, line);)
 				if (filter_text(line, _log_filter))
 					_log_lines.push_back(line);
 			_last_log_size = file_size;
-
-			if (_log_lines.size() == LINE_LIMIT)
-				_log_lines.push_back("Log was truncated to reduce memory footprint!");
 		}
 
 		ImGuiListClipper clipper;
@@ -3468,18 +3466,18 @@ void reshade::runtime::draw_gui_log()
 
 				if (_log_lines[i].find("ERROR |") != std::string::npos || _log_lines[i].find("error") != std::string::npos)
 					textcol = COLOR_RED;
-				else if (_log_lines[i].find("WARN  |") != std::string::npos || _log_lines[i].find("warning") != std::string::npos || i == LINE_LIMIT)
+				else if (_log_lines[i].find("WARN  |") != std::string::npos || _log_lines[i].find("warning") != std::string::npos)
 					textcol = COLOR_YELLOW;
 				else if (_log_lines[i].find("DEBUG |") != std::string::npos)
 					textcol = ImColor(100, 100, 255);
 
+				if (_log_wordwrap)
+					ImGui::PushTextWrapPos();
 				ImGui::PushStyleColor(ImGuiCol_Text, textcol);
-				if (_log_wordwrap) ImGui::PushTextWrapPos();
-
 				ImGui::TextUnformatted(_log_lines[i].c_str(), _log_lines[i].c_str() + _log_lines[i].size());
-
-				if (_log_wordwrap) ImGui::PopTextWrapPos();
 				ImGui::PopStyleColor();
+				if (_log_wordwrap)
+					ImGui::PopTextWrapPos();
 			}
 		}
 	}
@@ -3664,8 +3662,10 @@ void reshade::runtime::draw_gui_addons()
 #if RESHADE_ADDON == 1
 		ImGui::TextColored(COLOR_YELLOW, _("Some add-ons were not loaded because this build of ReShade has only limited add-on functionality."));
 #else
-		ImGui::TextColored(COLOR_RED, _("There were errors loading some add-ons."));
-		ImGui::TextColored(COLOR_RED, _("Check the log for more details."));
+		ImGui::PushStyleColor(ImGuiCol_Text, COLOR_RED);
+		ImGui::TextUnformatted(_("There were errors loading some add-ons."));
+		ImGui::TextUnformatted(_("Check the log for more details."));
+		ImGui::PopStyleColor();
 #endif
 		ImGui::PopTextWrapPos();
 		ImGui::Spacing();
@@ -4739,11 +4739,13 @@ void reshade::runtime::draw_technique_editor()
 {
 	if (_has_reloaded_after_init && _effects.empty())
 	{
-		ImGui::TextColored(COLOR_YELLOW, _("No effect files (.fx) found in the configured effect search paths%c"), _effect_search_paths.empty() ? '.' : ':');
+		ImGui::PushStyleColor(ImGuiCol_Text, COLOR_YELLOW);
+		ImGui::TextWrapped(_("No effect files (.fx) found in the configured effect search paths%c"), _effect_search_paths.empty() ? '.' : ':');
 		for (const std::filesystem::path &search_path : _effect_search_paths)
-			ImGui::TextColored(COLOR_YELLOW, "  %s", (g_reshade_base_path / search_path).lexically_normal().u8string().c_str());
+			ImGui::Text("  %s", (g_reshade_base_path / search_path).lexically_normal().u8string().c_str());
 		ImGui::Spacing();
-		ImGui::TextColored(COLOR_YELLOW, _("Please verify they are set up correctly in the settings and hit 'Reload'!"));
+		ImGui::TextWrapped(_("Please verify they are set up correctly in the settings and hit 'Reload'!"));
+		ImGui::PopStyleColor();
 		return;
 	}
 
@@ -5502,7 +5504,7 @@ bool reshade::runtime::init_imgui_resources()
 
 		if (!_device->create_sampler(sampler_desc, &_imgui_sampler_state))
 		{
-			LOG(ERROR) << "Failed to create ImGui sampler object!";
+			log::message(log::level::error, "Failed to create ImGui sampler object!");
 			return false;
 		}
 	}
@@ -5537,7 +5539,7 @@ bool reshade::runtime::init_imgui_resources()
 
 		if (!_device->create_pipeline_layout(num_layout_params, layout_params, &_imgui_pipeline_layout))
 		{
-			LOG(ERROR) << "Failed to create ImGui pipeline layout!";
+			log::message(log::level::error, "Failed to create ImGui pipeline layout!");
 			return false;
 		}
 	}
@@ -5610,7 +5612,7 @@ bool reshade::runtime::init_imgui_resources()
 	}
 	else
 	{
-		LOG(ERROR) << "Failed to create ImGui pipeline!";
+		log::message(log::level::error, "Failed to create ImGui pipeline!");
 		return false;
 	}
 }
@@ -5632,7 +5634,7 @@ void reshade::runtime::render_imgui_draw_data(api::command_list *cmd_list, ImDra
 		const int new_size = draw_data->TotalIdxCount + 10000;
 		if (!_device->create_resource(api::resource_desc(new_size * sizeof(ImDrawIdx), api::memory_heap::cpu_to_gpu, api::resource_usage::index_buffer), nullptr, api::resource_usage::cpu_access, &_imgui_indices[buffer_index]))
 		{
-			LOG(ERROR) << "Failed to create ImGui index buffer!";
+			log::message(log::level::error, "Failed to create ImGui index buffer!");
 			return;
 		}
 
@@ -5652,7 +5654,7 @@ void reshade::runtime::render_imgui_draw_data(api::command_list *cmd_list, ImDra
 		const int new_size = draw_data->TotalVtxCount + 5000;
 		if (!_device->create_resource(api::resource_desc(new_size * sizeof(ImDrawVert), api::memory_heap::cpu_to_gpu, api::resource_usage::vertex_buffer), nullptr, api::resource_usage::cpu_access, &_imgui_vertices[buffer_index]))
 		{
-			LOG(ERROR) << "Failed to create ImGui vertex buffer!";
+			log::message(log::level::error, "Failed to create ImGui vertex buffer!");
 			return;
 		}
 
