@@ -1044,3 +1044,49 @@ void reshade::imgui::spinner(float value, float radius, float thickness)
 
 	ImGui::Dummy(radius_with_padding * 2);
 }
+
+void reshade::imgui::aurora_progress(float value, float radius, float thickness)
+{
+	ImDrawList *const draw_list = ImGui::GetWindowDrawList();
+
+	const ImU32 AURORA_BLUE = 0xFFC09060;
+	const ImU32 AURORA_MAGENTA = 0xFF9060C0;
+	const ImU32 AURORA_MINT = 0xFF90C060;
+#ifdef AURORA_PRO
+	const ImU32 colors[3] { AURORA_BLUE, AURORA_MINT, AURORA_BLUE };
+#else
+	const ImU32 colors[3] { AURORA_MAGENTA, AURORA_BLUE, AURORA_MAGENTA };
+#endif
+	const ImVec2 pos = ImGui::GetCursorScreenPos();
+
+	const ImVec2 radius_with_padding = ImVec2(radius + thickness * 0.5f, radius + thickness * 0.5f);
+	const ImVec2 center = pos + radius_with_padding;
+
+	if (value < 0.0f)
+		value = ImAbs(ImSin(static_cast<float>(ImGui::GetTime())));
+
+	const float epsilon = 0.5f / radius;
+	const float rotation = 0.15f * IM_PI;
+
+	draw_list->PathClear();
+
+	for (int n = 0; n < 2; ++n)
+	{
+		if (n > value * 2)
+			break;
+
+		const float a_min = IM_PI * n - rotation - epsilon;
+		const float a_max = 2.0 * IM_PI * ImClamp(value, n / 2.0f, (n + 1.0f) / 2.0f) - rotation + epsilon;
+
+		const int vert_beg_idx = draw_list->VtxBuffer.Size;
+		draw_list->PathArcTo(center, radius, a_min, a_max);
+		draw_list->PathStroke(colors[n], 0, thickness);
+		const int vert_end_idx = draw_list->VtxBuffer.Size;
+
+		const ImVec2 gradient_p0(center.x + ImCos(a_min) * radius, center.y + ImSin(a_min) * radius);
+		const ImVec2 gradient_p1(center.x + ImCos(a_max) * radius, center.y + ImSin(a_max) * radius);
+
+		ImGui::ShadeVertsLinearColorGradientKeepAlpha(draw_list, vert_beg_idx, vert_end_idx, gradient_p0, gradient_p1, colors[n], colors[n + 1]);
+	}
+	ImGui::Dummy(radius_with_padding * 2);
+}

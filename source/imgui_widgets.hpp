@@ -146,4 +146,6 @@ namespace reshade::imgui
 	/// <param name="radius">Radius of the circle.</param>
 	/// <param name="thickness">Thickness of the circle.</param>
 	void spinner(float value, float radius, float thickness);
+
+	void aurora_progress(float value, float radius, float thickness);
 }

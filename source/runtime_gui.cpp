@@ -1308,7 +1308,8 @@ void reshade::runtime::draw_gui()
 		ImGui::SetNextWindowPos(_imgui_context->Style.WindowPadding);
 		ImGui::SetNextWindowSize(ImVec2(imgui_io.DisplaySize.x - 20.0f, 0.0f));
 		ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 1.0f);
-		ImGui::PushStyleColor(ImGuiCol_FrameBg, _imgui_context->Style.Colors[ImGuiCol_FrameBg] * ImVec4(1.0f, 1.0f, 1.0f, show_spinner ? 0.0f : 0.5f));
+		ImGui::PushStyleColor(ImGuiCol_FrameBg, _imgui_context->Style.Colors[ImGuiCol_FrameBg] * ImVec4(1.0f, 1.0f, 1.0f, show_spinner ? 0.0f : 1.0f));
+		ImGui::PushStyleColor(ImGuiCol_WindowBg, _imgui_context->Style.Colors[ImGuiCol_WindowBg] * ImVec4(1.0f, 1.0f, 1.0f, show_spinner ? 0.0f : 1.0f));
 		ImGui::Begin("Splash Window", nullptr,
 			ImGuiWindowFlags_NoDecoration |
 			ImGuiWindowFlags_NoNav |
@@ -1320,7 +1321,14 @@ void reshade::runtime::draw_gui()
 
 		if (show_spinner)
 		{
-			imgui::spinner((_effects.size() - _reload_remaining_effects) / float(_effects.size()), 16, 10);
+			const auto remaining_effects = (_reload_remaining_effects.load() == std::numeric_limits<size_t>::max()) ? 0 : _reload_remaining_effects.load();
+			imgui::aurora_progress((_effects.size() - remaining_effects) / float(_effects.size()), 16, 10);
+			ImGui::SameLine();
+			auto cursorY = ImGui::GetCursorPosY();
+			ImGui::SetCursorPosY(cursorY + ImGui::GetTextLineHeight() * 0.5f);
+			ImGui::PushStyleColor(ImGuiCol_Text, reinterpret_cast<ImVec4 &>(_fps_col));
+			ImGui::Text("%d / %d", _effects.size() - remaining_effects, _effects.size());
+			ImGui::PopStyleColor();
 		}
 		else
 		{
@@ -1416,7 +1424,7 @@ void reshade::runtime::draw_gui()
 		viewport_offset.y += ImGui::GetWindowHeight() + _imgui_context->Style.WindowPadding.x; // Add small space between windows
 
 		ImGui::End();
-		ImGui::PopStyleColor(1);
+		ImGui::PopStyleColor(2);
 		ImGui::PopStyleVar();
 	}
 
@@ -2268,7 +2276,13 @@ void reshade::runtime::draw_gui_home()
 	if (_reload_remaining_effects != std::numeric_limits<size_t>::max())
 	{
 		ImGui::SetCursorPos(ImGui::GetWindowSize() * 0.5f - ImVec2(21, 21));
-		imgui::spinner((_effects.size() - _reload_remaining_effects) / float(_effects.size()), 16, 10);
+		// imgui::spinner((_effects.size() - _reload_remaining_effects) / float(_effects.size()), 16, 10);
+		const size_t remaining_effects = (_reload_remaining_effects.load() == std::numeric_limits<size_t>::max()) ? 0 : _reload_remaining_effects.load();
+		imgui::aurora_progress((_effects.size() - remaining_effects) / float(_effects.size()), 16, 10);
+		char buf[32] = "";
+		ImFormatString(buf, 32, "%d / %d", _effects.size() - remaining_effects, _effects.size());
+		ImGui::SetCursorPosX(ImGui::GetWindowSize().x * 0.5f - ImGui::CalcTextSize(buf).x * 0.5f);
+		ImGui::TextUnformatted(buf);
 		return; // Cannot show techniques and variables while effects are loading, since they are being modified in other threads during that time
 	}
 
