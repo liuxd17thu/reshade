@@ -2286,13 +2286,13 @@ void reshade::runtime::draw_gui_home()
 			for (technique &tech : _techniques)
 			{
 				std::string_view label = tech.annotation_as_string("ui_label");
-				std::string_view label_localized; get_localized_annotation(tech, label_localized, _current_language);
+				std::string_view label_localized = get_localized_annotation(tech, "ui_label", _current_language);
 				if (label.empty())
 					label = tech.name;
 
 				tech.hidden = tech.annotation_as_int("hidden") != 0
 					|| !(
-						false // !label_localized.empty() && filter_text(label_localized, _effect_filter)
+						filter_text(label_localized, _effect_filter)
 						|| filter_text(label, _effect_filter)
 						|| filter_text(_effects[tech.effect_index].source_file.filename().u8string() + build_postfix(_effects[tech.effect_index], _aurora_feature), _effect_filter)
 					);
