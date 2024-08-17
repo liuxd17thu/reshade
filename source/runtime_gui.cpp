@@ -2272,14 +2272,14 @@ void reshade::runtime::draw_gui_home()
 		return; // Cannot show techniques and variables while effects are loading, since they are being modified in other threads during that time
 	}
 
-	float tech_button_width = (10.5f * _font_size - 1.5 * _imgui_context->Style.ItemSpacing.x - ImGui::GetFrameHeight()) * 0.5f;
+	float tech_button_width = (10.5f * _font_size - 1.5f * _imgui_context->Style.ItemSpacing.x - ImGui::GetFrameHeight()) * 0.5f;
 	if (_tutorial_index > 1)
 	{
 		const std::string lang_short = _current_language.substr(0, 2);
 
 		const float button_spacing = _imgui_context->Style.ItemSpacing.x * 0.5f;
 		if (imgui::search_input_box(_effect_filter, sizeof(_effect_filter),
-			-((_variable_editor_tabs ? 1 : 2) * (button_spacing + tech_button_width)) - (lang_short == "zh" ? (2.0f * _font_size + 2.0 * button_spacing) : button_spacing)))
+			-((_variable_editor_tabs ? 1 : 2) * (button_spacing + tech_button_width)) - (lang_short == "zh" ? (2.0f * _font_size + 2.0f * button_spacing) : button_spacing)))
 		{
 			_effects_expanded_state = 3;
 
