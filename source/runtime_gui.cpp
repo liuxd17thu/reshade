@@ -2082,8 +2082,10 @@ void reshade::runtime::draw_gui_home()
 					{
 						if (_inherit_current_preset)
 						{
+							ini_file::clear_cache(_current_preset_path);
 							_current_preset_path = new_preset_path;
 							save_current_preset();
+							ini_file::flush_cache(new_preset_path);
 						}
 						else if (!_template_preset_path.empty() && !std::filesystem::copy_file(_template_preset_path, new_preset_path, std::filesystem::copy_options::overwrite_existing, ec))
 						{
