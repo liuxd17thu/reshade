@@ -27,7 +27,7 @@ struct intrinsic
 	}
 
 	intrinsic_id id;
-	reshadefx::function_info function;
+	reshadefx::function function;
 };
 
 #define void { reshadefx::type::t_void }
@@ -136,7 +136,7 @@ unsigned int reshadefx::type::rank(const type &src, const type &dst)
 	if (src.is_array() != dst.is_array() || (src.array_length != dst.array_length && src.is_bounded_array() && dst.is_bounded_array()))
 		return 0; // Arrays of different sizes are not compatible
 	if (src.is_struct() || dst.is_struct())
-		return src.definition == dst.definition ? 32 : 0; // Structs are only compatible if they are the same type
+		return src.struct_definition == dst.struct_definition ? 32 : 0; // Structs are only compatible if they are the same type
 	if (!src.is_numeric() || !dst.is_numeric())
 		return src.base == dst.base && src.rows == dst.rows && src.cols == dst.cols ? 32 : 0; // Numeric values are not compatible with other types
 	if (src.is_matrix() && (!dst.is_matrix() || src.rows != dst.rows || src.cols != dst.cols))
@@ -300,7 +300,7 @@ reshadefx::scoped_symbol reshadefx::symbol_table::find_symbol(const std::string 
 	return result;
 }
 
-static int compare_functions(const std::vector<reshadefx::expression> &arguments, const reshadefx::function_info *function1, const reshadefx::function_info *function2)
+static int compare_functions(const std::vector<reshadefx::expression> &arguments, const reshadefx::function *function1, const reshadefx::function *function2)
 {
 	const size_t num_arguments = arguments.size();
 
@@ -353,7 +353,7 @@ bool reshadefx::symbol_table::resolve_function_call(const std::string &name, con
 {
 	out_data.op = symbol_type::function;
 
-	const function_info *result = nullptr;
+	const function *result = nullptr;
 	unsigned int num_overloads = 0;
 	unsigned int overload_namespace = scope.namespace_level;
 
@@ -370,7 +370,7 @@ bool reshadefx::symbol_table::resolve_function_call(const std::string &name, con
 				it->scope.namespace_level > scope.namespace_level || (it->scope.namespace_level == scope.namespace_level && it->scope.name != scope.name))
 				continue;
 
-			const function_info *const function = it->function;
+			const function *const function = it->function;
 
 			if (function == nullptr)
 				continue;

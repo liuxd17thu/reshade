@@ -20,7 +20,6 @@
 #include "fonts/forkawesome.inl"
 #include "fonts/aurora.inl"
 #include "fonts/glyph_ranges.hpp"
-#include <fstream>
 #include <sstream>
 #include <cmath> // std::abs, std::ceil, std::floor
 #include <cctype> // std::tolower
@@ -197,7 +196,36 @@ void reshade::runtime::build_font_atlas()
 		_default_font_path.clear();
 	}
 
-	extern bool resolve_path(std::filesystem::path &path, std::error_code &ec);
+	const auto add_font_from_file = [atlas](std::filesystem::path &font_path, ImFontConfig cfg, const ImWchar *glyph_ranges, std::error_code &ec) -> bool {
+		if (font_path.empty())
+			return true;
+
+		extern bool resolve_path(std::filesystem::path &path, std::error_code &ec);
+		if (!resolve_path(font_path, ec))
+			return false;
+
+		if (FILE *const file = _wfsopen(font_path.c_str(), L"rb", SH_DENYNO))
+		{
+			fseek(file, 0, SEEK_END);
+			const size_t data_size = ftell(file);
+			fseek(file, 0, SEEK_SET);
+
+			void *data = IM_ALLOC(data_size);
+			const size_t data_size_read = fread(data, 1, data_size, file);
+			fclose(file);
+			if (data_size_read != data_size)
+			{
+				IM_FREE(data);
+				return false;
+			}
+
+			ImFormatString(cfg.Name, IM_ARRAYSIZE(cfg.Name), "%s, %.0fpx", font_path.stem().u8string().c_str(), cfg.SizePixels);
+
+			return atlas->AddFontFromMemoryTTF(data, static_cast<int>(data_size), cfg.SizePixels, &cfg, glyph_ranges) != nullptr;
+		}
+
+		return false;
+	};
 
 	ImFontConfig cfg;
 	cfg.GlyphOffset.y = std::floor(_font_size / 13.0f); // Not used in AddFontDefault()
@@ -212,7 +240,7 @@ void reshade::runtime::build_font_atlas()
 			resolved_font_path = _font_path.empty() ? _default_font_path : _font_path;
 		if (resolved_font_path == L"ProggyClean.ttf")
 			atlas->AddFontDefault(&cfg);
-		else if (!(resolve_path(resolved_font_path, ec) && atlas->AddFontFromFileTTF(resolved_font_path.u8string().c_str(), cfg.SizePixels, &cfg, atlas->GetGlyphRangesDefault()) != nullptr))
+		else if (!add_font_from_file(resolved_font_path, cfg, atlas->GetGlyphRangesDefault(), ec))
 		{
 			log::message(log::level::error, "Failed to load latin font from '%s' with error code %d!", resolved_font_path.u8string().c_str(), ec.value());
 			resolved_font_path.clear();
@@ -230,7 +258,7 @@ void reshade::runtime::build_font_atlas()
 	{
 		if (resolved_font_path == L"ProggyClean.ttf")
 			atlas->AddFontDefault(&cfg);
-		else if (!resolved_font_path.empty() && !(resolve_path(resolved_font_path, ec) && atlas->AddFontFromFileTTF(resolved_font_path.u8string().c_str(), cfg.SizePixels, &cfg, glyph_ranges) != nullptr))
+		else if (!add_font_from_file(resolved_font_path, cfg, glyph_ranges, ec))
 		{
 			log::message(log::level::error, "Failed to load font from '%s' with error code %d!", resolved_font_path.u8string().c_str(), ec.value());
 			resolved_font_path.clear();
@@ -263,7 +291,7 @@ void reshade::runtime::build_font_atlas()
 
 		if (resolved_font_path == L"ProggyClean.ttf")
 			atlas->AddFontDefault(&cfg);
-		else if (!resolved_font_path.empty() && !(resolve_path(resolved_font_path, ec) && atlas->AddFontFromFileTTF(resolved_font_path.u8string().c_str(), cfg.SizePixels, &cfg, glyph_ranges) != nullptr))
+		else if (!add_font_from_file(resolved_font_path, cfg, glyph_ranges, ec))
 		{
 			log::message(log::level::error, "Failed to load editor font from '%s' with error code %d!", resolved_font_path.u8string().c_str(), ec.value());
 			resolved_font_path.clear();
@@ -1300,7 +1328,11 @@ void reshade::runtime::draw_gui()
 #endif
 
 	ImVec2 viewport_offset = ImVec2(0, 0);
+#if RESHADE_FX
 	const bool show_spinner = _reload_count > 1 && _tutorial_index != 0;
+#else
+	const bool show_spinner = false;
+#endif
 
 	// Create ImGui widgets and windows
 	if (show_splash_window && !(show_spinner && show_overlay))
@@ -1319,6 +1351,7 @@ void reshade::runtime::draw_gui()
 			ImGuiWindowFlags_NoDocking |
 			ImGuiWindowFlags_NoFocusOnAppearing);
 
+#if RESHADE_FX
 		if (show_spinner)
 		{
 			const auto remaining_effects = (_reload_remaining_effects.load() == std::numeric_limits<size_t>::max()) ? 0 : _reload_remaining_effects.load();
@@ -1331,6 +1364,7 @@ void reshade::runtime::draw_gui()
 			ImGui::PopStyleColor();
 		}
 		else
+#endif
 		{
 			ImGui::Text("AuroraShade %s (Based on ReShade %s)", VERSION_STRING_CN2, VERSION_STRING_PRODUCT);
 
@@ -1545,6 +1579,7 @@ void reshade::runtime::draw_gui()
 				ImGui::SetCursorPosX(content_width - ImGui::CalcTextSize(temp, temp + temp_size).x + _imgui_context->Style.ItemSpacing.x);
 			ImGui::TextUnformatted(temp, temp + temp_size);
 		}
+#if RESHADE_FX
 		if (show_preset_name)
 		{
 			const std::string preset_name = _current_preset_path.stem().u8string();
@@ -1552,6 +1587,7 @@ void reshade::runtime::draw_gui()
 				ImGui::SetCursorPosX(content_width - ImGui::CalcTextSize(preset_name.c_str(), preset_name.c_str() + preset_name.size()).x + _imgui_context->Style.ItemSpacing.x);
 			ImGui::TextUnformatted(preset_name.c_str(), preset_name.c_str() + preset_name.size());
 		}
+#endif
 
 		ImGui::Dummy(ImVec2(200, 0)); // Force a minimum window width
 
@@ -1910,7 +1946,7 @@ void reshade::runtime::draw_gui_home()
 			ImGui::OpenPopup("##create");
 		}
 
-		ImGui::SetItemTooltip(_("Add a new preset"));
+		ImGui::SetItemTooltip(_("Add a new preset."));
 
 		if (was_loading)
 		{
@@ -1940,7 +1976,7 @@ void reshade::runtime::draw_gui_home()
 			_preset_is_modified = false;
 		}
 
-		ImGui::SetItemTooltip(_("Save current preset automatically on every modification"));
+		ImGui::SetItemTooltip(_("Save current preset automatically on every modification."));
 
 		ImGui::SameLine(0, button_spacing);
 		if (!was_auto_save_preset)
@@ -1954,7 +1990,7 @@ void reshade::runtime::draw_gui_home()
 				reload_preset = true;
 			}
 
-			ImGui::SetItemTooltip(_("Reset all techniques and values to those of the current preset"));
+			ImGui::SetItemTooltip(_("Reset all techniques and values to those of the current preset."));
 
 			ImGui::EndDisabled();
 
@@ -1986,7 +2022,7 @@ void reshade::runtime::draw_gui_home()
 		}
 
 		ImGui::SetItemTooltip(save_and_clean_preset ?
-			_("Clean up and save the current preset (removes all values for disabled techniques)") : _("Save the current preset"));
+			_("Clean up and save the current preset (removes all values for disabled techniques).") : _("Save the current preset."));
 
 		ImGui::EndDisabled();
 
@@ -2376,7 +2412,7 @@ void reshade::runtime::draw_gui_home()
 			ImGui::PushTextWrapPos();
 			ImGui::PushStyleColor(ImGuiCol_Text, COLOR_RED);
 			ImGui::TextUnformatted(_("There were errors loading some effects."));
-			ImGui::TextUnformatted(_("Hover the cursor over any red entries below to see the error messages and/or check the log for more details."));
+			ImGui::TextUnformatted(_("Hover the cursor over any red entries below to see the related error messages and/or check the log for more details if there are none."));
 			ImGui::PopStyleColor();
 			ImGui::PopTextWrapPos();
 			ImGui::Spacing();
@@ -2486,6 +2522,8 @@ void reshade::runtime::draw_gui_home()
 			reload_effects();
 		}
 
+		ImGui::SetItemTooltip(_("Reload all effects (can hold 'Ctrl' while clicking to clear the effect cache before loading)."));
+
 		ImGui::SameLine();
 
 		if (ImGui::Checkbox(_("Performance Mode"), &_performance_mode))
@@ -2494,7 +2532,7 @@ void reshade::runtime::draw_gui_home()
 			reload_effects(); // Reload effects after switching
 		}
 
-		ImGui::SetItemTooltip(_("Reload all effects into a more optimal representation that can give a performance boost (disables variable tweaking)"));
+		ImGui::SetItemTooltip(_("Reload all effects into a more optimal representation that can give a performance boost, but disables variable tweaking."));
 	}
 	else
 	{
@@ -2601,7 +2639,7 @@ void reshade::runtime::draw_gui_settings()
 		modified |= imgui::path_list(_("Effect search paths"), _effect_search_paths, _file_selection_path, g_reshade_base_path);
 		ImGui::SetItemTooltip(_("List of directory paths to be searched for effect files (.fx).\nPaths that end in \"\\**\" are searched recursively."));
 		modified |= imgui::path_list(_("Texture search paths"), _texture_search_paths, _file_selection_path, g_reshade_base_path);
-		ImGui::SetItemTooltip(_("List of directory paths to be searched for texture image files.\nPaths that end in \"\\**\" are searched recursively."));
+		ImGui::SetItemTooltip(_("List of directory paths to be searched for image files used as source for textures.\nPaths that end in \"\\**\" are searched recursively."));
 
 		if (ImGui::SliderInt(_("Effect load delay"), reinterpret_cast<int *>(&_effect_load_delay), 0, 10 * 1000, "%d ms"))
 		{
@@ -2971,7 +3009,9 @@ void reshade::runtime::draw_gui_settings()
 			modified |= imgui::checkbox_tristate(_("Show FPS"), &_show_fps);
 			ImGui::SameLine(0, 10);
 			modified |= imgui::checkbox_tristate(_("Show frame time"), &_show_frametime);
+#if RESHADE_FX
 			modified |= imgui::checkbox_tristate(_("Show preset name"), &_show_preset_name);
+#endif
 			ImGui::EndGroup();
 			ImGui::SetItemTooltip(_("Check to always show, fill out to only show while overlay is open."));
 
@@ -3281,9 +3321,9 @@ void reshade::runtime::draw_gui_statistics()
 					pass_name = tech.name + ' ' + pass_name;
 
 					bool referenced = false;
-					for (const reshadefx::sampler_info &sampler : tech.passes[pass_index].samplers)
+					for (const reshadefx::texture_binding &binding : tech.passes[pass_index].texture_bindings)
 					{
-						if (sampler.texture_name == tex.unique_name)
+						if (binding.texture_name == tex.unique_name)
 						{
 							referenced = true;
 							reference.second.emplace_back(pass_name + " (sampler)");
@@ -3291,9 +3331,9 @@ void reshade::runtime::draw_gui_statistics()
 						}
 					}
 
-					for (const reshadefx::storage_info &storage : tech.passes[pass_index].storages)
+					for (const reshadefx::storage_binding &binding : tech.passes[pass_index].storage_bindings)
 					{
-						if (storage.texture_name == tex.unique_name)
+						if (binding.texture_name == tex.unique_name)
 						{
 							referenced = true;
 							reference.second.emplace_back(pass_name + " (storage)");
@@ -3466,10 +3506,17 @@ void reshade::runtime::draw_gui_log()
 		if (filter_changed || _last_log_size != file_size)
 		{
 			_log_lines.clear();
-			std::ifstream log_file(log_path);
-			for (std::string line; std::getline(log_file, line);)
-				if (filter_text(line, _log_filter))
-					_log_lines.push_back(line);
+
+			if (FILE *const file = _wfsopen(log_path.c_str(), L"r", SH_DENYNO))
+			{
+				char line_data[2048];
+				while (fgets(line_data, sizeof(line_data), file))
+					if (filter_text(line_data, _log_filter))
+						_log_lines.push_back(line_data);
+
+				fclose(file);
+			}
+
 			_last_log_size = file_size;
 		}
 
@@ -4216,7 +4263,10 @@ void reshade::runtime::draw_variable_editor()
 					{
 						for (float x = 0, space_x = ImGui::CalcTextSize(" ").x, width = (ImGui::CalcItemWidth() - ImGui::CalcTextSize(category_label.data()).x - 45) / 2; x < width; x += space_x)
 							category_label.insert(0, " ");
-						category_label += "###" + current_category; // Ensure widget ID does not change with varying width
+						// Ensure widget ID does not change with varying width
+						category_label += "###" + current_category;
+						// Append a unique value so that the context menu does not contain duplicated widgets when a category is made current multiple times
+						category_label += std::to_string(variable_index);
 					}
 
 					if (category_visible = true;
@@ -4761,7 +4811,7 @@ void reshade::runtime::draw_technique_editor()
 		for (const std::filesystem::path &search_path : _effect_search_paths)
 			ImGui::Text("  %s", (g_reshade_base_path / search_path).lexically_normal().u8string().c_str());
 		ImGui::Spacing();
-		ImGui::TextWrapped(_("Please verify they are set up correctly in the settings and hit 'Reload'!"));
+		ImGui::TextWrapped(_("Go to the settings and configure the 'Effect search paths' option to point to the directory containing effect files, then hit 'Reload'!"));
 		ImGui::PopStyleColor();
 		return;
 	}
@@ -4884,7 +4934,7 @@ void reshade::runtime::draw_technique_editor()
 					}
 				}
 
-				if (_renderer_id < 0x20000 && // Hide if using SPIR-V, since that cannot easily be shown here
+				if (!effect.generated_code.empty() &&
 					imgui::popup_button(_("Show compiled results"), 18.0f * _font_size))
 				{
 					const bool open_generated_code = ImGui::MenuItem(_("Generated code"));
@@ -5216,7 +5266,7 @@ void reshade::runtime::draw_technique_editor()
 					}
 				}
 
-				if (_renderer_id < 0x20000 && // Hide if using SPIR-V, since that cannot easily be shown here
+				if (!effect.generated_code.empty() &&
 					imgui::popup_button(_("Show compiled results"), 18.0f * _font_size))
 				{
 					const bool open_generated_code = ImGui::MenuItem(_("Generated code"));
@@ -5435,7 +5485,7 @@ void reshade::runtime::open_code_editor(editor_instance &instance) const
 	if (instance.generated)
 	{
 		if (instance.entry_point_name.empty())
-			instance.editor.set_text(std::string_view(effect.module.code.data(), effect.module.code.size()));
+			instance.editor.set_text(effect.generated_code);
 		else
 			instance.editor.set_text(effect.assembly_text.at(instance.entry_point_name));
 		instance.editor.set_readonly(true);
@@ -5445,9 +5495,18 @@ void reshade::runtime::open_code_editor(editor_instance &instance) const
 	// Only update text if there is no undo history (in which case it can be assumed that the text is already up-to-date)
 	if (!instance.editor.is_modified() && !instance.editor.can_undo())
 	{
-		if (auto file = std::ifstream(instance.file_path))
+		if (FILE *const file = _wfsopen(instance.file_path.c_str(), L"rb", SH_DENYWR))
 		{
-			instance.editor.set_text(std::string(std::istreambuf_iterator<char>(file), {}));
+			fseek(file, 0, SEEK_END);
+			const size_t file_size = ftell(file);
+			fseek(file, 0, SEEK_SET);
+
+			std::string text(file_size, '\0');
+			fread(text.data(), 1, file_size, file);
+
+			fclose(file);
+
+			instance.editor.set_text(text);
 			instance.editor.set_readonly(false);
 		}
 	}
@@ -5470,10 +5529,11 @@ void reshade::runtime::draw_code_editor(editor_instance &instance)
 			_input != nullptr && _input->is_key_pressed('S', true, false, false))))
 	{
 		// Write current editor text to file
-		if (auto file = std::ofstream(instance.file_path, std::ios::trunc))
+		if (FILE *const file = _wfsopen(instance.file_path.c_str(), L"wb", SH_DENYWR))
 		{
 			const std::string text = instance.editor.get_text();
-			file.write(text.data(), text.size());
+			fwrite(text.data(), 1, text.size(), file);
+			fclose(file);
 		}
 
 		if (!is_loading() && instance.effect_index < _effects.size())
@@ -5623,15 +5683,13 @@ bool reshade::runtime::init_imgui_resources()
 	api::format render_target_format = api::format_to_default_typed(_back_buffer_format, 0);
 	subobjects.push_back({ api::pipeline_subobject_type::render_target_formats, 1, &render_target_format });
 
-	if (_device->create_pipeline(_imgui_pipeline_layout, static_cast<uint32_t>(subobjects.size()), subobjects.data(), &_imgui_pipeline))
-	{
-		return true;
-	}
-	else
+	if (!_device->create_pipeline(_imgui_pipeline_layout, static_cast<uint32_t>(subobjects.size()), subobjects.data(), &_imgui_pipeline))
 	{
 		log::message(log::level::error, "Failed to create ImGui pipeline!");
 		return false;
 	}
+
+	return true;
 }
 void reshade::runtime::render_imgui_draw_data(api::command_list *cmd_list, ImDrawData *draw_data, api::resource_view rtv)
 {

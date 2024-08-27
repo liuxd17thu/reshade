@@ -799,5 +799,12 @@ namespace reshade { namespace api
 		/// </summary>
 		/// <param name="variable">Opaque handle to the uniform variable.</param>
 		virtual void reset_uniform_value(effect_uniform_variable variable) = 0;
+
+		/// <summary>
+		/// Queues up the specified effect for reloading in the next frame.
+		/// This can be called multiple times with different effects to append to the queue.
+		/// </summary>
+		/// <param name="effect_name">File name of the effect file that should be reloaded.</param>
+		virtual void reload_effect_next_frame(const char *effect_name) = 0;
 	};
 } }

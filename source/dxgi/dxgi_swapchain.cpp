@@ -648,11 +648,20 @@ HRESULT STDMETHODCALLTYPE DXGISwapChain::ResizeBuffers1(UINT BufferCount, UINT W
 HRESULT STDMETHODCALLTYPE DXGISwapChain::SetHDRMetaData(DXGI_HDR_METADATA_TYPE Type, UINT Size, void *pMetaData)
 {
 	// assert(_interface_version >= 4); // Red Dead Redemption 2 incorrectly calls this on a 'IDXGISwapChain3' object
+#if 0
 	return static_cast<IDXGISwapChain4 *>(_orig)->SetHDRMetaData(Type, Size, pMetaData);
+#else
+	UNREFERENCED_PARAMETER(Type);
+	UNREFERENCED_PARAMETER(Size);
+	UNREFERENCED_PARAMETER(pMetaData);
+	// It is no longer recommended for apps to explicitly set HDR metadata, so just prevent this altogether (see also https://learn.microsoft.com/windows/win32/api/dxgi1_5/nf-dxgi1_5-idxgiswapchain4-sethdrmetadata)
+	return S_OK;
+#endif
 }
 
-struct unique_direct3d_device_lock : std::unique_lock<std::shared_mutex>
+class unique_direct3d_device_lock : std::unique_lock<std::shared_mutex>
 {
+public:
 	unique_direct3d_device_lock(IUnknown *direct3d_device, unsigned int direct3d_version, std::shared_mutex &mutex) : unique_lock(mutex)
 	{
 		switch (direct3d_version)
@@ -682,6 +691,7 @@ struct unique_direct3d_device_lock : std::unique_lock<std::shared_mutex>
 		}
 	}
 
+private:
 	com_ptr<ID3D11Multithread> multithread;
 	BOOL was_protected = FALSE;
 };

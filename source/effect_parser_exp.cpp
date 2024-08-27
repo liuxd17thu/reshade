@@ -7,6 +7,8 @@
 #include "effect_parser.hpp"
 #include "effect_codegen.hpp"
 #include <cassert>
+#include <iterator> // std::back_inserter
+#include <algorithm> // std::lower_bound, std::set_union
 
 #define RESHADEFX_SHORT_CIRCUIT 0
 
@@ -128,7 +130,7 @@ bool reshadefx::parser::accept_type_class(type &type)
 		{
 			if (symbol.id && symbol.op == symbol_type::structure)
 			{
-				type.definition = symbol.id;
+				type.struct_definition = symbol.id;
 				return true;
 			}
 		}
@@ -738,7 +740,7 @@ bool reshadefx::parser::parse_expression_unary(expression &exp)
 				consume_until('}');
 				return false;
 			}
-			if (composite_type.base != type::t_void && element_exp.type.definition != composite_type.definition)
+			if (composite_type.base != type::t_void && element_exp.type.struct_definition != composite_type.struct_definition)
 			{
 				error(element_exp.location, 3017, "cannot convert these types (from " + element_exp.type.description() + " to " + composite_type.description() + ')');
 				consume_until('}');
@@ -1079,7 +1081,7 @@ bool reshadefx::parser::parse_expression_unary(expression &exp)
 			}
 
 			// Check if the call resolving found an intrinsic or function and invoke the corresponding code
-			const codegen::id result = symbol.op == symbol_type::function ?
+			const codegen::id result = (symbol.op == symbol_type::function) ?
 				_codegen->emit_call(location, symbol.id, symbol.type, parameters) :
 				_codegen->emit_call_intrinsic(location, symbol.id, symbol.type, parameters);
 
@@ -1098,11 +1100,33 @@ bool reshadefx::parser::parse_expression_unary(expression &exp)
 				}
 			}
 
-			if (_current_function != nullptr)
+			if (_codegen->_current_function != nullptr && symbol.op == symbol_type::function)
 			{
 				// Calling a function makes the caller inherit all sampler and storage object references from the callee
-				_current_function->referenced_samplers.insert(symbol.function->referenced_samplers.begin(), symbol.function->referenced_samplers.end());
-				_current_function->referenced_storages.insert(symbol.function->referenced_storages.begin(), symbol.function->referenced_storages.end());
+				if (!symbol.function->referenced_samplers.empty())
+				{
+					std::vector<codegen::id> referenced_samplers;
+					referenced_samplers.reserve(_codegen->_current_function->referenced_samplers.size() + symbol.function->referenced_samplers.size());
+					std::set_union(_codegen->_current_function->referenced_samplers.begin(), _codegen->_current_function->referenced_samplers.end(), symbol.function->referenced_samplers.begin(), symbol.function->referenced_samplers.end(), std::back_inserter(referenced_samplers));
+					_codegen->_current_function->referenced_samplers = std::move(referenced_samplers);
+				}
+				if (!symbol.function->referenced_storages.empty())
+				{
+					std::vector<codegen::id> referenced_storages;
+					referenced_storages.reserve(_codegen->_current_function->referenced_storages.size() + symbol.function->referenced_storages.size());
+					std::set_union(_codegen->_current_function->referenced_storages.begin(), _codegen->_current_function->referenced_storages.end(), symbol.function->referenced_storages.begin(), symbol.function->referenced_storages.end(), std::back_inserter(referenced_storages));
+					_codegen->_current_function->referenced_storages = std::move(referenced_storages);
+				}
+
+				// Add callee and all its function references to the callers function references
+				{
+					std::vector<codegen::id> referenced_functions;
+					std::set_union(_codegen->_current_function->referenced_functions.begin(), _codegen->_current_function->referenced_functions.end(), symbol.function->referenced_functions.begin(), symbol.function->referenced_functions.end(), std::back_inserter(referenced_functions));
+					const auto it = std::lower_bound(referenced_functions.begin(), referenced_functions.end(), symbol.id);
+					if (it == referenced_functions.end() || *it != symbol.id)
+						referenced_functions.insert(it, symbol.id);
+					_codegen->_current_function->referenced_functions = std::move(referenced_functions);
+				}
 			}
 		}
 		else if (symbol.op == symbol_type::invalid)
@@ -1117,16 +1141,24 @@ bool reshadefx::parser::parse_expression_unary(expression &exp)
 			// Simply return the pointer to the variable, dereferencing is done on site where necessary
 			exp.reset_to_lvalue(location, symbol.id, symbol.type);
 
-			if (_current_function != nullptr &&
+			if (_codegen->_current_function != nullptr &&
 				symbol.scope.level == symbol.scope.namespace_level &&
 				// Ignore invalid symbols that were added during error recovery
 				symbol.id != 0xFFFFFFFF)
 			{
 				// Keep track of any global sampler or storage objects referenced in the current function
 				if (symbol.type.is_sampler())
-					_current_function->referenced_samplers.insert(symbol.id);
+				{
+					const auto it = std::lower_bound(_codegen->_current_function->referenced_samplers.begin(), _codegen->_current_function->referenced_samplers.end(), symbol.id);
+					if (it == _codegen->_current_function->referenced_samplers.end() || *it != symbol.id)
+						_codegen->_current_function->referenced_samplers.insert(it, symbol.id);
+				}
 				if (symbol.type.is_storage())
-					_current_function->referenced_storages.insert(symbol.id);
+				{
+					const auto it = std::lower_bound(_codegen->_current_function->referenced_storages.begin(), _codegen->_current_function->referenced_storages.end(), symbol.id);
+					if (it == _codegen->_current_function->referenced_storages.end() || *it != symbol.id)
+						_codegen->_current_function->referenced_storages.insert(it, symbol.id);
+				}
 			}
 		}
 		else if (symbol.op == symbol_type::constant)
@@ -1317,11 +1349,11 @@ bool reshadefx::parser::parse_expression_unary(expression &exp)
 			}
 			else if (exp.type.is_struct())
 			{
-				const std::vector<struct_member_info> &member_list = _codegen->get_struct(exp.type.definition).member_list;
+				const std::vector<member_type> &member_list = _codegen->get_struct(exp.type.struct_definition).member_list;
 
 				// Find member with matching name is structure definition
 				uint32_t member_index = 0;
-				for (const struct_member_info &member : member_list)
+				for (const member_type &member : member_list)
 				{
 					if (member.name == subscript)
 						break;
@@ -1476,7 +1508,7 @@ bool reshadefx::parser::parse_expression_multary(expression &lhs_exp, unsigned i
 				is_bool_result = true;
 
 				// Cannot check equality between incompatible types
-				if (lhs_exp.type.is_array() || rhs_exp.type.is_array() || lhs_exp.type.definition != rhs_exp.type.definition)
+				if (lhs_exp.type.is_array() || rhs_exp.type.is_array() || lhs_exp.type.struct_definition != rhs_exp.type.struct_definition)
 				{
 					error(rhs_exp.location, 3020, "type mismatch");
 					return false;
@@ -1621,7 +1653,7 @@ bool reshadefx::parser::parse_expression_multary(expression &lhs_exp, unsigned i
 			}
 
 			// Check that the two value expressions can be converted between each other
-			if (true_exp.type.array_length != false_exp.type.array_length || true_exp.type.definition != false_exp.type.definition)
+			if (true_exp.type.array_length != false_exp.type.array_length || true_exp.type.struct_definition != false_exp.type.struct_definition)
 			{
 				error(false_exp.location, 3020, "type mismatch between conditional values");
 				return false;

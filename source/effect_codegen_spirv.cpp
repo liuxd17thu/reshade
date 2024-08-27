@@ -19,8 +19,6 @@ namespace spv {
 
 using namespace reshadefx;
 
-static_assert(sizeof(codegen::id) == sizeof(spv::Id), "unexpected SPIR-V id type size");
-
 inline uint32_t align_up(uint32_t size, uint32_t alignment)
 {
 	alignment -= 1;
@@ -79,7 +77,7 @@ struct spirv_instruction
 	/// Write this instruction to a SPIR-V module.
 	/// </summary>
 	/// <param name="output">The output stream to append this instruction to.</param>
-	void write(std::vector<uint32_t> &output) const
+	void write(std::basic_string<char> &output) const
 	{
 		// See https://www.khronos.org/registry/spir-v/specs/unified1/SPIRV.html
 		// 0             | Opcode: The 16 high-order bits are the WordCount of the instruction. The 16 low-order bits are the opcode enumerant.
@@ -90,19 +88,25 @@ struct spirv_instruction
 		// ...           | ...
 		// WordCount - 1 | Operand N (N is determined by WordCount minus the 1 to 3 words used for the opcode, instruction type <id>, and instruction Result <id>).
 
-		const uint32_t num_words = 1 + (type != 0) + (result != 0) + static_cast<uint32_t>(operands.size());
-		output.push_back((num_words << spv::WordCountShift) | op);
+		const uint32_t word_count = 1 + (type != 0) + (result != 0) + static_cast<uint32_t>(operands.size());
+		write_word(output, (word_count << spv::WordCountShift) | op);
 
 		// Optional instruction type ID
 		if (type != 0)
-			output.push_back(type);
+			write_word(output, type);
 
 		// Optional instruction result ID
 		if (result != 0)
-			output.push_back(result);
+			write_word(output, result);
 
 		// Write out the operands
-		output.insert(output.end(), operands.begin(), operands.end());
+		for (const uint32_t operand : operands)
+			write_word(output, operand);
+	}
+
+	static void write_word(std::basic_string<char> &output, uint32_t word)
+	{
+		output.insert(output.end(), reinterpret_cast<const char *>(&word), reinterpret_cast<const char *>(&word + 1));
 	}
 
 	operator uint32_t() const
@@ -131,6 +135,8 @@ struct spirv_basic_block
 
 class codegen_spirv final : public codegen
 {
+	static_assert(sizeof(id) == sizeof(spv::Id), "unexpected SPIR-V id type size");
+
 public:
 	codegen_spirv(bool vulkan_semantics, bool debug_info, bool uniforms_to_spec_constants, bool enable_16bit_types, bool flip_vert_y) :
 		_debug_info(debug_info),
@@ -175,6 +181,12 @@ private:
 		}
 	};
 
+	bool _debug_info = false;
+	bool _vulkan_semantics = false;
+	bool _uniforms_to_spec_constants = false;
+	bool _enable_16bit_types = false;
+	bool _flip_vert_y = false;
+
 	spirv_basic_block _entries;
 	spirv_basic_block _execution_modes;
 	spirv_basic_block _debug_a;
@@ -183,8 +195,16 @@ private:
 	spirv_basic_block _types_and_constants;
 	spirv_basic_block _variables;
 
-	std::unordered_set<spv::Id> _spec_constants;
-	std::unordered_set<spv::Capability> _capabilities;
+	std::vector<function_blocks> _functions_blocks;
+	std::unordered_map<id, spirv_basic_block> _block_data;
+	spirv_basic_block *_current_block_data = nullptr;
+
+	spv::Id _glsl_ext = 0;
+	spv::Id _global_ubo_type = 0;
+	spv::Id _global_ubo_variable = 0;
+	std::vector<spv::Id> _global_ubo_types;
+	function_blocks *_current_function_blocks = nullptr;
+
 	std::vector<std::pair<type_lookup, spv::Id>> _type_lookup;
 	std::vector<std::tuple<type, constant, spv::Id>> _constant_lookup;
 	std::vector<std::pair<function_blocks, spv::Id>> _function_type_lookup;
@@ -192,20 +212,8 @@ private:
 	std::unordered_map<spv::Id, std::pair<spv::StorageClass, spv::ImageFormat>> _storage_lookup;
 	std::unordered_map<std::string, uint32_t> _semantic_to_location;
 
-	std::vector<function_blocks> _functions_blocks;
-	std::unordered_map<id, spirv_basic_block> _block_data;
-	spirv_basic_block *_current_block_data = nullptr;
-
-	bool _debug_info = false;
-	bool _vulkan_semantics = false;
-	bool _uniforms_to_spec_constants = false;
-	bool _enable_16bit_types = false;
-	bool _flip_vert_y = false;
-	id _glsl_ext = 0;
-	id _global_ubo_type = 0;
-	id _global_ubo_variable = 0;
-	std::vector<spv::Id> _global_ubo_types;
-	function_blocks *_current_function = nullptr;
+	std::unordered_set<spv::Id> _spec_constants;
+	std::unordered_set<spv::Capability> _capabilities;
 
 	void add_location(const location &loc, spirv_basic_block &block)
 	{
@@ -214,12 +222,10 @@ private:
 
 		spv::Id file;
 
-		if (const auto it = _string_lookup.find(loc.source);
-			it != _string_lookup.end())
+		if (const auto it = _string_lookup.find(loc.source); it != _string_lookup.end())
 			file = it->second;
 		else {
-			add_instruction(spv::OpString, 0, _debug_a, file)
-				.add_string(loc.source.c_str());
+			file = add_instruction(spv::OpString, 0, _debug_a).add_string(loc.source.c_str());
 			_string_lookup.emplace(loc.source, file);
 		}
 
@@ -242,13 +248,6 @@ private:
 		instruction.result = make_id();
 		return instruction;
 	}
-	spirv_instruction &add_instruction(spv::Op op, spv::Id type, spirv_basic_block &block, spv::Id &result)
-	{
-		spirv_instruction &instruction = add_instruction_without_result(op, block);
-		instruction.type = type;
-		instruction.result = result = make_id();
-		return instruction;
-	}
 	spirv_instruction &add_instruction_without_result(spv::Op op)
 	{
 		assert(is_in_function() && is_in_block());
@@ -260,33 +259,14 @@ private:
 		return block.instructions.emplace_back(op);
 	}
 
-	void write_result(effect_module &module) override
+	void finalize_header_section(std::basic_string<char> &spirv) const
 	{
-		// First initialize the UBO type now that all member types are known
-		if (_global_ubo_type != 0)
-		{
-			spirv_instruction &type_inst = add_instruction_without_result(spv::OpTypeStruct, _types_and_constants);
-			type_inst.add(_global_ubo_types.begin(), _global_ubo_types.end());
-			type_inst.result = _global_ubo_type;
-
-			spirv_instruction &variable_inst = add_instruction_without_result(spv::OpVariable, _variables);
-			variable_inst.add(spv::StorageClassUniform);
-			variable_inst.type = convert_type({ type::t_struct, 0, 0, type::q_uniform, 0, _global_ubo_type }, true, spv::StorageClassUniform);
-			variable_inst.result = _global_ubo_variable;
-
-			add_name(variable_inst, "$Globals");
-		}
-
-		module = std::move(_module);
-
-		std::vector<spv::Id> spirv;
-
 		// Write SPIRV header info
-		spirv.push_back(spv::MagicNumber);
-		spirv.push_back(0x10300); // Force SPIR-V 1.3
-		spirv.push_back(0u); // Generator magic number, see https://www.khronos.org/registry/spir-v/api/spir-v.xml
-		spirv.push_back(_next_id); // Maximum ID
-		spirv.push_back(0u); // Reserved for instruction schema
+		spirv_instruction::write_word(spirv, spv::MagicNumber);
+		spirv_instruction::write_word(spirv, 0x10300); // Force SPIR-V 1.3
+		spirv_instruction::write_word(spirv, 0u); // Generator magic number, see https://www.khronos.org/registry/spir-v/api/spir-v.xml
+		spirv_instruction::write_word(spirv, _next_id); // Maximum ID
+		spirv_instruction::write_word(spirv, 0u); // Reserved for instruction schema
 
 		// All capabilities
 		spirv_instruction(spv::OpCapability)
@@ -308,15 +288,9 @@ private:
 			.add(spv::AddressingModelLogical)
 			.add(spv::MemoryModelGLSL450)
 			.write(spirv);
-
-		// All entry point declarations
-		for (const spirv_instruction &inst : _entries.instructions)
-			inst.write(spirv);
-
-		// All execution mode declarations
-		for (const spirv_instruction &inst : _execution_modes.instructions)
-			inst.write(spirv);
-
+	}
+	void finalize_debug_info_section(std::basic_string<char> &spirv) const
+	{
 		spirv_instruction(spv::OpSource)
 			.add(spv::SourceLanguageUnknown) // ReShade FX is not a reserved token at the moment
 			.add(0) // Language version, TODO: Maybe fill in ReShade version here?
@@ -330,37 +304,204 @@ private:
 			for (const spirv_instruction &inst : _debug_b.instructions)
 				inst.write(spirv);
 		}
+	}
+	void finalize_type_and_constants_section(std::basic_string<char> &spirv) const
+	{
+		// All type declarations
+		for (const spirv_instruction &inst : _types_and_constants.instructions)
+			inst.write(spirv);
+
+		// Initialize the UBO type now that all member types are known
+		if (_global_ubo_type == 0 || _global_ubo_variable == 0)
+			return;
+
+		const id global_ubo_type_ptr = _global_ubo_type + 1;
+
+		spirv_instruction(spv::OpTypeStruct, _global_ubo_type)
+			.add(_global_ubo_types.begin(), _global_ubo_types.end())
+			.write(spirv);
+		spirv_instruction(spv::OpTypePointer, global_ubo_type_ptr)
+			.add(spv::StorageClassUniform)
+			.add(_global_ubo_type)
+			.write(spirv);
+
+		spirv_instruction(spv::OpVariable, global_ubo_type_ptr, _global_ubo_variable)
+			.add(spv::StorageClassUniform)
+			.write(spirv);
+	}
+
+	std::basic_string<char> finalize_code() const override
+	{
+		std::basic_string<char> spirv;
+		finalize_header_section(spirv);
+
+		// All entry point declarations
+		for (const spirv_instruction &inst : _entries.instructions)
+			inst.write(spirv);
+
+		// All execution mode declarations
+		for (const spirv_instruction &inst : _execution_modes.instructions)
+			inst.write(spirv);
+
+		finalize_debug_info_section(spirv);
 
 		// All annotation instructions
 		for (const spirv_instruction &inst : _annotations.instructions)
 			inst.write(spirv);
 
-		// All type declarations
-		for (const spirv_instruction &inst : _types_and_constants.instructions)
-			inst.write(spirv);
+		finalize_type_and_constants_section(spirv);
+
 		for (const spirv_instruction &inst : _variables.instructions)
 			inst.write(spirv);
 
 		// All function definitions
-		for (const function_blocks &function : _functions_blocks)
+		for (const function_blocks &func : _functions_blocks)
 		{
-			if (function.definition.instructions.empty())
+			if (func.definition.instructions.empty())
 				continue;
 
-			for (const spirv_instruction &inst : function.declaration.instructions)
+			for (const spirv_instruction &inst : func.declaration.instructions)
 				inst.write(spirv);
 
 			// Grab first label and move it in front of variable declarations
-			function.definition.instructions.front().write(spirv);
-			assert(function.definition.instructions.front().op == spv::OpLabel);
+			func.definition.instructions.front().write(spirv);
+			assert(func.definition.instructions.front().op == spv::OpLabel);
 
-			for (const spirv_instruction &inst : function.variables.instructions)
+			for (const spirv_instruction &inst : func.variables.instructions)
 				inst.write(spirv);
-			for (auto inst_it = function.definition.instructions.begin() + 1; inst_it != function.definition.instructions.end(); ++inst_it)
+			for (auto inst_it = func.definition.instructions.begin() + 1; inst_it != func.definition.instructions.end(); ++inst_it)
 				inst_it->write(spirv);
 		}
 
-		module.code.assign(reinterpret_cast<const char *>(spirv.data()), reinterpret_cast<const char *>(spirv.data() + spirv.size()));
+		return spirv;
+	}
+	std::basic_string<char> finalize_code_for_entry_point(const std::string &entry_point_name) const override
+	{
+		const auto entry_point_it = std::find_if(_functions.begin(), _functions.end(),
+			[&entry_point_name](const std::unique_ptr<function> &func) {
+				return func->unique_name == entry_point_name;
+			});
+		if (entry_point_it == _functions.end())
+			return {};
+		const function &entry_point = *entry_point_it->get();
+
+		// Build list of IDs to remove
+		std::vector<spv::Id> variables_to_remove;
+#if 1
+		std::vector<spv::Id> functions_to_remove;
+#else
+		for (const sampler &info : _module.samplers)
+			if (std::find(entry_point.referenced_samplers.begin(), entry_point.referenced_samplers.end(), info.id) == entry_point.referenced_samplers.end())
+				variables_to_remove.push_back(info.id);
+		for (const storage &info : _module.storages)
+			if (std::find(entry_point.referenced_storages.begin(), entry_point.referenced_storages.end(), info.id) == entry_point.referenced_storages.end())
+				variables_to_remove.push_back(info.id);
+#endif
+
+		std::basic_string<char> spirv;
+		finalize_header_section(spirv);
+
+		// The entry point and execution mode declaration
+		for (const spirv_instruction &inst : _entries.instructions)
+		{
+			assert(inst.op == spv::OpEntryPoint);
+
+			// Only add the matching entry point
+			if (inst.operands[1] == entry_point.definition)
+			{
+				inst.write(spirv);
+			}
+			else
+			{
+#if 1
+				functions_to_remove.push_back(inst.operands[1]);
+#endif
+				// Add interface variables to list of variables to remove
+				for (uint32_t k = 2 + static_cast<uint32_t>((std::strlen(reinterpret_cast<const char *>(&inst.operands[2])) + 4) / 4); k < inst.operands.size(); ++k)
+					variables_to_remove.push_back(inst.operands[k]);
+			}
+		}
+
+		for (const spirv_instruction &inst : _execution_modes.instructions)
+		{
+			assert(inst.op == spv::OpExecutionMode);
+
+			// Only add execution mode for the matching entry point
+			if (inst.operands[0] == entry_point.definition)
+			{
+				inst.write(spirv);
+			}
+		}
+
+		finalize_debug_info_section(spirv);
+
+		// All annotation instructions
+		for (spirv_instruction inst : _annotations.instructions)
+		{
+			if (inst.op == spv::OpDecorate)
+			{
+				// Remove all decorations targeting any of the interface variables for non-matching entry points
+				if (std::find(variables_to_remove.begin(), variables_to_remove.end(), inst.operands[0]) != variables_to_remove.end())
+					continue;
+
+				// Replace bindings
+				if (inst.operands[1] == spv::DecorationBinding)
+				{
+					if (const auto referenced_sampler_it = std::find(entry_point.referenced_samplers.begin(), entry_point.referenced_samplers.end(), inst.operands[0]);
+						referenced_sampler_it != entry_point.referenced_samplers.end())
+						inst.operands[2] = static_cast<uint32_t>(std::distance(entry_point.referenced_samplers.begin(), referenced_sampler_it));
+					else
+					if (const auto referenced_storage_it = std::find(entry_point.referenced_storages.begin(), entry_point.referenced_storages.end(), inst.operands[0]);
+						referenced_storage_it != entry_point.referenced_storages.end())
+						inst.operands[2] = static_cast<uint32_t>(std::distance(entry_point.referenced_storages.begin(), referenced_storage_it));
+				}
+			}
+
+			inst.write(spirv);
+		}
+
+		finalize_type_and_constants_section(spirv);
+
+		for (const spirv_instruction &inst : _variables.instructions)
+		{
+			// Remove all declarations of the interface variables for non-matching entry points
+			if (inst.op == spv::OpVariable && std::find(variables_to_remove.begin(), variables_to_remove.end(), inst.result) != variables_to_remove.end())
+				continue;
+
+			inst.write(spirv);
+		}
+
+		// All referenced function definitions
+		for (const function_blocks &func : _functions_blocks)
+		{
+			if (func.definition.instructions.empty())
+				continue;
+
+			assert(func.declaration.instructions[_debug_info ? 1 : 0].op == spv::OpFunction);
+			const spv::Id definition = func.declaration.instructions[_debug_info ? 1 : 0].result;
+
+#if 1
+			if (std::find(functions_to_remove.begin(), functions_to_remove.end(), definition) != functions_to_remove.end())
+#else
+			if (definition != entry_point.definition &&
+				entry_point.referenced_functions.find(definition) == entry_point.referenced_functions.end())
+#endif
+				continue;
+
+			for (const spirv_instruction &inst : func.declaration.instructions)
+				inst.write(spirv);
+
+			// Grab first label and move it in front of variable declarations
+			func.definition.instructions.front().write(spirv);
+			assert(func.definition.instructions.front().op == spv::OpLabel);
+
+			for (const spirv_instruction &inst : func.variables.instructions)
+				inst.write(spirv);
+			for (auto inst_it = func.definition.instructions.begin() + 1; inst_it != func.definition.instructions.end(); ++inst_it)
+				inst_it->write(spirv);
+		}
+
+		return spirv;
 	}
 
 	spv::Id convert_type(type info, bool is_ptr = false, spv::StorageClass storage = spv::StorageClassFunction, spv::ImageFormat format = spv::ImageFormatUnknown, uint32_t array_stride = 0)
@@ -394,10 +535,10 @@ private:
 		if (is_ptr)
 		{
 			elem_type_id = convert_type(info, false, storage, format, array_stride);
-
-			add_instruction(spv::OpTypePointer, 0, _types_and_constants, type_id)
-				.add(storage)
-				.add(elem_type_id);
+			type_id =
+				add_instruction(spv::OpTypePointer, 0, _types_and_constants)
+					.add(storage)
+					.add(elem_type_id);
 		}
 		else if (info.is_array())
 		{
@@ -411,9 +552,10 @@ private:
 
 			const spv::Id array_length_id = emit_constant(info.array_length);
 
-			add_instruction(spv::OpTypeArray, 0, _types_and_constants, type_id)
-				.add(elem_type_id)
-				.add(array_length_id);
+			type_id =
+				add_instruction(spv::OpTypeArray, 0, _types_and_constants)
+					.add(elem_type_id)
+					.add(array_length_id);
 
 			if (array_stride != 0)
 				add_decoration(type_id, spv::DecorationArrayStride, { array_stride });
@@ -431,9 +573,10 @@ private:
 			if (info.rows == 1)
 				return elem_type_id;
 
-			add_instruction(spv::OpTypeMatrix, 0, _types_and_constants, type_id)
-				.add(elem_type_id)
-				.add(info.rows);
+			type_id =
+				add_instruction(spv::OpTypeMatrix, 0, _types_and_constants)
+					.add(elem_type_id)
+					.add(info.rows);
 		}
 		else if (info.is_vector())
 		{
@@ -442,10 +585,10 @@ private:
 			elem_info.cols = 1;
 
 			elem_type_id = convert_type(elem_info, false, storage, format);
-
-			add_instruction(spv::OpTypeVector, 0, _types_and_constants, type_id)
-				.add(elem_type_id)
-				.add(info.rows);
+			type_id =
+				add_instruction(spv::OpTypeVector, 0, _types_and_constants)
+					.add(elem_type_id)
+					.add(info.rows);
 		}
 		else
 		{
@@ -453,58 +596,64 @@ private:
 			{
 			case type::t_void:
 				assert(info.rows == 0 && info.cols == 0);
-				add_instruction(spv::OpTypeVoid, 0, _types_and_constants, type_id);
+				type_id = add_instruction(spv::OpTypeVoid, 0, _types_and_constants);
 				break;
 			case type::t_bool:
 				assert(info.rows == 1 && info.cols == 1);
-				add_instruction(spv::OpTypeBool, 0, _types_and_constants, type_id);
+				type_id = add_instruction(spv::OpTypeBool, 0, _types_and_constants);
 				break;
 			case type::t_min16int:
 				assert(_enable_16bit_types && info.rows == 1 && info.cols == 1);
 				add_capability(spv::CapabilityInt16);
 				if (storage == spv::StorageClassInput || storage == spv::StorageClassOutput)
 					add_capability(spv::CapabilityStorageInputOutput16);
-				add_instruction(spv::OpTypeInt, 0, _types_and_constants, type_id)
-					.add(16) // Width
-					.add(1); // Signedness
+				type_id =
+					add_instruction(spv::OpTypeInt, 0, _types_and_constants)
+						.add(16) // Width
+						.add(1); // Signedness
 				break;
 			case type::t_int:
 				assert(info.rows == 1 && info.cols == 1);
-				add_instruction(spv::OpTypeInt, 0, _types_and_constants, type_id)
-					.add(32) // Width
-					.add(1); // Signedness
+				type_id =
+					add_instruction(spv::OpTypeInt, 0, _types_and_constants)
+						.add(32) // Width
+						.add(1); // Signedness
 				break;
 			case type::t_min16uint:
 				assert(_enable_16bit_types && info.rows == 1 && info.cols == 1);
 				add_capability(spv::CapabilityInt16);
 				if (storage == spv::StorageClassInput || storage == spv::StorageClassOutput)
 					add_capability(spv::CapabilityStorageInputOutput16);
-				add_instruction(spv::OpTypeInt, 0, _types_and_constants, type_id)
-					.add(16) // Width
-					.add(0); // Signedness
+				type_id =
+					add_instruction(spv::OpTypeInt, 0, _types_and_constants)
+						.add(16) // Width
+						.add(0); // Signedness
 				break;
 			case type::t_uint:
 				assert(info.rows == 1 && info.cols == 1);
-				add_instruction(spv::OpTypeInt, 0, _types_and_constants, type_id)
-					.add(32) // Width
-					.add(0); // Signedness
+				type_id =
+					add_instruction(spv::OpTypeInt, 0, _types_and_constants)
+						.add(32) // Width
+						.add(0); // Signedness
 				break;
 			case type::t_min16float:
 				assert(_enable_16bit_types && info.rows == 1 && info.cols == 1);
 				add_capability(spv::CapabilityFloat16);
 				if (storage == spv::StorageClassInput || storage == spv::StorageClassOutput)
 					add_capability(spv::CapabilityStorageInputOutput16);
-				add_instruction(spv::OpTypeFloat, 0, _types_and_constants, type_id)
-					.add(16); // Width
+				type_id =
+					add_instruction(spv::OpTypeFloat, 0, _types_and_constants)
+						.add(16); // Width
 				break;
 			case type::t_float:
 				assert(info.rows == 1 && info.cols == 1);
-				add_instruction(spv::OpTypeFloat, 0, _types_and_constants, type_id)
-					.add(32); // Width
+				type_id =
+					add_instruction(spv::OpTypeFloat, 0, _types_and_constants)
+						.add(32); // Width
 				break;
 			case type::t_struct:
-				assert(info.rows == 0 && info.cols == 0 && info.definition != 0);
-				type_id = info.definition;
+				assert(info.rows == 0 && info.cols == 0 && info.struct_definition != 0);
+				type_id = info.struct_definition;
 				break;
 			case type::t_sampler1d_int:
 			case type::t_sampler1d_uint:
@@ -518,8 +667,9 @@ private:
 			case type::t_sampler3d_uint:
 			case type::t_sampler3d_float:
 				elem_type_id = convert_image_type(info, format);
-				add_instruction(spv::OpTypeSampledImage, 0, _types_and_constants, type_id)
-					.add(elem_type_id);
+				type_id =
+					add_instruction(spv::OpTypeSampledImage, 0, _types_and_constants)
+						.add(elem_type_id);
 				break;
 			case type::t_storage1d_int:
 			case type::t_storage1d_uint:
@@ -590,7 +740,7 @@ private:
 		{
 			lookup.type = elem_info;
 			lookup.type.base = static_cast<type::datatype>(type::t_texture1d + info.texture_dimension() - 1);
-			lookup.type.definition = static_cast<uint32_t>(elem_info.base);
+			lookup.type.struct_definition = static_cast<uint32_t>(elem_info.base);
 		}
 
 		if (const auto lookup_it = std::find_if(_type_lookup.begin(), _type_lookup.end(),
@@ -599,15 +749,15 @@ private:
 			return lookup_it->second;
 
 		spv::Id type_id, elem_type_id = convert_type(elem_info, false, spv::StorageClassUniformConstant);
-
-		add_instruction(spv::OpTypeImage, 0, _types_and_constants, type_id)
-			.add(elem_type_id) // Sampled Type (always a scalar type)
-			.add(spv::Dim1D + info.texture_dimension() - 1)
-			.add(0) // Not a depth image
-			.add(0) // Not an array
-			.add(0) // Not multi-sampled
-			.add(info.is_storage() ? 2 : 1) // Used with a sampler or as storage
-			.add(format);
+		type_id =
+			add_instruction(spv::OpTypeImage, 0, _types_and_constants)
+				.add(elem_type_id) // Sampled Type (always a scalar type)
+				.add(spv::Dim1D + info.texture_dimension() - 1)
+				.add(0) // Not a depth image
+				.add(0) // Not an array
+				.add(0) // Not multi-sampled
+				.add(info.is_storage() ? 2 : 1) // Used with a sampler or as storage
+				.add(format);
 
 		_type_lookup.push_back({ lookup, type_id });
 
@@ -652,7 +802,7 @@ private:
 		return location + semantic_digit;
 	}
 
-	const spv::BuiltIn semantic_to_builtin(const std::string &semantic, shader_type stype) const
+	spv::BuiltIn semantic_to_builtin(const std::string &semantic, shader_type stype) const
 	{
 		if (semantic == "SV_POSITION")
 			return stype == shader_type::pixel ? spv::BuiltInFragCoord : spv::BuiltInPosition;
@@ -674,7 +824,7 @@ private:
 			return spv::BuiltInGlobalInvocationId;
 		return spv::BuiltInMax;
 	}
-	const spv::ImageFormat format_to_image_format(texture_format format)
+	spv::ImageFormat format_to_image_format(texture_format format)
 	{
 		switch (format)
 		{
@@ -785,26 +935,27 @@ private:
 		_capabilities.insert(capability);
 	}
 
-	id   define_struct(const location &loc, struct_info &info) override
+	id   define_struct(const location &loc, struct_type &info) override
 	{
 		// First define all member types to make sure they are declared before the struct type references them
 		std::vector<spv::Id> member_types;
 		member_types.reserve(info.member_list.size());
-		for (const struct_member_info &member : info.member_list)
+		for (const member_type &member : info.member_list)
 			member_types.push_back(convert_type(member.type));
 
 		// Afterwards define the actual struct type
 		add_location(loc, _types_and_constants);
 
-		add_instruction(spv::OpTypeStruct, 0, _types_and_constants, info.definition)
-			.add(member_types.begin(), member_types.end());
+		info.definition =
+			add_instruction(spv::OpTypeStruct, 0, _types_and_constants)
+				.add(member_types.begin(), member_types.end());
 
 		if (!info.unique_name.empty())
 			add_name(info.definition, info.unique_name.c_str());
 
 		for (uint32_t index = 0; index < info.member_list.size(); ++index)
 		{
-			const struct_member_info &member = info.member_list[index];
+			const member_type &member = info.member_list[index];
 
 			add_member_name(info.definition, index, member.name.c_str());
 
@@ -816,41 +967,43 @@ private:
 
 		return info.definition;
 	}
-	id   define_texture(const location &, texture_info &info) override
+	id   define_texture(const location &, texture &info) override
 	{
 		info.id = make_id(); // Need to create an unique ID here too, so that the symbol lookup for textures works
-		info.binding = ~0u;
 
 		_module.textures.push_back(info);
 
 		return info.id;
 	}
-	id   define_sampler(const location &loc, const texture_info &, sampler_info &info) override
+	id   define_sampler(const location &loc, const texture &, sampler &info) override
 	{
 		info.id = define_variable(loc, info.type, info.unique_name.c_str(), spv::StorageClassUniformConstant);
-		info.binding = _module.num_sampler_bindings++;
-		info.texture_binding = ~0u;
 
-		add_decoration(info.id, spv::DecorationBinding, { info.binding });
+		// Default to a binding index equivalent to the entry in the sampler list (this is later overwritten in 'finalize_code_for_entry_point' to a more optimal placement)
+		const uint32_t default_binding = static_cast<uint32_t>(_module.samplers.size());
+
+		add_decoration(info.id, spv::DecorationBinding, { default_binding });
 		add_decoration(info.id, spv::DecorationDescriptorSet, { 1 });
 
 		_module.samplers.push_back(info);
 
 		return info.id;
 	}
-	id   define_storage(const location &loc, const texture_info &tex_info, storage_info &info) override
+	id   define_storage(const location &loc, const texture &tex_info, storage &info) override
 	{
 		info.id = define_variable(loc, info.type, info.unique_name.c_str(), spv::StorageClassUniformConstant, format_to_image_format(tex_info.format));
-		info.binding = _module.num_storage_bindings++;
 
-		add_decoration(info.id, spv::DecorationBinding, { info.binding });
+		// Default to a binding index equivalent to the entry in the storage list (this is later overwritten in 'finalize_code_for_entry_point' to a more optimal placement)
+		const uint32_t default_binding = static_cast<uint32_t>(_module.storages.size());
+
+		add_decoration(info.id, spv::DecorationBinding, { default_binding });
 		add_decoration(info.id, spv::DecorationDescriptorSet, { 2 });
 
 		_module.storages.push_back(info);
 
 		return info.id;
 	}
-	id   define_uniform(const location &, uniform_info &info) override
+	id   define_uniform(const location &, uniform &info) override
 	{
 		if (_uniforms_to_spec_constants && info.has_initializer_value)
 		{
@@ -858,13 +1011,13 @@ private:
 
 			add_name(res, info.name.c_str());
 
-			const auto add_spec_constant = [this](const spirv_instruction &inst, const uniform_info &info, const constant &initializer_value, size_t initializer_offset) {
+			const auto add_spec_constant = [this](const spirv_instruction &inst, const uniform &info, const constant &initializer_value, size_t initializer_offset) {
 				assert(inst.op == spv::OpSpecConstant || inst.op == spv::OpSpecConstantTrue || inst.op == spv::OpSpecConstantFalse);
 
 				const uint32_t spec_id = static_cast<uint32_t>(_module.spec_constants.size());
 				add_decoration(inst, spv::DecorationSpecId, { spec_id });
 
-				uniform_info scalar_info = info;
+				uniform scalar_info = info;
 				scalar_info.type.rows = 1;
 				scalar_info.type.cols = 1;
 				scalar_info.size = 4;
@@ -932,6 +1085,7 @@ private:
 			if (_global_ubo_type == 0)
 			{
 				_global_ubo_type = make_id();
+				make_id(); // Pointer to '_global_ubo_type'
 
 				add_decoration(_global_ubo_type, spv::DecorationBlock);
 			}
@@ -1006,21 +1160,21 @@ private:
 	}
 	id   define_variable(const location &loc, const type &type, const char *name, spv::StorageClass storage, spv::ImageFormat format = spv::ImageFormatUnknown, id initializer_value = 0)
 	{
-		assert(storage != spv::StorageClassFunction || _current_function != nullptr);
+		assert(storage != spv::StorageClassFunction || _current_function_blocks != nullptr);
 
 		spirv_basic_block &block = (storage != spv::StorageClassFunction) ?
-			_variables : _current_function->variables;
+			_variables : _current_function_blocks->variables;
 
 		add_location(loc, block);
 
-		id res;
 		// https://www.khronos.org/registry/spir-v/specs/unified1/SPIRV.html#OpVariable
-		spirv_instruction &inst = add_instruction(spv::OpVariable, convert_type(type, true, storage, format), block, res)
+		spirv_instruction &inst = add_instruction(spv::OpVariable, convert_type(type, true, storage, format), block)
 			.add(storage);
+		const id res = inst.result;
 
 		if (initializer_value != 0)
 		{
-			if (storage != spv::StorageClassFunction || _current_function->is_entry_point)
+			if (storage != spv::StorageClassFunction || _current_function_blocks->is_entry_point)
 			{
 				// The initializer for variables must be a constant
 				inst.add(initializer_value);
@@ -1044,47 +1198,52 @@ private:
 
 		return res;
 	}
-	id   define_function(const location &loc, function_info &info) override
+	id   define_function(const location &loc, function &info) override
 	{
 		assert(!is_in_function());
 
-		function_blocks &function = _functions_blocks.emplace_back();
-		function.return_type = info.return_type;
+		function_blocks &func = _functions_blocks.emplace_back();
+		func.return_type = info.return_type;
 
-		_current_function = &function;
+		_current_function_blocks = &func;
 
-		for (struct_member_info &param : info.parameter_list)
-			function.param_types.push_back(param.type);
+		for (member_type &param : info.parameter_list)
+			func.param_types.push_back(param.type);
 
-		add_location(loc, function.declaration);
+		add_location(loc, func.declaration);
 
 		// https://www.khronos.org/registry/spir-v/specs/unified1/SPIRV.html#OpFunction
-		add_instruction(spv::OpFunction, convert_type(info.return_type), function.declaration, info.definition)
-			.add(spv::FunctionControlMaskNone)
-			.add(convert_type(function));
+		info.definition =
+			add_instruction(spv::OpFunction, convert_type(info.return_type), func.declaration)
+				.add(spv::FunctionControlMaskNone)
+				.add(convert_type(func));
 
 		if (!info.name.empty())
 			add_name(info.definition, info.name.c_str());
 
-		for (struct_member_info &param : info.parameter_list)
+		for (member_type &param : info.parameter_list)
 		{
-			add_location(param.location, function.declaration);
+			add_location(param.location, func.declaration);
 
-			param.definition = add_instruction(spv::OpFunctionParameter, convert_type(param.type, true), function.declaration);
+			param.definition = add_instruction(spv::OpFunctionParameter, convert_type(param.type, true), func.declaration);
 
 			add_name(param.definition, param.name.c_str());
 		}
 
-		_functions.push_back(std::make_unique<function_info>(info));
+		_functions.push_back(std::make_unique<function>(info));
+		_current_function = _functions.back().get();
 
 		return info.definition;
 	}
 
-	void define_entry_point(function_info &func) override
+	void define_entry_point(function &func) override
 	{
+		assert(!func.unique_name.empty() && func.unique_name[0] == 'F');
+		func.unique_name[0] = 'E';
+
 		// Modify entry point name so each thread configuration is made separate
 		if (func.type == shader_type::compute)
-			func.unique_name = 'E' + func.unique_name +
+			func.unique_name +=
 				'_' + std::to_string(func.num_threads[0]) +
 				'_' + std::to_string(func.num_threads[1]) +
 				'_' + std::to_string(func.num_threads[2]);
@@ -1103,15 +1262,20 @@ private:
 		std::vector<expression> call_params;
 
 		// Generate the glue entry point function
-		function_info entry_point;
+		function entry_point = func;
+		entry_point.referenced_functions.push_back(func.definition);
+
+		// Change function signature to 'void main()'
 		entry_point.return_type = { type::t_void };
+		entry_point.return_semantic.clear();
+		entry_point.parameter_list.clear();
 
 		define_function({}, entry_point);
 		enter_block(create_block());
 
-		_current_function->is_entry_point = true;
+		_current_function_blocks->is_entry_point = true;
 
-		const auto create_varying_param = [this, &call_params](const struct_member_info &param) {
+		const auto create_varying_param = [this, &call_params](const member_type &param) {
 			// Initialize all output variables with zero
 			const spv::Id variable = define_variable({}, param.type, nullptr, spv::StorageClassFunction, spv::ImageFormatUnknown, emit_constant(param.type, 0u));
 
@@ -1156,7 +1320,7 @@ private:
 		};
 
 		// Translate function parameters to input/output variables
-		for (const struct_member_info &param : func.parameter_list)
+		for (const member_type &param : func.parameter_list)
 		{
 			spv::Id param_var = create_varying_param(param);
 
@@ -1168,7 +1332,7 @@ private:
 				// Flatten structure parameters
 				if (param.type.is_struct())
 				{
-					const struct_info &definition = get_struct(param.type.definition);
+					const struct_type &definition = get_struct(param.type.struct_definition);
 
 					type struct_type = param.type;
 					const unsigned int array_length = std::max(1u, param.type.array_length);
@@ -1181,7 +1345,7 @@ private:
 					{
 						std::vector<spv::Id> struct_element_ids;
 						struct_element_ids.reserve(definition.member_list.size());
-						for (const struct_member_info &member : definition.member_list)
+						for (const member_type &member : definition.member_list)
 						{
 							spv::Id input_var = create_varying_variable(member.type, member.semantic, spv::StorageClassInput, a);
 
@@ -1219,11 +1383,11 @@ private:
 			{
 				if (param.type.is_struct())
 				{
-					const struct_info &definition = get_struct(param.type.definition);
+					const struct_type &definition = get_struct(param.type.struct_definition);
 
 					for (unsigned int a = 0, array_length = std::max(1u, param.type.array_length); a < array_length; a++)
 					{
-						for (const struct_member_info &member : definition.member_list)
+						for (const member_type &member : definition.member_list)
 						{
 							create_varying_variable(member.type, member.semantic, spv::StorageClassOutput, a);
 						}
@@ -1240,7 +1404,7 @@ private:
 
 		for (size_t i = 0, inputs_and_outputs_index = 0; i < func.parameter_list.size(); ++i)
 		{
-			const struct_member_info &param = func.parameter_list[i];
+			const member_type &param = func.parameter_list[i];
 
 			if (param.type.has(type::q_out))
 			{
@@ -1249,7 +1413,7 @@ private:
 
 				if (param.type.is_struct())
 				{
-					const struct_info &definition = get_struct(param.type.definition);
+					const struct_type &definition = get_struct(param.type.struct_definition);
 
 					type struct_type = param.type;
 					const unsigned int array_length = std::max(1u, param.type.array_length);
@@ -1273,7 +1437,7 @@ private:
 						// Split out struct fields into separate output variables again
 						for (uint32_t member_index = 0; member_index < definition.member_list.size(); ++member_index)
 						{
-							const struct_member_info &member = definition.member_list[member_index];
+							const member_type &member = definition.member_list[member_index];
 
 							const spv::Id member_value = add_instruction(spv::OpCompositeExtract, convert_type(member.type))
 								.add(element_value)
@@ -1301,7 +1465,7 @@ private:
 				// Input parameters do not need to store anything, but increase the input/output variable index
 				if (param.type.is_struct())
 				{
-					const struct_info &definition = get_struct(param.type.definition);
+					const struct_type &definition = get_struct(param.type.struct_definition);
 					inputs_and_outputs_index += definition.member_list.size() * std::max(1u, param.type.array_length);
 				}
 				else
@@ -1313,11 +1477,11 @@ private:
 
 		if (func.return_type.is_struct())
 		{
-			const struct_info &definition = get_struct(func.return_type.definition);
+			const struct_type &definition = get_struct(func.return_type.struct_definition);
 
 			for (uint32_t member_index = 0; member_index < definition.member_list.size(); ++member_index)
 			{
-				const struct_member_info &member = definition.member_list[member_index];
+				const member_type &member = definition.member_list[member_index];
 
 				const spv::Id result_var = create_varying_variable(member.type, member.semantic, spv::StorageClassOutput);
 
@@ -1393,7 +1557,6 @@ private:
 			return;
 		}
 
-		assert(!func.unique_name.empty());
 		add_instruction_without_result(spv::OpEntryPoint, _entries)
 			.add(model)
 			.add(entry_point.definition)
@@ -2278,7 +2441,7 @@ private:
 		_current_block_data->instructions.push_back(merge_label);
 	}
 
-	bool is_in_function() const override { return _current_function != nullptr; }
+	bool is_in_function() const { return _current_function_blocks != nullptr; }
 
 	id   set_block(id id) override
 	{
@@ -2316,14 +2479,14 @@ private:
 		if (!is_in_block()) // Might already have left the last block in which case this has to be ignored
 			return 0;
 
-		if (_current_function->return_type.is_void())
+		if (_current_function_blocks->return_type.is_void())
 		{
 			add_instruction_without_result(spv::OpReturn);
 		}
 		else
 		{
 			if (0 == value) // The implicit return statement needs this
-				value = add_instruction(spv::OpUndef, convert_type(_current_function->return_type), _types_and_constants);
+				value = add_instruction(spv::OpUndef, convert_type(_current_function_blocks->return_type), _types_and_constants);
 
 			add_instruction_without_result(spv::OpReturnValue)
 				.add(value);
@@ -2377,12 +2540,13 @@ private:
 	{
 		assert(is_in_function()); // Can only leave if there was a function to begin with
 
-		_current_function->definition = _block_data[_last_block];
+		_current_function_blocks->definition = _block_data[_last_block];
 
 		// Append function end instruction
-		add_instruction_without_result(spv::OpFunctionEnd, _current_function->definition);
+		add_instruction_without_result(spv::OpFunctionEnd, _current_function_blocks->definition);
 
 		_current_function = nullptr;
+		_current_function_blocks = nullptr;
 	}
 };
 

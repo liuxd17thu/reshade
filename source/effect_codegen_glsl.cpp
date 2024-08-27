@@ -9,7 +9,7 @@
 #include <cassert>
 #include <cstring> // std::memcmp
 #include <charconv> // std::from_chars, std::to_chars
-#include <algorithm> // std::find_if, std::max
+#include <algorithm> // std::find, std::find_if, std::max
 #include <unordered_set>
 
 using namespace reshadefx;
@@ -54,19 +54,20 @@ private:
 		expression,
 	};
 
-	std::string _ubo_block;
-	std::string _compute_block;
-	std::unordered_map<id, std::string> _names;
-	std::unordered_map<id, std::string> _blocks;
 	bool _debug_info = false;
 	bool _vulkan_semantics = false;
 	bool _uniforms_to_spec_constants = false;
 	bool _enable_16bit_types = false;
 	bool _flip_vert_y = false;
-	bool _enable_control_flow_attributes = false;
+
+	std::unordered_map<id, std::string> _names;
+	std::unordered_map<id, std::string> _blocks;
+	std::string _ubo_block;
+	std::string _compute_block;
+	std::string _current_function_declaration;
+
 	std::unordered_map<id, id> _remapped_sampler_variables;
 	std::unordered_map<std::string, uint32_t> _semantic_to_location;
-	std::string _current_function_declaration;
 	std::vector<std::tuple<type, constant, id>> _constant_lookup;
 
 	// Only write compatibility intrinsics to result if they are actually in use
@@ -74,17 +75,16 @@ private:
 	bool _uses_componentwise_or = false;
 	bool _uses_componentwise_and = false;
 	bool _uses_componentwise_cond = false;
+	bool _uses_control_flow_attributes = false;
 
-	void write_result(effect_module &module) override
+	std::string finalize_preamble() const
 	{
-		module = std::move(_module);
-
-		std::string preamble;
+		std::string preamble = "#version 430\n";
 
 		if (_enable_16bit_types)
 			// GL_NV_gpu_shader5, GL_AMD_gpu_shader_half_float or GL_EXT_shader_16bit_storage
 			preamble += "#extension GL_NV_gpu_shader5 : require\n";
-		if (_enable_control_flow_attributes)
+		if (_uses_control_flow_attributes)
 			preamble += "#extension GL_EXT_control_flow_attributes : enable\n";
 
 		if (_uses_fmod)
@@ -125,10 +125,120 @@ private:
 			// TODO: This technically only works with square matrices
 			preamble += "layout(std140, column_major, binding = 0) uniform _Globals {\n" + _ubo_block + "};\n";
 
-		module.code.assign(preamble.begin(), preamble.end());
+		return preamble;
+	}
 
-		const std::string &main_block = _blocks.at(0);
-		module.code.insert(module.code.end(), main_block.begin(), main_block.end());
+	std::string finalize_code() const override
+	{
+		std::string code = finalize_preamble();
+
+		// Add sampler definitions
+		for (const sampler &info : _module.samplers)
+			code += _blocks.at(info.id);
+
+		// Add storage definitions
+		for (const storage &info : _module.storages)
+			code += _blocks.at(info.id);
+
+		// Add global definitions (struct types, global variables, ...)
+		code += _blocks.at(0);
+
+		// Add function definitions
+		for (const std::unique_ptr<function> &func : _functions)
+		{
+			const bool is_entry_point = func->unique_name[0] == 'E';
+			if (is_entry_point)
+				code += "#ifdef " + func->unique_name + '\n';
+
+			code += _blocks.at(func->definition);
+
+			if (is_entry_point)
+				code += "#endif\n";
+		}
+
+		return code;
+	}
+	std::string finalize_code_for_entry_point(const std::string &entry_point_name) const override
+	{
+		const auto entry_point_it = std::find_if(_functions.begin(), _functions.end(),
+			[&entry_point_name](const std::unique_ptr<function> &func) {
+				return func->unique_name == entry_point_name;
+			});
+		if (entry_point_it == _functions.end())
+			return {};
+		const function &entry_point = *entry_point_it->get();
+
+		std::string code = finalize_preamble();
+
+		if (entry_point.type != shader_type::pixel)
+			code +=
+				// OpenGL does not allow using 'discard' in the vertex shader profile
+				"#define discard\n"
+				// 'dFdx', 'dFdx' and 'fwidth' too are only available in fragment shaders
+				"#define dFdx(x) x\n"
+				"#define dFdy(y) y\n"
+				"#define fwidth(p) p\n";
+
+		if (entry_point.type != shader_type::compute)
+			code +=
+				// OpenGL does not allow using 'shared' in vertex/fragment shader profile
+				"#define shared\n"
+				"#define atomicAdd(a, b) a\n"
+				"#define atomicAnd(a, b) a\n"
+				"#define atomicOr(a, b) a\n"
+				"#define atomicXor(a, b) a\n"
+				"#define atomicMin(a, b) a\n"
+				"#define atomicMax(a, b) a\n"
+				"#define atomicExchange(a, b) a\n"
+				"#define atomicCompSwap(a, b, c) a\n"
+				// Barrier intrinsics are only available in compute shaders
+				"#define barrier()\n"
+				"#define memoryBarrier()\n"
+				"#define groupMemoryBarrier()\n";
+
+		const auto replace_binding =
+			[](std::string &code, uint32_t binding) {
+				const size_t beg = code.find("layout(binding = ") + 17;
+				const size_t end = code.find_first_of("),", beg);
+				code.replace(beg, end - beg, std::to_string(binding));
+			};
+
+		// Add referenced sampler definitions
+		for (uint32_t binding = 0; binding < entry_point.referenced_samplers.size(); ++binding)
+		{
+			if (entry_point.referenced_samplers[binding] == 0)
+				continue;
+
+			std::string block_code = _blocks.at(entry_point.referenced_samplers[binding]);
+			replace_binding(block_code, binding);
+			code += block_code;
+		}
+
+		// Add referenced storage definitions
+		for (uint32_t binding = 0; binding < entry_point.referenced_storages.size(); ++binding)
+		{
+			if (entry_point.referenced_storages[binding] == 0)
+				continue;
+
+			std::string block_code = _blocks.at(entry_point.referenced_storages[binding]);
+			replace_binding(block_code, binding);
+			code += block_code;
+		}
+
+		// Add global definitions (struct types, global variables, ...)
+		code += _blocks.at(0);
+
+		// Add referenced function definitions
+		for (const std::unique_ptr<function> &func : _functions)
+		{
+			if (func.get() != &entry_point &&
+				std::find(entry_point.referenced_functions.begin(), entry_point.referenced_functions.end(), func->definition) == entry_point.referenced_functions.end())
+				continue;
+
+			code += _blocks.at(func->definition);
+		}
+
+		return code;
 	}
 
 	template <bool is_param = false, bool is_decl = true, bool is_interface = false>
@@ -242,7 +352,7 @@ private:
 				s += "float";
 			break;
 		case type::t_struct:
-			s += id_to_name(type.definition);
+			s += id_to_name(type.struct_definition);
 			break;
 		case type::t_sampler1d_int:
 			s += "isampler1D";
@@ -335,10 +445,11 @@ private:
 			for (unsigned int a = 0; a < data_type.array_length; ++a)
 			{
 				write_constant(s, elem_type, a < static_cast<unsigned int>(data.array_data.size()) ? data.array_data[a] : constant {});
-
-				if (a < data_type.array_length - 1)
-					s += ", ";
+				s += ", ";
 			}
+
+			// Remove trailing ", "
+			s.erase(s.size() - 2);
 
 			s += ')';
 			return;
@@ -350,7 +461,7 @@ private:
 		if (!data_type.is_scalar())
 			write_type<false, false>(s, data_type), s += '(';
 
-		for (unsigned int i = 0, components = data_type.components(); i < components; ++i)
+		for (unsigned int i = 0; i < data_type.components(); ++i)
 		{
 			switch (data_type.base)
 			{
@@ -386,9 +497,11 @@ private:
 				assert(false);
 			}
 
-			if (i < components - 1)
-				s += ", ";
+			s += ", ";
 		}
+
+		// Remove trailing ", "
+		s.erase(s.size() - 2);
 
 		if (!data_type.is_scalar())
 			s += ')';
@@ -596,7 +709,7 @@ private:
 		block.insert(block.begin(), '\t');
 	}
 
-	id   define_struct(const location &loc, struct_info &info) override
+	id   define_struct(const location &loc, struct_type &info) override
 	{
 		info.definition = make_id();
 		define_name<naming::unique>(info.definition, info.unique_name);
@@ -609,7 +722,7 @@ private:
 
 		code += "struct " + id_to_name(info.definition) + "\n{\n";
 
-		for (const struct_member_info &member : info.member_list)
+		for (const member_type &member : info.member_list)
 		{
 			code += '\t';
 			write_type(code, member.type); // GLSL does not allow interpolation attributes on struct members
@@ -627,28 +740,28 @@ private:
 
 		return info.definition;
 	}
-	id   define_texture(const location &, texture_info &info) override
+	id   define_texture(const location &, texture &info) override
 	{
 		info.id = make_id();
-		info.binding = ~0u;
 
 		_module.textures.push_back(info);
 
 		return info.id;
 	}
-	id   define_sampler(const location &loc, const texture_info &, sampler_info &info) override
+	id   define_sampler(const location &loc, const texture &, sampler &info) override
 	{
-		info.id = make_id();
-		info.binding = _module.num_sampler_bindings++;
-		info.texture_binding = ~0u; // Unset texture bindings
+		info.id = create_block();
 
 		define_name<naming::unique>(info.id, info.unique_name);
 
-		std::string &code = _blocks.at(_current_block);
+		std::string &code = _blocks.at(info.id);
 
 		write_location(code, loc);
 
-		code += "layout(binding = " + std::to_string(info.binding);
+		// Default to a binding index equivalent to the entry in the sampler list (this is later overwritten in 'finalize_code_for_entry_point' to a more optimal placement)
+		const uint32_t default_binding = static_cast<uint32_t>(_module.samplers.size());
+
+		code += "layout(binding = " + std::to_string(default_binding);
 		code += ") uniform ";
 		write_type(code, info.type);
 		code += ' ' + id_to_name(info.id) + ";\n";
@@ -657,18 +770,20 @@ private:
 
 		return info.id;
 	}
-	id   define_storage(const location &loc, const texture_info &tex_info, storage_info &info) override
+	id   define_storage(const location &loc, const texture &tex_info, storage &info) override
 	{
-		info.id = make_id();
-		info.binding = _module.num_storage_bindings++;
+		info.id = create_block();
 
 		define_name<naming::unique>(info.id, info.unique_name);
 
-		std::string &code = _blocks.at(_current_block);
+		std::string &code = _blocks.at(info.id);
 
 		write_location(code, loc);
 
-		code += "layout(binding = " + std::to_string(info.binding) + ", ";
+		// Default to a binding index equivalent to the entry in the storage list (this is later overwritten in 'finalize_code_for_entry_point' to a more optimal placement)
+		const uint32_t default_binding = static_cast<uint32_t>(_module.storages.size());
+
+		code += "layout(binding = " + std::to_string(default_binding) + ", ";
 		write_texture_format(code, tex_info.format);
 		code += ") uniform ";
 		write_type(code, info.type);
@@ -678,7 +793,7 @@ private:
 
 		return info.id;
 	}
-	id   define_uniform(const location &loc, uniform_info &info) override
+	id   define_uniform(const location &loc, uniform &info) override
 	{
 		const id res = make_id();
 
@@ -793,24 +908,21 @@ private:
 
 		return res;
 	}
-	id   define_function(const location &loc, function_info &info) override
-	{
-		return define_function(loc, info, false);
-	}
-
-	id   define_function(const location &loc, function_info &info, bool is_entry_point)
+	id   define_function(const location &loc, function &info) override
 	{
 		info.definition = make_id();
 
-		// Name is used in other places like the "ENTRY_POINT" defines, so escape it here
+		// Name is used in other places like the entry point defines, so escape it here
 		info.unique_name = escape_name(info.unique_name);
 
+		assert(!info.unique_name.empty() && (info.unique_name[0] == 'F' || info.unique_name[0] == 'E'));
+		const bool is_entry_point = info.unique_name[0] == 'E';
 		if (!is_entry_point)
 			define_name<naming::unique>(info.definition, info.unique_name);
 		else
 			define_name<naming::reserved>(info.definition, "main");
 
-		assert(_current_block == 0 && _current_function_declaration.empty());
+		assert(_current_block == 0 && (_current_function_declaration.empty() || is_entry_point));
 		std::string &code = _current_function_declaration;
 
 		write_location(code, loc);
@@ -820,10 +932,8 @@ private:
 
 		assert(info.parameter_list.empty() || !is_entry_point);
 
-		for (size_t i = 0, num_params = info.parameter_list.size(); i < num_params; ++i)
+		for (member_type &param : info.parameter_list)
 		{
-			struct_member_info &param = info.parameter_list[i];
-
 			param.definition = make_id();
 			define_name<naming::unique>(param.definition, param.name);
 
@@ -836,22 +946,29 @@ private:
 			if (param.type.is_array())
 				code += '[' + std::to_string(param.type.array_length) + ']';
 
-			if (i < num_params - 1)
-				code += ',';
+			code += ',';
 		}
+
+		// Remove trailing comma
+		if (!info.parameter_list.empty())
+			code.pop_back();
 
 		code += ")\n";
 
-		_functions.push_back(std::make_unique<function_info>(info));
+		_functions.push_back(std::make_unique<function>(info));
+		_current_function = _functions.back().get();
 
 		return info.definition;
 	}
 
-	void define_entry_point(function_info &func) override
+	void define_entry_point(function &func) override
 	{
+		assert(!func.unique_name.empty() && func.unique_name[0] == 'F');
+		func.unique_name[0] = 'E';
+
 		// Modify entry point name so each thread configuration is made separate
 		if (func.type == shader_type::compute)
-			func.unique_name = 'E' + func.unique_name +
+			func.unique_name +=
 				'_' + std::to_string(func.num_threads[0]) +
 				'_' + std::to_string(func.num_threads[1]) +
 				'_' + std::to_string(func.num_threads[2]);
@@ -864,14 +981,21 @@ private:
 
 		_module.entry_points.emplace_back(func.unique_name, func.type);
 
-		_blocks.at(0) += "#ifdef ENTRY_POINT_" + func.unique_name + '\n';
+		assert(_current_function_declaration.empty());
 		if (func.type == shader_type::compute)
-			_blocks.at(0) += "layout(local_size_x = " + std::to_string(func.num_threads[0]) +
-			                      ", local_size_y = " + std::to_string(func.num_threads[1]) +
-			                      ", local_size_z = " + std::to_string(func.num_threads[2]) + ") in;\n";
+			_current_function_declaration +=
+				"layout(local_size_x = " + std::to_string(func.num_threads[0]) +
+			         ", local_size_y = " + std::to_string(func.num_threads[1]) +
+			         ", local_size_z = " + std::to_string(func.num_threads[2]) + ") in;\n";
 
-		function_info entry_point;
+		// Generate the glue entry point function
+		function entry_point = func;
+		entry_point.referenced_functions.push_back(func.definition);
+
+		// Change function signature to 'void main()'
 		entry_point.return_type = { type::t_void };
+		entry_point.return_semantic.clear();
+		entry_point.parameter_list.clear();
 
 		std::unordered_map<std::string, std::string> semantic_to_varying_variable;
 
@@ -892,26 +1016,24 @@ private:
 			if (type.is_boolean())
 				type.base = type::t_float;
 
-			std::string &code = _blocks.at(0);
-
 			const uint32_t location = semantic_to_location(semantic, std::max(1u, type.array_length));
 
 			for (unsigned int a = 0; a < std::max(1u, type.array_length); ++a)
 			{
-				code += "layout(location = " + std::to_string(location + a) + ") ";
-				write_type<false, false, true>(code, type);
-				code += ' ';
-				code += escape_name(type.is_array() ? name + '_' + std::to_string(a) : name);
-				code += ";\n";
+				_current_function_declaration += "layout(location = " + std::to_string(location + a) + ") ";
+				write_type<false, false, true>(_current_function_declaration, type);
+				_current_function_declaration += ' ';
+				_current_function_declaration += escape_name(type.is_array() ? name + '_' + std::to_string(a) : name);
+				_current_function_declaration += ";\n";
 			}
 		};
 
-		// Translate function parameters to input/output variables
+		// Translate return value to output variable
 		if (func.return_type.is_struct())
 		{
-			const struct_info &definition = get_struct(func.return_type.definition);
+			const struct_type &definition = get_struct(func.return_type.struct_definition);
 
-			for (const struct_member_info &member : definition.member_list)
+			for (const member_type &member : definition.member_list)
 				create_varying_variable(member.type, type::q_out, "_return_" + member.name, member.semantic);
 		}
 		else if (!func.return_type.is_void())
@@ -919,90 +1041,87 @@ private:
 			create_varying_variable(func.return_type, type::q_out, "_return", func.return_semantic);
 		}
 
-		const auto num_params = static_cast<unsigned int>(func.parameter_list.size());
-		for (unsigned int i = 0; i < num_params; ++i)
+		// Translate function parameters to input/output variables
+		for (const member_type &param : func.parameter_list)
 		{
-			type param_type = func.parameter_list[i].type;
+			type param_type = param.type;
 			param_type.qualifiers &= ~type::q_inout;
 
 			// Create separate input/output variables for "inout" parameters (since "inout" is not valid on those in GLSL)
-			if (func.parameter_list[i].type.has(type::q_in))
+			if (param.type.has(type::q_in))
 			{
 				// Flatten structure parameters
 				if (param_type.is_struct())
 				{
-					const struct_info &definition = get_struct(param_type.definition);
+					const struct_type &definition = get_struct(param_type.struct_definition);
 
 					for (unsigned int a = 0, array_length = std::max(1u, param_type.array_length); a < array_length; a++)
 					{
-						for (const struct_member_info &member : definition.member_list)
-							create_varying_variable(member.type, param_type.qualifiers | type::q_in, "_in_param" + std::to_string(i) + '_' + std::to_string(a) + '_' + member.name, member.semantic);
+						for (const member_type &member : definition.member_list)
+							create_varying_variable(member.type, param_type.qualifiers | type::q_in, "_in_" + id_to_name(param.definition) + '_' + std::to_string(a) + '_' + member.name, member.semantic);
 					}
 				}
 				else
 				{
-					create_varying_variable(param_type, type::q_in, "_in_param" + std::to_string(i), func.parameter_list[i].semantic);
+					create_varying_variable(param_type, type::q_in, "_in_" + id_to_name(param.definition), param.semantic);
 				}
 			}
 
-			if (func.parameter_list[i].type.has(type::q_out))
+			if (param.type.has(type::q_out))
 			{
 				if (param_type.is_struct())
 				{
-					const struct_info &definition = get_struct(param_type.definition);
+					const struct_type &definition = get_struct(param_type.struct_definition);
 
 					for (unsigned int a = 0, array_length = std::max(1u, param_type.array_length); a < array_length; a++)
 					{
-						for (const struct_member_info &member : definition.member_list)
-							create_varying_variable(member.type, param_type.qualifiers | type::q_out, "_out_param" + std::to_string(i) + '_' + std::to_string(a) + '_' + member.name, member.semantic);
+						for (const member_type &member : definition.member_list)
+							create_varying_variable(member.type, param_type.qualifiers | type::q_out, "_out_" + id_to_name(param.definition) + '_' + std::to_string(a) + '_' + member.name, member.semantic);
 					}
 				}
 				else
 				{
-					create_varying_variable(param_type, type::q_out, "_out_param" + std::to_string(i), func.parameter_list[i].semantic);
+					create_varying_variable(param_type, type::q_out, "_out_" + id_to_name(param.definition), param.semantic);
 				}
 			}
 		}
 
-		// Translate return value to output variable
-		define_function({}, entry_point, true);
+		define_function({}, entry_point);
 		enter_block(create_block());
 
 		std::string &code = _blocks.at(_current_block);
 
 		// Handle input parameters
-		for (unsigned int i = 0; i < num_params; ++i)
+		for (const member_type &param : func.parameter_list)
 		{
-			const type &param_type = func.parameter_list[i].type;
-
-			if (param_type.has(type::q_in))
+			if (param.type.has(type::q_in))
 			{
 				// Create local array element variables
-				for (unsigned int a = 0, array_length = std::max(1u, param_type.array_length); a < array_length; a++)
+				for (unsigned int a = 0, array_length = std::max(1u, param.type.array_length); a < array_length; a++)
 				{
-					if (param_type.is_struct())
+					if (param.type.is_struct())
 					{
 						// Build struct from separate member input variables
 						code += '\t';
-						write_type<false, true>(code, param_type);
+						write_type<false, true>(code, param.type);
 						code += ' ';
-						code += escape_name(param_type.is_array() ?
-							"_in_param" + std::to_string(i) + '_' + std::to_string(a) :
-							"_in_param" + std::to_string(i));
+						code += escape_name(param.type.is_array() ? "_in_" + id_to_name(param.definition) + '_' + std::to_string(a) : "_in_" + id_to_name(param.definition));
 						code += " = ";
-						write_type<false, false>(code, param_type);
+						write_type<false, false>(code, param.type);
 						code += '(';
 
-						const struct_info &definition = get_struct(param_type.definition);
+						const struct_type &definition = get_struct(param.type.struct_definition);
 
-						for (const struct_member_info &member : definition.member_list)
+						for (const member_type &member : definition.member_list)
 						{
 							std::string in_param_name;
-							if (const auto it = semantic_to_varying_variable.find(member.semantic);
-								it != semantic_to_varying_variable.end())
-								in_param_name = it->second;
-							else
-								in_param_name = "_in_param" + std::to_string(i) + '_' + std::to_string(a) + '_' + member.name;
+							{
+								if (const auto it = semantic_to_varying_variable.find(member.semantic);
+									it != semantic_to_varying_variable.end())
+									in_param_name = it->second;
+								else
+									in_param_name = "_in_" + id_to_name(param.definition) + '_' + std::to_string(a) + '_' + member.name;
+							}
 
 							if (member.type.is_array())
 							{
@@ -1023,9 +1142,11 @@ private:
 									if (member.type.is_boolean())
 										code += ')';
 
-									if (b < member.type.array_length - 1)
-										code += ", ";
+									code += ", ";
 								}
+
+								// Remove trailing ", "
+								code.erase(code.size() - 2);
 
 								code += ')';
 							}
@@ -1047,34 +1168,31 @@ private:
 						}
 
 						// There can be no empty structs, so can assume that the last two characters are always ", "
-						code.pop_back();
-						code.pop_back();
+						code.erase(code.size() - 2);
 
 						code += ");\n";
 					}
-					else if (const auto it = semantic_to_varying_variable.find(func.parameter_list[i].semantic);
-						it != semantic_to_varying_variable.end() && it->second != "_in_param" + std::to_string(i))
+					else
+					if (const auto it = semantic_to_varying_variable.find(param.semantic);
+						it != semantic_to_varying_variable.end() &&
+						it->second != "_in_" + id_to_name(param.definition))
 					{
 						// Create local variables for duplicated semantics (since no input/output variable is created for those, see 'create_varying_variable')
 						code += '\t';
-						write_type<false, true>(code, param_type);
+						write_type<false, true>(code, param.type);
 						code += ' ';
-						code += escape_name(param_type.is_array() ?
-							"_in_param" + std::to_string(i) + '_' + std::to_string(a) :
-							"_in_param" + std::to_string(i));
+						code += escape_name(param.type.is_array() ? "_in_" + id_to_name(param.definition) + '_' + std::to_string(a) : "_in_" + id_to_name(param.definition));
 						code += " = ";
 
-						if (param_type.is_boolean())
+						if (param.type.is_boolean())
 						{
-							write_type<false, false>(code, param_type);
+							write_type<false, false>(code, param.type);
 							code += '(';
 						}
 
-						code += escape_name(param_type.is_array() ?
-							it->second + '_' + std::to_string(a) :
-							it->second);
+						code += escape_name(param.type.is_array() ? it->second + '_' + std::to_string(a) : it->second);
 
-						if (param_type.is_boolean())
+						if (param.type.is_boolean())
 							code += ')';
 
 						code += ";\n";
@@ -1084,55 +1202,57 @@ private:
 
 			// Create local parameter variables which are used as arguments in the entry point function call below
 			code += '\t';
-			write_type<false, true>(code, param_type);
+			write_type<false, true>(code, param.type);
 			code += ' ';
-			code += escape_name("_param" + std::to_string(i));
-			if (param_type.is_array())
-				code += '[' + std::to_string(param_type.array_length) + ']';
+			code += id_to_name(param.definition);
+			if (param.type.is_array())
+				code += '[' + std::to_string(param.type.array_length) + ']';
 
 			// Initialize those local variables with the input value if existing
 			// Parameters with only an "out" qualifier are written to by the entry point function, so do not need to be initialized
-			if (param_type.has(type::q_in))
+			if (param.type.has(type::q_in))
 			{
 				code += " = ";
 
 				// Build array from separate array element variables
-				if (param_type.is_array())
+				if (param.type.is_array())
 				{
-					write_type<false, false>(code, param_type);
+					write_type<false, false>(code, param.type);
 					code += "[](";
 
-					for (unsigned int a = 0; a < param_type.array_length; ++a)
+					for (unsigned int a = 0; a < param.type.array_length; ++a)
 					{
 						// OpenGL does not allow varying of type boolean, so need to cast here
-						if (param_type.is_boolean())
+						if (param.type.is_boolean())
 						{
-							write_type<false, false>(code, param_type);
+							write_type<false, false>(code, param.type);
 							code += '(';
 						}
 
-						code += escape_name("_in_param" + std::to_string(i) + '_' + std::to_string(a));
+						code += escape_name("_in_" + id_to_name(param.definition) + '_' + std::to_string(a));
 
-						if (param_type.is_boolean())
+						if (param.type.is_boolean())
 							code += ')';
 
-						if (a < param_type.array_length - 1)
-							code += ", ";
+						code += ", ";
 					}
+
+					// Remove trailing ", "
+					code.erase(code.size() - 2);
 
 					code += ')';
 				}
 				else
 				{
-					if (param_type.is_boolean())
+					if (param.type.is_boolean())
 					{
-						write_type<false, false>(code, param_type);
+						write_type<false, false>(code, param.type);
 						code += '(';
 					}
 
-					code += semantic_to_builtin("_in_param" + std::to_string(i), func.parameter_list[i].semantic, func.type);
+					code += semantic_to_builtin("_in_" + id_to_name(param.definition), param.semantic, func.type);
 
-					if (param_type.is_boolean())
+					if (param.type.is_boolean())
 						code += ')';
 				}
 			}
@@ -1157,41 +1277,68 @@ private:
 		// Call the function this entry point refers to
 		code += id_to_name(func.definition) + '(';
 
-		for (unsigned int i = 0; i < num_params; ++i)
+		for (const member_type &param : func.parameter_list)
 		{
-			code += "_param" + std::to_string(i);
-
-			if (i < num_params - 1)
-				code += ", ";
+			code += id_to_name(param.definition);
+			code += ", ";
 		}
+
+		// Remove trailing ", "
+		if (!func.parameter_list.empty())
+			code.erase(code.size() - 2);
 
 		code += ");\n";
 
 		// Handle output parameters
-		for (unsigned int i = 0; i < num_params; ++i)
+		for (const member_type &param : func.parameter_list)
 		{
-			const type &param_type = func.parameter_list[i].type;
-			if (!param_type.has(type::q_out))
-				continue;
-
-			if (param_type.is_struct())
+			if (param.type.has(type::q_out))
 			{
-				const struct_info &definition = get_struct(param_type.definition);
-
-				// Split out struct fields into separate output variables again
-				for (unsigned int a = 0, array_length = std::max(1u, param_type.array_length); a < array_length; a++)
+				if (param.type.is_struct())
 				{
-					for (const struct_member_info &member : definition.member_list)
+					const struct_type &definition = get_struct(param.type.struct_definition);
+
+					// Split out struct fields into separate output variables again
+					for (unsigned int a = 0, array_length = std::max(1u, param.type.array_length); a < array_length; a++)
 					{
-						if (member.type.is_array())
+						for (const member_type &member : definition.member_list)
 						{
-							for (unsigned int b = 0; b < member.type.array_length; b++)
+							if (member.type.is_array())
+							{
+								for (unsigned int b = 0; b < member.type.array_length; b++)
+								{
+									code += '\t';
+									code += escape_name("_out_" + id_to_name(param.definition) + '_' + std::to_string(a) + '_' + member.name + '_' + std::to_string(b));
+									code += " = ";
+
+									// OpenGL does not allow varying of type boolean, so need to cast here
+									if (member.type.is_boolean())
+									{
+										type varying_type = member.type;
+										varying_type.base = type::t_float;
+										write_type<false, false>(code, varying_type);
+										code += '(';
+									}
+
+									code += id_to_name(param.definition);
+									if (param.type.is_array())
+										code += '[' + std::to_string(a) + ']';
+									code += '.';
+									code += member.name;
+									code += '[' + std::to_string(b) + ']';
+
+									if (member.type.is_boolean())
+										code += ')';
+
+									code += ";\n";
+								}
+							}
+							else
 							{
 								code += '\t';
-								code += escape_name("_out_param" + std::to_string(i) + '_' + std::to_string(a) + '_' + member.name + '_' + std::to_string(b));
+								code += semantic_to_builtin("_out_" + id_to_name(param.definition) + '_' + std::to_string(a) + '_' + member.name, member.semantic, func.type);
 								code += " = ";
 
-								// OpenGL does not allow varying of type boolean, so need to cast here
 								if (member.type.is_boolean())
 								{
 									type varying_type = member.type;
@@ -1200,12 +1347,11 @@ private:
 									code += '(';
 								}
 
-								code += escape_name("_param" + std::to_string(i));
-								if (param_type.is_array())
+								code += id_to_name(param.definition);
+								if (param.type.is_array())
 									code += '[' + std::to_string(a) + ']';
 								code += '.';
 								code += member.name;
-								code += '[' + std::to_string(b) + ']';
 
 								if (member.type.is_boolean())
 									code += ')';
@@ -1213,58 +1359,30 @@ private:
 								code += ";\n";
 							}
 						}
-						else
-						{
-							code += '\t';
-							code += semantic_to_builtin("_out_param" + std::to_string(i) + '_' + std::to_string(a) + '_' + member.name, member.semantic, func.type);
-							code += " = ";
-
-							if (member.type.is_boolean())
-							{
-								type varying_type = member.type;
-								varying_type.base = type::t_float;
-								write_type<false, false>(code, varying_type);
-								code += '(';
-							}
-
-							code += escape_name("_param" + std::to_string(i));
-							if (param_type.is_array())
-								code += '[' + std::to_string(a) + ']';
-							code += '.';
-							code += member.name;
-
-							if (member.type.is_boolean())
-								code += ')';
-
-							code += ";\n";
-						}
 					}
 				}
-			}
-			else
-			{
-				if (param_type.is_array())
+				else if (param.type.is_array())
 				{
 					// Split up array output into individual array elements again
-					for (unsigned int a = 0; a < param_type.array_length; a++)
+					for (unsigned int a = 0; a < param.type.array_length; a++)
 					{
 						code += '\t';
-						code += escape_name("_out_param" + std::to_string(i) + '_' + std::to_string(a));
+						code += escape_name("_out_" + id_to_name(param.definition) + '_' + std::to_string(a));
 						code += " = ";
 
 						// OpenGL does not allow varying of type boolean, so need to cast here
-						if (param_type.is_boolean())
+						if (param.type.is_boolean())
 						{
-							type varying_type = param_type;
+							type varying_type = param.type;
 							varying_type.base = type::t_float;
 							write_type<false, false>(code, varying_type);
 							code += '(';
 						}
 
-						code += escape_name("_param" + std::to_string(i));
+						code += id_to_name(param.definition);
 						code += '[' + std::to_string(a) + ']';
 
-						if (param_type.is_boolean())
+						if (param.type.is_boolean())
 							code += ')';
 
 						code += ";\n";
@@ -1273,20 +1391,20 @@ private:
 				else
 				{
 					code += '\t';
-					code += semantic_to_builtin("_out_param" + std::to_string(i), func.parameter_list[i].semantic, func.type);
+					code += semantic_to_builtin("_out_" + id_to_name(param.definition), param.semantic, func.type);
 					code += " = ";
 
-					if (param_type.is_boolean())
+					if (param.type.is_boolean())
 					{
-						type varying_type = param_type;
+						type varying_type = param.type;
 						varying_type.base = type::t_float;
 						write_type<false, false>(code, varying_type);
 						code += '(';
 					}
 
-					code += escape_name("_param" + std::to_string(i));
+					code += id_to_name(param.definition);
 
-					if (param_type.is_boolean())
+					if (param.type.is_boolean())
 						code += ')';
 
 					code += ";\n";
@@ -1297,9 +1415,9 @@ private:
 		// Handle return struct output variables
 		if (func.return_type.is_struct())
 		{
-			const struct_info &definition = get_struct(func.return_type.definition);
+			const struct_type &definition = get_struct(func.return_type.struct_definition);
 
-			for (const struct_member_info &member : definition.member_list)
+			for (const member_type &member : definition.member_list)
 			{
 				code += '\t';
 				code += semantic_to_builtin("_return_" + member.name, member.semantic, func.type);
@@ -1313,8 +1431,6 @@ private:
 
 		leave_block_and_return(0);
 		leave_function();
-
-		_blocks.at(0) += "#endif\n";
 	}
 
 	id   emit_load(const expression &exp, bool force_new_id) override
@@ -1339,7 +1455,7 @@ private:
 				break;
 			case expression::operation::op_member:
 				expr_code += '.';
-				expr_code += escape_name(get_struct(op.from.definition).member_list[op.index].name);
+				expr_code += escape_name(get_struct(op.from.struct_definition).member_list[op.index].name);
 				break;
 			case expression::operation::op_dynamic_index:
 				// For matrices this will extract a column, but that is fine, since they are initialized column-wise too
@@ -1431,7 +1547,7 @@ private:
 			{
 			case expression::operation::op_member:
 				code += '.';
-				code += escape_name(get_struct(op.from.definition).member_list[op.index].name);
+				code += escape_name(get_struct(op.from.struct_definition).member_list[op.index].name);
 				break;
 			case expression::operation::op_dynamic_index:
 				code += "[int(" + id_to_name(op.index) + ")]";
@@ -1751,13 +1867,15 @@ private:
 
 		code += id_to_name(function) + '(';
 
-		for (size_t i = 0, num_args = args.size(); i < num_args; ++i)
+		for (const expression &arg : args)
 		{
-			code += id_to_name(args[i].base);
-
-			if (i < num_args - 1)
-				code += ", ";
+			code += id_to_name(arg.base);
+			code += ", ";
 		}
+
+		// Remove trailing ", "
+		if (!args.empty())
+			code.erase(code.size() - 2);
 
 		code += ");\n";
 
@@ -1831,13 +1949,15 @@ private:
 
 		code += '(';
 
-		for (size_t i = 0, num_args = args.size(); i < num_args; ++i)
+		for (const expression &arg : args)
 		{
-			code += id_to_name(args[i].base);
-
-			if (i < num_args - 1)
-				code += ", ";
+			code += id_to_name(arg.base);
+			code += ", ";
 		}
+
+		// Remove trailing ", "
+		if (!args.empty())
+			code.erase(code.size() - 2);
 
 		code += ");\n";
 
@@ -1862,7 +1982,7 @@ private:
 
 		if (flags != 0)
 		{
-			_enable_control_flow_attributes = true;
+			_uses_control_flow_attributes = true;
 
 			code += "#if GL_EXT_control_flow_attributes\n\t[[";
 			if ((flags & 0x1) == 0x1)
@@ -1946,7 +2066,7 @@ private:
 		std::string attributes;
 		if (flags != 0)
 		{
-			_enable_control_flow_attributes = true;
+			_uses_control_flow_attributes = true;
 
 			attributes += "#if GL_EXT_control_flow_attributes\n\t[[";
 			if ((flags & 0x1) == 0x1)
@@ -2135,7 +2255,7 @@ private:
 
 		code += "\tdiscard;\n";
 
-		const type &return_type = _functions.back()->return_type;
+		const type &return_type = _current_function->return_type;
 		if (!return_type.is_void())
 		{
 			// Add a return statement to exit functions in case discard is the last control flow statement
@@ -2152,7 +2272,7 @@ private:
 			return 0;
 
 		// Skip implicit return statement
-		if (!_functions.back()->return_type.is_void() && value == 0)
+		if (!_current_function->return_type.is_void() && value == 0)
 			return set_block(0);
 
 		std::string &code = _blocks.at(_current_block);
@@ -2203,7 +2323,11 @@ private:
 	{
 		assert(_last_block != 0);
 
-		_blocks.at(0) += _current_function_declaration + "{\n" + _blocks.at(_last_block) + "}\n";
+		const id current_function = _current_function->definition;
+
+		_blocks.emplace(current_function, _current_function_declaration + "{\n" + _blocks.at(_last_block) + "}\n");
+
+		_current_function = nullptr;
 		_current_function_declaration.clear();
 	}
 };

@@ -20,7 +20,6 @@
 #include "reshade_api_object_impl.hpp"
 #include <set>
 #include <thread>
-#include <fstream>
 #include <cmath> // std::abs, std::fmod
 #include <cctype> // std::toupper
 #include <cwctype> // std::towlower
@@ -2149,6 +2148,7 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 		}
 	}
 
+	std::unique_ptr<reshadefx::codegen> codegen;
 	if (!effect.compiled && !source.empty())
 	{
 		unsigned shader_model;
@@ -2163,7 +2163,6 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 		else
 			shader_model = 51; // D3D12
 
-		std::unique_ptr<reshadefx::codegen> codegen;
 		if ((_renderer_id & 0xF0000) == 0)
 			codegen.reset(reshadefx::create_codegen_hlsl(shader_model, !_no_debug_info, _performance_mode));
 		else if (_renderer_id < 0x20000)
@@ -2180,7 +2179,9 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 		effect.errors  += parser.errors();
 
 		// Write result to effect module
-		codegen->write_result(effect.module);
+		effect.module = codegen->module();
+		if (_device->get_api() != api::device_api::vulkan)
+			effect.generated_code = codegen->finalize_code();
 
 		if (effect.compiled)
 		{
@@ -2238,7 +2239,7 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 			// Fill all specialization constants with values from the current preset
 			if (_performance_mode)
 			{
-				for (reshadefx::uniform_info &constant : effect.module.spec_constants)
+				for (reshadefx::uniform &constant : effect.module.spec_constants)
 				{
 					switch (constant.type.base)
 					{
@@ -2332,7 +2333,7 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 						hlsl += "#define COLOR_PIXEL_SIZE 1.0 / " + std::to_string(_effect_width) + ", 1.0 / " + std::to_string(_effect_height) + '\n';
 
 						uint32_t semantic_index = 0;
-						for (const reshadefx::texture_info &tex : effect.module.textures)
+						for (const reshadefx::texture &tex : effect.module.textures)
 						{
 							if (tex.semantic.empty() || tex.semantic == "COLOR")
 								continue;
@@ -2347,12 +2348,7 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 					}
 
 					hlsl += "#line 1\n"; // Reset line number, so it matches what is shown when viewing the generated code
-					hlsl.append(effect.module.code.data(), effect.module.code.size());
-
-					// Overwrite position semantic in pixel shaders
-					const D3D_SHADER_MACRO ps_defines[] = {
-						{ "POSITION", "VPOS" }, { nullptr, nullptr }
-					};
+					hlsl += codegen->finalize_code_for_entry_point(entry_point.first);
 
 					std::string profile;
 					switch (entry_point.second)
@@ -2420,7 +2416,7 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 						com_ptr<ID3DBlob> d3d_compiled, d3d_errors;
 						const HRESULT hr = D3DCompile(
 							hlsl.data(), hlsl.size(),
-							nullptr, entry_point.second == reshadefx::shader_type::pixel ? ps_defines : nullptr, nullptr,
+							nullptr, nullptr, nullptr,
 							entry_point.first.c_str(),
 							profile.c_str(),
 							compile_flags, 0,
@@ -2489,126 +2485,16 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 						save_effect_cache(cache_id, "asm", cso_text);
 					}
 				}
-				else if (_renderer_id < 0x20000)
-				{
-					std::string glsl = "#version 430\n#define ENTRY_POINT_" + entry_point.first + " 1\n";
-
-					if (entry_point.second != reshadefx::shader_type::pixel)
-					{
-						// OpenGL does not allow using 'discard' in the vertex shader profile
-						glsl += "#define discard\n";
-						// 'dFdx', 'dFdx' and 'fwidth' too are only available in fragment shaders
-						glsl += "#define dFdx(x) x\n";
-						glsl += "#define dFdy(y) y\n";
-						glsl += "#define fwidth(p) p\n";
-					}
-					if (entry_point.second != reshadefx::shader_type::compute)
-					{
-						// OpenGL does not allow using 'shared' in vertex/fragment shader profile
-						glsl += "#define shared\n";
-						glsl += "#define atomicAdd(a, b) a\n";
-						glsl += "#define atomicAnd(a, b) a\n";
-						glsl += "#define atomicOr(a, b) a\n";
-						glsl += "#define atomicXor(a, b) a\n";
-						glsl += "#define atomicMin(a, b) a\n";
-						glsl += "#define atomicMax(a, b) a\n";
-						glsl += "#define atomicExchange(a, b) a\n";
-						glsl += "#define atomicCompSwap(a, b, c) a\n";
-						// Barrier intrinsics are only available in compute shaders
-						glsl += "#define barrier()\n";
-						glsl += "#define memoryBarrier()\n";
-						glsl += "#define groupMemoryBarrier()\n";
-					}
-
-					glsl += code_preamble;
-					glsl += "#line 1 0\n"; // Reset line number, so it matches what is shown when viewing the generated code
-					glsl.append(effect.module.code.data(), effect.module.code.size());
-
-					cso_text = cso = std::move(glsl);
-				}
 				else
 				{
-					assert(_renderer_id >= 0x14600); // Core since OpenGL 4.6 (see https://www.khronos.org/opengl/wiki/SPIR-V)
+					cso = codegen->finalize_code_for_entry_point(entry_point.first);
 
-#if 1
-					// There are various issues with SPIR-V modules that have multiple entry points on all major GPU vendors.
-					// On AMD for instance creating a graphics pipeline just fails with a generic 'VK_ERROR_OUT_OF_HOST_MEMORY'. On NVIDIA artifacts occur on some driver versions.
-					// To work around these problems, create a separate shader module for every entry point and rewrite the SPIR-V module for each to remove all but a single entry point (and associated functions/variables).
-					uint32_t current_function = 0, current_function_offset = 0;
-					// Copy SPIR-V, so that all but the current entry point are only removed from that copy
-					std::vector<uint32_t> spirv(reinterpret_cast<const uint32_t *>(effect.module.code.data()), reinterpret_cast<const uint32_t *>(effect.module.code.data() + effect.module.code.size()));
-					std::vector<uint32_t> functions_to_remove, variables_to_remove;
-
-					for (uint32_t inst = 5 /* Skip SPIR-V header information */; inst < spirv.size();)
+					if (_renderer_id < 0x20000)
 					{
-						const uint32_t op = spirv[inst] & 0xFFFF;
-						const uint32_t len = (spirv[inst] >> 16) & 0xFFFF;
-						assert(len != 0);
+						cso.insert(std::size("#version 430\n") - 1, code_preamble);
 
-						switch (op)
-						{
-						case 15 /* OpEntryPoint */:
-							// Look for any non-matching entry points
-							if (entry_point.first != reinterpret_cast<const char *>(&spirv[inst + 3]))
-							{
-								functions_to_remove.push_back(spirv[inst + 2]);
-
-								// Get interface variables
-								for (uint32_t k = inst + 3 + static_cast<uint32_t>((std::strlen(reinterpret_cast<const char *>(&spirv[inst + 3])) + 4) / 4); k < inst + len; ++k)
-									variables_to_remove.push_back(spirv[k]);
-
-								// Remove this entry point from the module
-								spirv.erase(spirv.begin() + inst, spirv.begin() + inst + len);
-								continue;
-							}
-							break;
-						case 16 /* OpExecutionMode */:
-							if (std::find(functions_to_remove.begin(), functions_to_remove.end(), spirv[inst + 1]) != functions_to_remove.end())
-							{
-								spirv.erase(spirv.begin() + inst, spirv.begin() + inst + len);
-								continue;
-							}
-							break;
-						case 59 /* OpVariable */:
-							// Remove all declarations of the interface variables for non-matching entry points
-							if (std::find(variables_to_remove.begin(), variables_to_remove.end(), spirv[inst + 2]) != variables_to_remove.end())
-							{
-								spirv.erase(spirv.begin() + inst, spirv.begin() + inst + len);
-								continue;
-							}
-							break;
-						case 71 /* OpDecorate */:
-							// Remove all decorations targeting any of the interface variables for non-matching entry points
-							if (std::find(variables_to_remove.begin(), variables_to_remove.end(), spirv[inst + 1]) != variables_to_remove.end())
-							{
-								spirv.erase(spirv.begin() + inst, spirv.begin() + inst + len);
-								continue;
-							}
-							break;
-						case 54 /* OpFunction */:
-							current_function = spirv[inst + 2];
-							current_function_offset = inst;
-							break;
-						case 56 /* OpFunctionEnd */:
-							// Remove all function definitions for non-matching entry points
-							if (std::find(functions_to_remove.begin(), functions_to_remove.end(), current_function) != functions_to_remove.end())
-							{
-								spirv.erase(spirv.begin() + current_function_offset, spirv.begin() + inst + len);
-								inst = current_function_offset;
-								continue;
-							}
-							break;
-						}
-
-						inst += len;
+						cso_text = cso;
 					}
-
-					cso.resize(spirv.size() * sizeof(uint32_t));
-					std::memcpy(cso.data(), spirv.data(), cso.size());
-#else
-					cso.resize(effect.module.code.size());
-					std::memcpy(cso.data(), effect.module.code.data(), effect.module.code.size());
-#endif
 				}
 			}
 		}
@@ -2658,7 +2544,7 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 
 				if (existing_texture->semantic == "COLOR" && api::format_bit_depth(_effect_color_format) != 8)
 				{
-					for (const reshadefx::sampler_info &sampler_info : effect.module.samplers)
+					for (const reshadefx::sampler &sampler_info : effect.module.samplers)
 					{
 						if (sampler_info.srgb && sampler_info.texture_name == new_texture.unique_name)
 						{
@@ -2686,25 +2572,25 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 					existing_texture != _textures.end())
 				{
 					// Overwrite referenced texture in samplers with the pooled one
-					for (reshadefx::sampler_info &sampler_info : effect.module.samplers)
+					for (reshadefx::sampler &sampler_info : effect.module.samplers)
 						if (sampler_info.texture_name == new_texture.unique_name)
 							sampler_info.texture_name = existing_texture->unique_name;
 					// Overwrite referenced texture in storages with the pooled one
-					for (reshadefx::storage_info &storage_info : effect.module.storages)
+					for (reshadefx::storage &storage_info : effect.module.storages)
 						if (storage_info.texture_name == new_texture.unique_name)
 							storage_info.texture_name = existing_texture->unique_name;
 					// Overwrite referenced texture in render targets with the pooled one
-					for (reshadefx::technique_info &technique_info : effect.module.techniques)
+					for (reshadefx::technique &technique_info : effect.module.techniques)
 					{
-						for (reshadefx::pass_info &pass_info : technique_info.passes)
+						for (reshadefx::pass &pass_info : technique_info.passes)
 						{
 							std::replace(std::begin(pass_info.render_target_names), std::end(pass_info.render_target_names),
 								new_texture.unique_name, existing_texture->unique_name);
 
-							for (reshadefx::sampler_info &sampler_info : pass_info.samplers)
-								if (sampler_info.texture_name == new_texture.unique_name)
-									sampler_info.texture_name = existing_texture->unique_name;
-							for (reshadefx::storage_info &storage_info : pass_info.storages)
+							for (reshadefx::texture_binding &texture_info : pass_info.texture_bindings)
+								if (texture_info.texture_name == new_texture.unique_name)
+									texture_info.texture_name = existing_texture->unique_name;
+							for (reshadefx::storage_binding &storage_info : pass_info.storage_bindings)
 								if (storage_info.texture_name == new_texture.unique_name)
 									storage_info.texture_name = existing_texture->unique_name;
 						}
@@ -2788,7 +2674,7 @@ bool reshade::runtime::create_effect(size_t effect_index)
 	// Build specialization constants
 	std::vector<uint32_t> spec_data;
 	std::vector<uint32_t> spec_constants;
-	for (const reshadefx::uniform_info &constant : effect.module.spec_constants)
+	for (const reshadefx::uniform &constant : effect.module.spec_constants)
 	{
 		uint32_t id = static_cast<uint32_t>(spec_constants.size());
 		spec_data.push_back(constant.initializer_value.as_uint[0]);
@@ -2818,14 +2704,6 @@ bool reshade::runtime::create_effect(size_t effect_index)
 	layout_ranges[1].type = sampler_with_resource_view ? api::descriptor_type::sampler_with_resource_view : api::descriptor_type::sampler;
 	layout_ranges[1].visibility = api::shader_stage::vertex | api::shader_stage::pixel | api::shader_stage::compute;
 
-	layout_ranges[2].binding = 0;
-	layout_ranges[2].dx_register_index = 0; // t#
-	layout_ranges[2].dx_register_space = 0;
-	layout_ranges[2].count = effect.module.num_texture_bindings;
-	layout_ranges[2].array_size = 1;
-	layout_ranges[2].type = api::descriptor_type::shader_resource_view;
-	layout_ranges[2].visibility = api::shader_stage::vertex | api::shader_stage::pixel | api::shader_stage::compute;
-
 	layout_ranges[3].binding = 0;
 	layout_ranges[3].dx_register_index = 0; // u#
 	layout_ranges[3].dx_register_space = 0;
@@ -2851,6 +2729,14 @@ bool reshade::runtime::create_effect(size_t effect_index)
 	}
 	else
 	{
+		layout_ranges[2].binding = 0;
+		layout_ranges[2].dx_register_index = 0; // t#
+		layout_ranges[2].dx_register_space = 0;
+		layout_ranges[2].count = effect.module.num_texture_bindings;
+		layout_ranges[2].array_size = 1;
+		layout_ranges[2].type = api::descriptor_type::shader_resource_view;
+		layout_ranges[2].visibility = api::shader_stage::vertex | api::shader_stage::pixel | api::shader_stage::compute;
+
 		layout_params[2].type = api::pipeline_layout_param_type::descriptor_table;
 		layout_params[2].descriptor_table.count = 1;
 		layout_params[2].descriptor_table.ranges = &layout_ranges[2];
@@ -2869,8 +2755,6 @@ bool reshade::runtime::create_effect(size_t effect_index)
 	api::buffer_range cb_range = {};
 	std::vector<api::descriptor_table_update> descriptor_writes;
 	descriptor_writes.reserve(effect.module.num_sampler_bindings + effect.module.num_texture_bindings + effect.module.num_storage_bindings + 1);
-	std::vector<api::sampler_with_resource_view> sampler_descriptors;
-	sampler_descriptors.resize(effect.module.num_sampler_bindings + effect.module.num_texture_bindings);
 
 	// Create global constant buffer (except in D3D9, which does not have constant buffers)
 	if (_renderer_id != 0x9000 && !effect.uniform_data_storage.empty())
@@ -2903,11 +2787,15 @@ bool reshade::runtime::create_effect(size_t effect_index)
 
 	// Initialize bindings
 	size_t total_pass_count = 0;
-	for (const reshadefx::technique_info &info : effect.module.techniques)
+	for (const reshadefx::technique &info : effect.module.techniques)
 		total_pass_count += info.passes.size();
 
 	std::vector<api::descriptor_table> texture_tables(total_pass_count);
 	std::vector<api::descriptor_table> storage_tables(total_pass_count);
+
+	uint16_t sampler_list = 0;
+	std::vector<api::sampler_with_resource_view> sampler_descriptors;
+	sampler_descriptors.resize(std::max(effect.module.num_sampler_bindings, effect.module.num_texture_bindings) * total_pass_count);
 
 	if (effect.module.num_sampler_bindings != 0)
 	{
@@ -2916,40 +2804,10 @@ bool reshade::runtime::create_effect(size_t effect_index)
 			log::message(log::level::error, "Failed to create sampler descriptor table for effect file '%s'!", effect.source_file.u8string().c_str());
 			return false;
 		}
-
-		if (!sampler_with_resource_view)
-		{
-			uint16_t sampler_list = 0;
-			for (const reshadefx::sampler_info &info : effect.module.samplers)
-			{
-				// Only initialize sampler if it has not been created before
-				if (0 != (sampler_list & (1 << info.binding)))
-					continue;
-
-				assert(info.binding < 16);
-				sampler_list |= (1 << info.binding); // Maximum sampler slot count is 16, so a 16-bit integer is enough to hold all bindings
-
-				api::sampler &sampler_handle = sampler_descriptors[info.binding].sampler;
-				if (!create_effect_sampler_state(info, sampler_handle))
-				{
-					log::message(log::level::error, "Failed to create sampler object '%s' in '%s'!", info.unique_name.c_str(), effect.source_file.u8string().c_str());
-					return false;
-				}
-
-				api::descriptor_table_update &write = descriptor_writes.emplace_back();
-				write.table = effect.sampler_table;
-				write.binding = info.binding;
-				write.type = api::descriptor_type::sampler;
-				write.count = 1;
-				write.descriptors = &sampler_handle;
-			}
-		}
 	}
 
-	if (effect.module.num_texture_bindings != 0)
+	if (effect.module.num_texture_bindings != 0 && !sampler_with_resource_view)
 	{
-		assert(!sampler_with_resource_view);
-
 		if (!_device->allocate_descriptor_tables(static_cast<uint32_t>(total_pass_count), effect.layout, 2, texture_tables.data()))
 		{
 			log::message(log::level::error, "Failed to create texture descriptor table for effect file '%s'!", effect.source_file.u8string().c_str());
@@ -2982,7 +2840,7 @@ bool reshade::runtime::create_effect(size_t effect_index)
 
 		for (size_t pass_index = 0; pass_index < tech.passes.size(); ++pass_index, ++total_pass_index)
 		{
-			reshadefx::pass_info &pass_info = tech.passes[pass_index];
+			reshadefx::pass &pass_info = tech.passes[pass_index];
 			technique::pass_data &pass_data = tech.passes_data[pass_index];
 
 			std::vector<api::pipeline_subobject> subobjects;
@@ -3101,30 +2959,30 @@ bool reshade::runtime::create_effect(size_t effect_index)
 				api::primitive_topology topology = static_cast<api::primitive_topology>(pass_info.topology);
 				subobjects.push_back({ api::pipeline_subobject_type::primitive_topology, 1, &topology });
 
-				const auto convert_blend_op = [](reshadefx::pass_blend_op value) {
+				const auto convert_blend_op = [](reshadefx::blend_op value) {
 					switch (value)
 					{
 					default:
-					case reshadefx::pass_blend_op::add: return api::blend_op::add;
-					case reshadefx::pass_blend_op::subtract: return api::blend_op::subtract;
-					case reshadefx::pass_blend_op::reverse_subtract: return api::blend_op::reverse_subtract;
-					case reshadefx::pass_blend_op::min: return api::blend_op::min;
-					case reshadefx::pass_blend_op::max: return api::blend_op::max;
+					case reshadefx::blend_op::add: return api::blend_op::add;
+					case reshadefx::blend_op::subtract: return api::blend_op::subtract;
+					case reshadefx::blend_op::reverse_subtract: return api::blend_op::reverse_subtract;
+					case reshadefx::blend_op::min: return api::blend_op::min;
+					case reshadefx::blend_op::max: return api::blend_op::max;
 					}
 				};
-				const auto convert_blend_factor = [](reshadefx::pass_blend_factor value) {
+				const auto convert_blend_factor = [](reshadefx::blend_factor value) {
 					switch (value) {
-					case reshadefx::pass_blend_factor::zero: return api::blend_factor::zero;
+					case reshadefx::blend_factor::zero: return api::blend_factor::zero;
 					default:
-					case reshadefx::pass_blend_factor::one: return api::blend_factor::one;
-					case reshadefx::pass_blend_factor::source_color: return api::blend_factor::source_color;
-					case reshadefx::pass_blend_factor::one_minus_source_color: return api::blend_factor::one_minus_source_color;
-					case reshadefx::pass_blend_factor::dest_color: return api::blend_factor::dest_color;
-					case reshadefx::pass_blend_factor::one_minus_dest_color: return api::blend_factor::one_minus_dest_color;
-					case reshadefx::pass_blend_factor::source_alpha: return api::blend_factor::source_alpha;
-					case reshadefx::pass_blend_factor::one_minus_source_alpha: return api::blend_factor::one_minus_source_alpha;
-					case reshadefx::pass_blend_factor::dest_alpha: return api::blend_factor::dest_alpha;
-					case reshadefx::pass_blend_factor::one_minus_dest_alpha: return api::blend_factor::one_minus_dest_alpha;
+					case reshadefx::blend_factor::one: return api::blend_factor::one;
+					case reshadefx::blend_factor::source_color: return api::blend_factor::source_color;
+					case reshadefx::blend_factor::one_minus_source_color: return api::blend_factor::one_minus_source_color;
+					case reshadefx::blend_factor::dest_color: return api::blend_factor::dest_color;
+					case reshadefx::blend_factor::one_minus_dest_color: return api::blend_factor::one_minus_dest_color;
+					case reshadefx::blend_factor::source_alpha: return api::blend_factor::source_alpha;
+					case reshadefx::blend_factor::one_minus_source_alpha: return api::blend_factor::one_minus_source_alpha;
+					case reshadefx::blend_factor::dest_alpha: return api::blend_factor::dest_alpha;
+					case reshadefx::blend_factor::one_minus_dest_alpha: return api::blend_factor::one_minus_dest_alpha;
 					}
 				};
 
@@ -3133,13 +2991,13 @@ bool reshade::runtime::create_effect(size_t effect_index)
 				for (int i = 0; i < 8; ++i)
 				{
 					blend_state.blend_enable[i] = pass_info.blend_enable[i];
-					blend_state.source_color_blend_factor[i] = convert_blend_factor(pass_info.src_blend[i]);
-					blend_state.dest_color_blend_factor[i] = convert_blend_factor(pass_info.dest_blend[i]);
-					blend_state.color_blend_op[i] = convert_blend_op(pass_info.blend_op[i]);
-					blend_state.source_alpha_blend_factor[i] = convert_blend_factor(pass_info.src_blend_alpha[i]);
-					blend_state.dest_alpha_blend_factor[i] = convert_blend_factor(pass_info.dest_blend_alpha[i]);
-					blend_state.alpha_blend_op[i] = convert_blend_op(pass_info.blend_op_alpha[i]);
-					blend_state.render_target_write_mask[i] = pass_info.color_write_mask[i];
+					blend_state.source_color_blend_factor[i] = convert_blend_factor(pass_info.source_color_blend_factor[i]);
+					blend_state.dest_color_blend_factor[i] = convert_blend_factor(pass_info.dest_color_blend_factor[i]);
+					blend_state.color_blend_op[i] = convert_blend_op(pass_info.color_blend_op[i]);
+					blend_state.source_alpha_blend_factor[i] = convert_blend_factor(pass_info.source_alpha_blend_factor[i]);
+					blend_state.dest_alpha_blend_factor[i] = convert_blend_factor(pass_info.dest_alpha_blend_factor[i]);
+					blend_state.alpha_blend_op[i] = convert_blend_op(pass_info.alpha_blend_op[i]);
+					blend_state.render_target_write_mask[i] = pass_info.render_target_write_mask[i];
 				}
 
 				subobjects.push_back({ api::pipeline_subobject_type::blend_state, 1, &blend_state });
@@ -3149,31 +3007,31 @@ bool reshade::runtime::create_effect(size_t effect_index)
 
 				subobjects.push_back({ api::pipeline_subobject_type::rasterizer_state, 1, &rasterizer_state });
 
-				const auto convert_stencil_op = [](reshadefx::pass_stencil_op value) {
+				const auto convert_stencil_op = [](reshadefx::stencil_op value) {
 					switch (value) {
-					case reshadefx::pass_stencil_op::zero: return api::stencil_op::zero;
+					case reshadefx::stencil_op::zero: return api::stencil_op::zero;
 					default:
-					case reshadefx::pass_stencil_op::keep: return api::stencil_op::keep;
-					case reshadefx::pass_stencil_op::replace: return api::stencil_op::replace;
-					case reshadefx::pass_stencil_op::increment_saturate: return api::stencil_op::increment_saturate;
-					case reshadefx::pass_stencil_op::decrement_saturate: return api::stencil_op::decrement_saturate;
-					case reshadefx::pass_stencil_op::invert: return api::stencil_op::invert;
-					case reshadefx::pass_stencil_op::increment: return api::stencil_op::increment;
-					case reshadefx::pass_stencil_op::decrement: return api::stencil_op::decrement;
+					case reshadefx::stencil_op::keep: return api::stencil_op::keep;
+					case reshadefx::stencil_op::replace: return api::stencil_op::replace;
+					case reshadefx::stencil_op::increment_saturate: return api::stencil_op::increment_saturate;
+					case reshadefx::stencil_op::decrement_saturate: return api::stencil_op::decrement_saturate;
+					case reshadefx::stencil_op::invert: return api::stencil_op::invert;
+					case reshadefx::stencil_op::increment: return api::stencil_op::increment;
+					case reshadefx::stencil_op::decrement: return api::stencil_op::decrement;
 					}
 				};
-				const auto convert_stencil_func = [](reshadefx::pass_stencil_func value) {
+				const auto convert_stencil_func = [](reshadefx::stencil_func value) {
 					switch (value)
 					{
-					case reshadefx::pass_stencil_func::never: return api::compare_op::never;
-					case reshadefx::pass_stencil_func::less: return api::compare_op::less;
-					case reshadefx::pass_stencil_func::equal: return api::compare_op::equal;
-					case reshadefx::pass_stencil_func::less_equal: return api::compare_op::less_equal;
-					case reshadefx::pass_stencil_func::greater: return api::compare_op::greater;
-					case reshadefx::pass_stencil_func::not_equal: return api::compare_op::not_equal;
-					case reshadefx::pass_stencil_func::greater_equal: return api::compare_op::greater_equal;
+					case reshadefx::stencil_func::never: return api::compare_op::never;
+					case reshadefx::stencil_func::less: return api::compare_op::less;
+					case reshadefx::stencil_func::equal: return api::compare_op::equal;
+					case reshadefx::stencil_func::less_equal: return api::compare_op::less_equal;
+					case reshadefx::stencil_func::greater: return api::compare_op::greater;
+					case reshadefx::stencil_func::not_equal: return api::compare_op::not_equal;
+					case reshadefx::stencil_func::greater_equal: return api::compare_op::greater_equal;
 					default:
-					case reshadefx::pass_stencil_func::always: return api::compare_op::always;
+					case reshadefx::stencil_func::always: return api::compare_op::always;
 					}
 				};
 
@@ -3184,16 +3042,16 @@ bool reshade::runtime::create_effect(size_t effect_index)
 				depth_stencil_state.stencil_enable = pass_info.stencil_enable;
 				depth_stencil_state.front_stencil_read_mask = pass_info.stencil_read_mask;
 				depth_stencil_state.front_stencil_write_mask = pass_info.stencil_write_mask;
-				depth_stencil_state.front_stencil_func = depth_stencil_state.back_stencil_func;
-				depth_stencil_state.front_stencil_fail_op = depth_stencil_state.back_stencil_fail_op;
-				depth_stencil_state.front_stencil_depth_fail_op = depth_stencil_state.back_stencil_depth_fail_op;
-				depth_stencil_state.front_stencil_pass_op = depth_stencil_state.back_stencil_pass_op;
-				depth_stencil_state.back_stencil_read_mask = pass_info.stencil_read_mask;
-				depth_stencil_state.back_stencil_write_mask = pass_info.stencil_write_mask;
-				depth_stencil_state.back_stencil_func = convert_stencil_func(pass_info.stencil_comparison_func);
-				depth_stencil_state.back_stencil_fail_op = convert_stencil_op(pass_info.stencil_op_fail);
-				depth_stencil_state.back_stencil_depth_fail_op = convert_stencil_op(pass_info.stencil_op_depth_fail);
-				depth_stencil_state.back_stencil_pass_op = convert_stencil_op(pass_info.stencil_op_pass);
+				depth_stencil_state.front_stencil_func = convert_stencil_func(pass_info.stencil_comparison_func);
+				depth_stencil_state.front_stencil_fail_op = convert_stencil_op(pass_info.stencil_fail_op);
+				depth_stencil_state.front_stencil_depth_fail_op = convert_stencil_op(pass_info.stencil_depth_fail_op);
+				depth_stencil_state.front_stencil_pass_op = convert_stencil_op(pass_info.stencil_pass_op);
+				depth_stencil_state.back_stencil_read_mask = depth_stencil_state.front_stencil_read_mask;
+				depth_stencil_state.back_stencil_write_mask = depth_stencil_state.front_stencil_write_mask;
+				depth_stencil_state.back_stencil_func = depth_stencil_state.front_stencil_func;
+				depth_stencil_state.back_stencil_fail_op = depth_stencil_state.front_stencil_fail_op;
+				depth_stencil_state.back_stencil_depth_fail_op = depth_stencil_state.front_stencil_depth_fail_op;
+				depth_stencil_state.back_stencil_pass_op = depth_stencil_state.front_stencil_pass_op;
 
 				subobjects.push_back({ api::pipeline_subobject_type::depth_stencil_state, 1, &depth_stencil_state });
 
@@ -3206,12 +3064,43 @@ bool reshade::runtime::create_effect(size_t effect_index)
 				}
 			}
 
-			if (effect.module.num_sampler_bindings != 0 ||
-				effect.module.num_texture_bindings != 0)
+			if (effect.module.num_sampler_bindings != 0)
 			{
 				pass_data.texture_table = texture_tables[total_pass_index];
 
-				for (const reshadefx::sampler_info &info : pass_info.samplers)
+				for (const reshadefx::sampler_binding &info : pass_info.sampler_bindings)
+				{
+					api::sampler &sampler_handle = sampler_descriptors[total_pass_index * effect.module.num_sampler_bindings + info.binding].sampler;
+
+					assert(info.binding < 16 || sampler_with_resource_view);
+
+					// Only initialize sampler if it has not been created before
+					if (sampler_with_resource_view || 0 == (sampler_list & (1 << info.binding)))
+					{
+						if (!sampler_with_resource_view)
+							sampler_list |= (1 << info.binding); // Maximum sampler slot count is 16, so a 16-bit integer is enough to hold all bindings
+
+						if (!create_effect_sampler_state(info, sampler_handle))
+						{
+							log::message(log::level::error, "Failed to create sampler object in '%s'!", effect.source_file.u8string().c_str());
+							return false;
+						}
+
+						api::descriptor_table_update &write = descriptor_writes.emplace_back();
+						write.table = sampler_with_resource_view ? pass_data.texture_table : effect.sampler_table;
+						write.count = 1;
+						write.binding = info.binding;
+						write.type = sampler_with_resource_view ? api::descriptor_type::sampler_with_resource_view : api::descriptor_type::sampler;
+						write.descriptors = &sampler_handle;
+					}
+				}
+			}
+
+			if (effect.module.num_texture_bindings != 0)
+			{
+				pass_data.texture_table = texture_tables[total_pass_index];
+
+				for (const reshadefx::texture_binding &info : pass_info.texture_bindings)
 				{
 					const auto sampler_texture = std::find_if(_textures.cbegin(), _textures.cend(),
 						[&unique_name = info.texture_name](const texture &item) {
@@ -3219,28 +3108,22 @@ bool reshade::runtime::create_effect(size_t effect_index)
 						});
 					assert(sampler_texture != _textures.cend());
 
-					api::resource_view &srv = sampler_descriptors[sampler_with_resource_view ? info.binding : effect.module.num_sampler_bindings + info.texture_binding].view;
-
-					api::descriptor_table_update &write = descriptor_writes.emplace_back();
-					write.table = pass_data.texture_table;
-					write.count = 1;
+					api::resource_view &srv = sampler_descriptors[total_pass_index * effect.module.num_texture_bindings + info.binding].view;
 
 					if (sampler_with_resource_view)
 					{
-						write.binding = info.binding;
-						write.type = api::descriptor_type::sampler_with_resource_view;
-						write.descriptors = &sampler_descriptors[info.binding];
-
-						if (!create_effect_sampler_state(info, sampler_descriptors[info.binding].sampler))
-						{
-							log::message(log::level::error, "Failed to create sampler object '%s' in '%s'!", info.unique_name.c_str(), effect.source_file.u8string().c_str());
-							return false;
-						}
+						// The sampler and descriptor table update for this 'sampler_with_resource_view' descriptor were already initialized above
+						assert(
+							effect.module.num_texture_bindings == effect.module.num_sampler_bindings &&
+							sampler_descriptors[total_pass_index * effect.module.num_texture_bindings + info.binding].sampler != 0);
 					}
 					else
 					{
-						write.binding = info.texture_binding;
+						api::descriptor_table_update &write = descriptor_writes.emplace_back();
+						write.table = pass_data.texture_table;
+						write.binding = info.binding;
 						write.type = api::descriptor_type::shader_resource_view;
+						write.count = 1;
 						write.descriptors = &srv;
 					}
 
@@ -3254,9 +3137,9 @@ bool reshade::runtime::create_effect(size_t effect_index)
 						// Keep track of the texture descriptor to simplify updating it
 						effect.texture_semantic_to_binding.push_back({
 							sampler_texture->semantic,
-							write.table,
-							write.binding,
-							sampler_with_resource_view ? sampler_descriptors[info.binding].sampler : api::sampler { 0 },
+							pass_data.texture_table,
+							info.binding,
+							sampler_with_resource_view ? sampler_descriptors[total_pass_index * effect.module.num_texture_bindings + info.binding].sampler : api::sampler { 0 },
 							info.srgb
 						});
 					}
@@ -3273,7 +3156,7 @@ bool reshade::runtime::create_effect(size_t effect_index)
 			{
 				pass_data.storage_table = storage_tables[total_pass_index];
 
-				for (const reshadefx::storage_info &info : pass_info.storages)
+				for (const reshadefx::storage_binding &info : pass_info.storage_bindings)
 				{
 					const auto storage_texture = std::find_if(_textures.cbegin(), _textures.cend(),
 						[&unique_name = info.texture_name](const texture &item) {
@@ -3304,12 +3187,14 @@ bool reshade::runtime::create_effect(size_t effect_index)
 	if (!descriptor_writes.empty())
 		_device->update_descriptor_tables(static_cast<uint32_t>(descriptor_writes.size()), descriptor_writes.data());
 
+#if 0 // TODO: This no longer works, since assembly may be needed to recreate effect after reloading to get preprocessor text
 	// Clear effect assembly now that it was consumed
 	effect.assembly.clear();
+#endif
 
 	return true;
 }
-bool reshade::runtime::create_effect_sampler_state(const reshadefx::sampler_info &info, api::sampler &sampler)
+bool reshade::runtime::create_effect_sampler_state(const reshadefx::sampler_desc &info, api::sampler &sampler)
 {
 	api::sampler_desc desc;
 	desc.filter = static_cast<api::filter_mode>(info.filter);
@@ -3451,15 +3336,16 @@ void reshade::runtime::load_textures()
 			continue;
 		}
 
-		std::error_code ec;
-		const uintmax_t file_size = std::filesystem::file_size(source_path, ec);
-
 		void *pixels = nullptr;
 		int width = 0, height = 1, depth = 1, channels = 0;
 		const bool is_floating_point_format = (tex.format == reshadefx::texture_format::r32f || tex.format == reshadefx::texture_format::rg32f || tex.format == reshadefx::texture_format::rgba32f);
 
-		if (auto file = std::ifstream(source_path, std::ios::binary))
+		if (FILE *const file = _wfsopen(source_path.c_str(), L"rb", SH_DENYNO))
 		{
+			fseek(file, 0, SEEK_END);
+			const size_t file_size = ftell(file);
+			fseek(file, 0, SEEK_SET);
+
 			if (source_path.extension() == L".cube")
 			{
 				if (!is_floating_point_format)
@@ -3473,13 +3359,15 @@ void reshade::runtime::load_textures()
 				float domain_max[3] = { 1.0f, 1.0f, 1.0f };
 
 				// Read header information
-				std::string line;
-				while (std::getline(file, line))
+				char line_data[1024];
+				while (fgets(line_data, sizeof(line_data), file))
 				{
+					const std::string_view line(line_data);
+
 					if (line.empty() || line[0] == '#')
 						continue; // Skip lines with comments
 
-					char *p = line.data();
+					char *p = line_data;
 
 					if (line.rfind("TITLE", 0) == 0)
 						continue; // Skip optional line with title
@@ -3519,7 +3407,7 @@ void reshade::runtime::load_textures()
 					}
 
 					// Line has no known keyword, so assume this is where the table data starts and roll back a line to continue reading that below
-					file.seekg(-static_cast<std::streampos>(line.size() + 1), std::ios::cur);
+					fseek(file, -static_cast<long>(line.size() + 1), SEEK_CUR);
 					break;
 				}
 
@@ -3527,12 +3415,15 @@ void reshade::runtime::load_textures()
 				if (pixels != nullptr)
 				{
 					size_t index = 0;
-					while (std::getline(file, line) && (index + 4) <= (static_cast<size_t>(width) * static_cast<size_t>(height) * static_cast<size_t>(depth) * 4))
+
+					while (fgets(line_data, sizeof(line_data), file) && (index + 4) <= (static_cast<size_t>(width) * static_cast<size_t>(height) * static_cast<size_t>(depth) * 4))
 					{
+						const std::string_view line(line_data);
+
 						if (line.empty() || line[0] == '#')
 							continue; // Skip lines with comments
 
-						char *p = line.data();
+						char *p = line_data;
 
 						static_cast<float *>(pixels)[index++] = static_cast<float>(std::strtod(p, &p)) * (domain_max[0] - domain_min[0]) + domain_min[0];
 						static_cast<float *>(pixels)[index++] = static_cast<float>(std::strtod(p, &p)) * (domain_max[1] - domain_min[1]) + domain_min[1];
@@ -3544,22 +3435,25 @@ void reshade::runtime::load_textures()
 			else
 			{
 				// Read texture data into memory in one go since that is faster than reading chunk by chunk
-				std::vector<stbi_uc> file_data(static_cast<size_t>(file_size));
-				file.read(reinterpret_cast<char *>(file_data.data()), file_data.size());
-				file.close();
+				std::vector<stbi_uc> file_data(file_size);
+				const size_t file_size_read = fread(file_data.data(), 1, file_size, file);
+				fclose(file);
 
-				if (is_floating_point_format)
-					pixels = stbi_loadf_from_memory(file_data.data(), static_cast<int>(file_data.size()), &width, &height, &channels, STBI_rgb_alpha);
-				else if (stbi_dds_test_memory(file_data.data(), static_cast<int>(file_data.size())))
-					pixels = stbi_dds_load_from_memory(file_data.data(), static_cast<int>(file_data.size()), &width, &height, &depth, &channels, STBI_rgb_alpha);
-				else
-					pixels = stbi_load_from_memory(file_data.data(), static_cast<int>(file_data.size()), &width, &height, &channels, STBI_rgb_alpha);
+				if (file_size_read == file_size)
+				{
+					if (is_floating_point_format)
+						pixels = stbi_loadf_from_memory(file_data.data(), static_cast<int>(file_data.size()), &width, &height, &channels, STBI_rgb_alpha);
+					else if (stbi_dds_test_memory(file_data.data(), static_cast<int>(file_data.size())))
+						pixels = stbi_dds_load_from_memory(file_data.data(), static_cast<int>(file_data.size()), &width, &height, &depth, &channels, STBI_rgb_alpha);
+					else
+						pixels = stbi_load_from_memory(file_data.data(), static_cast<int>(file_data.size()), &width, &height, &channels, STBI_rgb_alpha);
+				}
 			}
 		}
 
-		if (ec || pixels == nullptr)
+		if (pixels == nullptr)
 		{
-			log::message(log::level::error, "Failed to load '%s' for texture '%s' with error code %d!", source_path.u8string().c_str(), tex.unique_name.c_str(), ec.value());
+			log::message(log::level::error, "Failed to load '%s' for texture '%s'!", source_path.u8string().c_str(), tex.unique_name.c_str());
 			_last_reload_successful = false;
 			continue;
 		}
@@ -4041,7 +3935,26 @@ void reshade::runtime::destroy_effects()
 	assert(_techniques.empty() && _technique_sorting.empty());
 
 	_textures_loaded = false;
-	_should_reload_effect = std::numeric_limits<size_t>::max();
+	_reload_required_effects.clear();
+}
+void reshade::runtime::reload_effect_next_frame(const char *effect_name)
+{
+#if RESHADE_FX
+	if (effect_name == nullptr || *effect_name == '\0')
+	{
+		_reload_required_effects = { _effects.size() };
+		return;
+	}
+
+	if (auto it = std::find_if(_effects.cbegin(), _effects.cend(), [effect_name = std::string_view(effect_name)](const effect &effect) { return effect.source_file.filename().u8string() == effect_name; });
+		it != _effects.cend())
+	{
+		if (const size_t effect_index = static_cast<size_t>(std::distance(_effects.cbegin(), it));
+			std::find(_reload_required_effects.cbegin(), _reload_required_effects.cend(), _effects.size()) == _reload_required_effects.cend() &&
+			std::find(_reload_required_effects.cbegin(), _reload_required_effects.cend(), effect_index) == _reload_required_effects.cend())
+			_reload_required_effects.push_back(effect_index);
+	}
+#endif
 }
 
 bool reshade::runtime::load_effect_cache(const std::string &id, const std::string &type, std::string &data) const
@@ -4052,18 +3965,18 @@ bool reshade::runtime::load_effect_cache(const std::string &id, const std::strin
 	std::filesystem::path path = g_reshade_base_path / _effect_cache_path;
 	path /= std::filesystem::u8path("reshade-" + id + '.' + type);
 
-	std::ifstream file(path, std::ios::binary);
-	if (!file)
+	FILE *const file = _wfsopen(path.c_str(), L"rb", SH_DENYNO);
+	if (file == nullptr)
 		return false;
 
-	std::error_code ec;
-	const uintmax_t file_size = std::filesystem::file_size(path, ec);
-	if (ec)
-		return false;
+	fseek(file, 0, SEEK_END);
+	const size_t file_size = ftell(file);
+	fseek(file, 0, SEEK_SET);
 
-	data.resize(static_cast<size_t>(file_size), '\0');
-	file.read(data.data(), data.size());
-	return !file.fail();
+	data.resize(file_size, '\0');
+	const size_t file_size_read = fread(data.data(), 1, data.size(), file);
+	fclose(file);
+	return file_size_read == data.size();
 }
 bool reshade::runtime::save_effect_cache(const std::string &id, const std::string &type, const std::string &data) const
 {
@@ -4073,12 +3986,13 @@ bool reshade::runtime::save_effect_cache(const std::string &id, const std::strin
 	std::filesystem::path path = g_reshade_base_path / _effect_cache_path;
 	path /= std::filesystem::u8path("reshade-" + id + '.' + type);
 
-	std::ofstream file(path, std::ios::binary | std::ios::trunc);
-	if (!file)
+	FILE *const file = _wfsopen(path.c_str(), L"wb", SH_DENYNO);
+	if (file == nullptr)
 		return false;
 
-	file.write(data.data(), data.size());
-	return !file.fail();
+	const size_t file_size_written = fwrite(data.data(), 1, data.size(), file);
+	fclose(file);
+	return file_size_written == data.size();
 }
 void reshade::runtime::clear_effect_cache()
 {
@@ -4161,9 +4075,10 @@ bool reshade::runtime::update_effect_color_and_stencil_tex(uint32_t width, uint3
 #if RESHADE_ADDON
 	if (force_reload)
 	{
-		if (_effects.size() != _should_reload_effect && !_block_effect_reload_this_frame)
+		if (std::find(_reload_required_effects.cbegin(), _reload_required_effects.cend(), _effects.size()) == _reload_required_effects.cend() &&
+			!_block_effect_reload_this_frame)
 		{
-			_should_reload_effect = _effects.size();
+			_reload_required_effects = { _effects.size() };
 		}
 		else
 		{
@@ -4172,7 +4087,7 @@ bool reshade::runtime::update_effect_color_and_stencil_tex(uint32_t width, uint3
 #endif
 
 			// Avoid reloading effects when effect color resource changes every frame
-			_should_reload_effect = std::numeric_limits<size_t>::max();
+			_reload_required_effects.clear();
 			_block_effect_reload_this_frame = true;
 		}
 	}
@@ -4221,16 +4136,24 @@ void reshade::runtime::update_effects()
 		_preset_is_modified = preset_modified_tmp;
 	}
 
-	if (_should_reload_effect != std::numeric_limits<size_t>::max() && !is_loading())
+	if (!_reload_required_effects.empty() && !is_loading())
 	{
 		save_current_preset(); // Save preset preprocessor definitions
 
-		if (_should_reload_effect < _effects.size())
-			reload_effect(_should_reload_effect);
-		else
-			reload_effects();
+		assert(_reload_required_effects.back() <= _effects.size());
 
-		_should_reload_effect = std::numeric_limits<size_t>::max();
+		if (_reload_required_effects.back() < _effects.size())
+		{
+			const size_t effect_index = _reload_required_effects.back();
+			_reload_required_effects.pop_back();
+			reload_effect(effect_index);
+		}
+		else
+		{
+			reload_effects();
+			assert(_reload_required_effects.empty());
+		}
+
 	}
 
 	if (_reload_remaining_effects == 0)
@@ -4656,7 +4579,7 @@ void reshade::runtime::render_technique(technique &tech, api::command_list *cmd_
 			cmd_list->barrier(2, resources, state_new, state_old);
 		}
 
-		const reshadefx::pass_info &pass_info = tech.passes[pass_index];
+		const reshadefx::pass &pass_info = tech.passes[pass_index];
 		const technique::pass_data &pass_data = tech.passes_data[pass_index];
 
 #ifndef NDEBUG
@@ -4777,7 +4700,7 @@ void reshade::runtime::render_technique(technique &tech, api::command_list *cmd_
 
 				// Set SEMANTIC_PIXEL_SIZE constants (see 'load_effect' above)
 				uint32_t semantic_index = 0;
-				for (const reshadefx::texture_info &tex : effect.module.textures)
+				for (const reshadefx::texture &tex : effect.module.textures)
 				{
 					if (tex.semantic.empty() || tex.semantic == "COLOR")
 						continue;
@@ -4859,35 +4782,35 @@ void reshade::runtime::save_texture(const texture &tex)
 			// Default to a save failure unless it is reported to succeed below
 			bool save_success = false;
 
-			if (auto file = std::ofstream(screenshot_path, std::ios::binary | std::ios::trunc))
+			if (FILE *const file = _wfsopen(screenshot_path.c_str(), L"wb", SH_DENYNO))
 			{
 				const auto write_callback = [](void *context, void *data, int size) {
-					static_cast<std::ofstream *>(context)->write(static_cast<const char *>(data), size);
+					fwrite(data, 1, size, static_cast<FILE *>(context));
 				};
 
 				switch (_screenshot_format)
 				{
 				case 0:
-					save_success = stbi_write_bmp_to_func(write_callback, &file, width, height, 4, pixels.data()) != 0;
+					save_success = stbi_write_bmp_to_func(write_callback, file, width, height, 4, pixels.data()) != 0;
 					break;
 				case 1:
-				{
 #if 1
-					std::vector<uint8_t> encoded_data;
-					save_success = fpng::fpng_encode_image_to_memory(pixels.data(), width, height, 4, encoded_data);
-					write_callback(&file, encoded_data.data(), static_cast<int>(encoded_data.size()));
+					if (std::vector<uint8_t> encoded_data;
+						fpng::fpng_encode_image_to_memory(pixels.data(), width, height, 4, encoded_data))
+						save_success = fwrite(encoded_data.data(), 1, encoded_data.size(), file) == encoded_data.size();
 #else
-					save_success = stbi_write_png_to_func(write_callback, &file, width, height, 4, pixels.data(), 0) != 0;
+					save_success = stbi_write_png_to_func(write_callback, file, width, height, 4, pixels.data(), 0) != 0;
 #endif
 					break;
-				}
 				case 2:
-					save_success = stbi_write_jpg_to_func(write_callback, &file, width, height, 4, pixels.data(), _screenshot_jpeg_quality) != 0;
+					save_success = stbi_write_jpg_to_func(write_callback, file, width, height, 4, pixels.data(), _screenshot_jpeg_quality) != 0;
 					break;
 				}
 
-				if (!file)
+				if (ferror(file))
 					save_success = false;
+
+				fclose(file);
 			}
 
 			if (_last_screenshot_save_successful)
@@ -5441,35 +5364,35 @@ void reshade::runtime::save_screenshot(const std::string_view postfix)
 			// Default to a save failure unless it is reported to succeed below
 			bool save_success = false;
 
-			if (auto file = std::ofstream(screenshot_path, std::ios::binary | std::ios::trunc))
+			if (FILE *const file = _wfsopen(screenshot_path.c_str(), L"wb", SH_DENYNO))
 			{
 				const auto write_callback = [](void *context, void *data, int size) {
-					static_cast<std::ofstream *>(context)->write(static_cast<const char *>(data), size);
+					fwrite(data, 1, size, static_cast<FILE *>(context));
 				};
 
 				switch (_screenshot_format)
 				{
 				case 0:
-					save_success = stbi_write_bmp_to_func(write_callback, &file, _width, _height, comp, pixels.data()) != 0;
+					save_success = stbi_write_bmp_to_func(write_callback, file, _width, _height, comp, pixels.data()) != 0;
 					break;
 				case 1:
-				{
 #if 1
-					std::vector<uint8_t> encoded_data;
-					save_success = fpng::fpng_encode_image_to_memory(pixels.data(), _width, _height, comp, encoded_data);
-					write_callback(&file, encoded_data.data(), static_cast<int>(encoded_data.size()));
+					if (std::vector<uint8_t> encoded_data;
+						fpng::fpng_encode_image_to_memory(pixels.data(), _width, _height, comp, encoded_data))
+						save_success = fwrite(encoded_data.data(), 1, encoded_data.size(), file) == encoded_data.size();
 #else
-					save_success = stbi_write_png_to_func(write_callback, &file, _width, _height, comp, pixels.data(), 0) != 0;
+					save_success = stbi_write_png_to_func(write_callback, file, _width, _height, comp, pixels.data(), 0) != 0;
 #endif
 					break;
-				}
 				case 2:
-					save_success = stbi_write_jpg_to_func(write_callback, &file, _width, _height, comp, pixels.data(), _screenshot_jpeg_quality) != 0;
+					save_success = stbi_write_jpg_to_func(write_callback, file, _width, _height, comp, pixels.data(), _screenshot_jpeg_quality) != 0;
 					break;
 				}
 
-				if (!file)
+				if (ferror(file))
 					save_success = false;
+
+				fclose(file);
 			}
 
 			if (save_success)

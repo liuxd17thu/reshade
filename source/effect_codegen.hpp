@@ -16,6 +16,8 @@ namespace reshadefx
 	/// </summary>
 	class codegen
 	{
+		friend class parser;
+
 	public:
 		/// <summary>
 		/// Virtual destructor to guarantee that memory of the implementations deriving from this interface is properly destroyed.
@@ -23,12 +25,21 @@ namespace reshadefx
 		virtual ~codegen() {}
 
 		/// <summary>
-		/// Writes result of the code generation to the specified <paramref name="module"/>.
+		/// Gets the module describing the generated code.
 		/// </summary>
-		/// <param name="module">Target module to fill.</param>
-		virtual void write_result(effect_module &module) = 0;
+		const effect_module &module() const { return _module; }
 
-	public:
+		/// <summary>
+		/// Finalizes and returns the generated code for the entire module (all entry points).
+		/// </summary>
+		virtual std::basic_string<char> finalize_code() const = 0;
+		/// <summary>
+		/// Finalizes and returns the generated code for the specified entry point (and no other entry points).
+		/// </summary>
+		/// <param name="entry_point_name">Name of the entry point function to generate code for.</param>
+		virtual std::basic_string<char> finalize_code_for_entry_point(const std::string &entry_point_name) const = 0;
+
+	protected:
 		/// <summary>
 		/// An opaque ID referring to a SSA value or basic block.
 		/// </summary>
@@ -40,14 +51,14 @@ namespace reshadefx
 		/// <param name="loc">Source location matching this definition (for debugging).</param>
 		/// <param name="info">Description of the type.</param>
 		/// <returns>New SSA ID of the type.</returns>
-		virtual id define_struct(const location &loc, struct_info &info) = 0;
+		virtual id define_struct(const location &loc, struct_type &info) = 0;
 		/// <summary>
 		/// Defines a new texture binding.
 		/// </summary>
 		/// <param name="loc">Source location matching this definition (for debugging).</param>
 		/// <param name="info">Description of the texture object.</param>
 		/// <returns>New SSA ID of the binding.</returns>
-		virtual id define_texture(const location &loc, texture_info &info) = 0;
+		virtual id define_texture(const location &loc, texture &info) = 0;
 		/// <summary>
 		/// Defines a new sampler binding.
 		/// </summary>
@@ -55,7 +66,7 @@ namespace reshadefx
 		/// <param name="tex_info">Description of the texture this sampler object references.</param>
 		/// <param name="info">Description of the sampler object.</param>
 		/// <returns>New SSA ID of the binding.</returns>
-		virtual id define_sampler(const location &loc, const texture_info &tex_info, sampler_info &info) = 0;
+		virtual id define_sampler(const location &loc, const texture &tex_info, sampler &info) = 0;
 		/// <summary>
 		/// Defines a new storage binding.
 		/// </summary>
@@ -63,14 +74,14 @@ namespace reshadefx
 		/// <param name="tex_info">Description of the texture this storage object references.</param>
 		/// <param name="info">Description of the storage object.</param>
 		/// <returns>New SSA ID of the binding.</returns>
-		virtual id define_storage(const location &loc, const texture_info &tex_info, storage_info &info) = 0;
+		virtual id define_storage(const location &loc, const texture &tex_info, storage &info) = 0;
 		/// <summary>
 		/// Defines a new uniform variable.
 		/// </summary>
 		/// <param name="loc">Source location matching this definition (for debugging).</param>
 		/// <param name="info">Description of the uniform variable.</param>
 		/// <returns>New SSA ID of the variable.</returns>
-		virtual id define_uniform(const location &loc, uniform_info &info) = 0;
+		virtual id define_uniform(const location &loc, uniform &info) = 0;
 		/// <summary>
 		/// Defines a new variable.
 		/// </summary>
@@ -82,24 +93,25 @@ namespace reshadefx
 		/// <returns>New SSA ID of the variable.</returns>
 		virtual id define_variable(const location &loc, const type &type, std::string name = std::string(), bool global = false, id initializer_value = 0) = 0;
 		/// <summary>
-		/// Defines a new function and its function parameters and make it current. Any code added after this call is added to this function.
+		/// Defines a new function and its function parameters and make it current.
+		/// Any code added after this call is added to this function.
 		/// </summary>
 		/// <param name="loc">Source location matching this definition (for debugging).</param>
 		/// <param name="info">Description of the function.</param>
 		/// <returns>New SSA ID of the function.</returns>
-		virtual id define_function(const location &loc, function_info &info) = 0;
+		virtual id define_function(const location &loc, function &info) = 0;
 
 		/// <summary>
 		/// Defines a new effect technique.
 		/// </summary>
 		/// <param name="loc">Source location matching this definition (for debugging).</param>
 		/// <param name="info">Description of the technique.</param>
-		void define_technique(technique_info &&info) { _module.techniques.push_back(std::move(info)); }
+		void define_technique(technique &&info) { _module.techniques.push_back(std::move(info)); }
 		/// <summary>
 		/// Makes a function a shader entry point.
 		/// </summary>
 		/// <param name="function">Function to use as entry point. May be overwritten to point to a new uniquely generated function.</param>
-		virtual void define_entry_point(function_info &function) = 0;
+		virtual void define_entry_point(function &function) = 0;
 
 		/// <summary>
 		/// Resolves the access chain and add a load operation to the output.
@@ -233,7 +245,7 @@ namespace reshadefx
 		/// <summary>
 		/// Returns <see langword="true"/> if code is currently added to a function.
 		/// </summary>
-		virtual bool is_in_function() const { return is_in_block(); }
+		bool is_in_function() const { return _current_function != nullptr; }
 
 		/// <summary>
 		/// Creates a new basic block.
@@ -283,71 +295,82 @@ namespace reshadefx
 		/// <param name="false_target">ID of the basic block to jump to when the condition is false.</param>
 		/// <returns>ID of the current basic block.</returns>
 		virtual id leave_block_and_branch_conditional(id condition, id true_target, id false_target) = 0;
+
 		/// <summary>
 		/// Leaves the current function. Any code added after this call is added in the global scope.
 		/// </summary>
 		virtual void leave_function() = 0;
 
 		/// <summary>
+		/// Recalculates sampler and storage bindings to take as little binding space as possible for each entry point.
+		/// </summary>
+		virtual void optimize_bindings();
+
+		/// <summary>
 		/// Looks up an existing struct type.
 		/// </summary>
 		/// <param name="id">SSA ID of the type to find.</param>
 		/// <returns>Reference to the struct description.</returns>
-		const struct_info &get_struct(id id) const
+		const struct_type &get_struct(id id) const
 		{
 			return *std::find_if(_structs.begin(), _structs.end(),
-				[id](const struct_info &info) { return info.definition == id; });
+				[id](const struct_type &info) { return info.definition == id; });
 		}
 		/// <summary>
 		/// Looks up an existing texture binding.
 		/// </summary>
 		/// <param name="id">SSA ID of the texture binding to find.</param>
 		/// <returns>Reference to the texture description.</returns>
-		texture_info &get_texture(id id)
+		texture &get_texture(id id)
 		{
 			return *std::find_if(_module.textures.begin(), _module.textures.end(),
-				[id](const texture_info &info) { return info.id == id; });
+				[id](const texture &info) { return info.id == id; });
 		}
 		/// <summary>
 		/// Looks up an existing sampler binding.
 		/// </summary>
 		/// <param name="id">SSA ID of the sampler binding to find.</param>
 		/// <returns>Reference to the sampler description.</returns>
-		const sampler_info &get_sampler(id id) const
+		const sampler &get_sampler(id id) const
 		{
 			return *std::find_if(_module.samplers.begin(), _module.samplers.end(),
-				[id](const sampler_info &info) { return info.id == id; });
+				[id](const sampler &info) { return info.id == id; });
 		}
 		/// <summary>
 		/// Looks up an existing storage binding.
 		/// </summary>
 		/// <param name="id">SSA ID of the storage binding to find.</param>
 		/// <returns>Reference to the storage description.</returns>
-		const storage_info &get_storage(id id) const
+		const storage &get_storage(id id) const
 		{
 			return *std::find_if(_module.storages.begin(), _module.storages.end(),
-				[id](const storage_info &info) { return info.id == id; });
+				[id](const storage &info) { return info.id == id; });
 		}
 		/// <summary>
 		/// Looks up an existing function definition.
 		/// </summary>
 		/// <param name="id">SSA ID of the function variable to find.</param>
 		/// <returns>Reference to the function description.</returns>
-		function_info &get_function(id id)
+		function &get_function(id id)
 		{
 			return *std::find_if(_functions.begin(), _functions.end(),
-				[id](const std::unique_ptr<function_info> &info) { return info->definition == id; })->get();
+				[id](const std::unique_ptr<function> &info) { return info->definition == id; })->get();
+		}
+		function &get_function(const std::string &unique_name)
+		{
+			return *std::find_if(_functions.begin(), _functions.end(),
+				[&unique_name](const std::unique_ptr<function> &info) { return info->unique_name == unique_name; })->get();
 		}
 
-	protected:
 		id make_id() { return _next_id++; }
 
 		effect_module _module;
-		std::vector<struct_info> _structs;
-		std::vector<std::unique_ptr<function_info>> _functions;
+		std::vector<struct_type> _structs;
+		std::vector<std::unique_ptr<function>> _functions;
 		id _next_id = 1;
 		id _last_block = 0;
 		id _current_block = 0;
+		function *_current_function = nullptr;
 	};
 
 	/// <summary>

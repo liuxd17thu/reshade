@@ -15,7 +15,7 @@
 #include <shared_mutex>
 
 class ini_file;
-namespace reshadefx { struct sampler_info; }
+namespace reshadefx { struct sampler_desc; }
 
 namespace reshade
 {
@@ -186,7 +186,7 @@ namespace reshade
 
 		bool load_effect(const std::filesystem::path &source_file, const ini_file &preset, size_t effect_index, bool force_load = false, bool preprocess_required = false);
 		bool create_effect(size_t effect_index);
-		bool create_effect_sampler_state(const reshadefx::sampler_info &info, api::sampler &sampler);
+		bool create_effect_sampler_state(const reshadefx::sampler_desc &desc, api::sampler &sampler);
 		void destroy_effect(size_t effect_index);
 
 		void load_textures();
@@ -202,6 +202,7 @@ namespace reshade
 		bool reload_effect(size_t effect_index);
 		void reload_effects(bool force_load_all = false);
 		void destroy_effects();
+		void reload_effect_next_frame(const char *effect_name);
 
 		bool load_effect_cache(const std::string &id, const std::string &type, std::string &data) const;
 		bool save_effect_cache(const std::string &id, const std::string &type, const std::string &data) const;
@@ -302,7 +303,7 @@ namespace reshade
 
 		std::vector<std::pair<std::string, std::string>> _global_preprocessor_definitions;
 		std::unordered_map<std::string, std::vector<std::pair<std::string, std::string>>> _preset_preprocessor_definitions;
-		size_t _should_reload_effect = std::numeric_limits<size_t>::max();
+		std::vector<size_t> _reload_required_effects;
 		bool _block_effect_reload_this_frame = false;
 
 		std::filesystem::path _effect_cache_path;
