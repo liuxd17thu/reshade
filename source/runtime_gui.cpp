@@ -2119,6 +2119,11 @@ void reshade::runtime::draw_gui_home()
 						if (_inherit_current_preset)
 						{
 							ini_file::clear_cache(_current_preset_path);
+							// Save inactive techniques as well.
+							if (!std::filesystem::copy_file(_current_preset_path, new_preset_path, ec))
+							{
+								log::message(log::level::error, "Failed to copy preset template '%s' to '%s' with error code %d!", _template_preset_path.u8string().c_str(), new_preset_path.u8string().c_str(), ec.value());
+							}
 							_current_preset_path = new_preset_path;
 							save_current_preset();
 							ini_file::flush_cache(new_preset_path);
