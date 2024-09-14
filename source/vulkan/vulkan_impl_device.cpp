@@ -483,7 +483,7 @@ bool reshade::vulkan::device_impl::create_resource(const api::resource_desc &des
 
 				if (initial_data != nullptr)
 				{
-					if (get_first_immediate_command_list())
+					if (get_immediate_command_list())
 					{
 						update_buffer_region(initial_data->data, *out_resource, 0, desc.buffer.size);
 					}
@@ -511,7 +511,7 @@ bool reshade::vulkan::device_impl::create_resource(const api::resource_desc &des
 				create_info.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 			// Default view creation for resolving requires image to have a usage usable for view creation
 			if (desc.heap != api::memory_heap::unknown && !is_shared && (desc.usage & (api::resource_usage::resolve_source | api::resource_usage::resolve_dest)) != 0)
-				create_info.usage |= aspect_flags_from_format(create_info.format) & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT) ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+				create_info.usage |= (aspect_flags_from_format(create_info.format) & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) != 0 ? VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT : VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 			// Mapping images is only really useful with linear tiling
 			if (desc.heap == api::memory_heap::gpu_to_cpu || desc.heap == api::memory_heap::cpu_only)
 				create_info.tiling = VK_IMAGE_TILING_LINEAR;
@@ -600,7 +600,7 @@ bool reshade::vulkan::device_impl::create_resource(const api::resource_desc &des
 				if (initial_state != api::resource_usage::undefined)
 				{
 					// Transition resource into the initial state using the first available immediate command list
-					if (const auto immediate_command_list = get_first_immediate_command_list())
+					if (const auto immediate_command_list = get_immediate_command_list())
 					{
 						if (initial_data != nullptr)
 						{
@@ -1007,7 +1007,7 @@ void reshade::vulkan::device_impl::update_buffer_region(const void *data, api::r
 	assert(resource != 0);
 	assert(data != nullptr);
 
-	if (const auto immediate_command_list = get_first_immediate_command_list())
+	if (const auto immediate_command_list = get_immediate_command_list())
 	{
 		immediate_command_list->_has_commands = true;
 
@@ -1020,6 +1020,10 @@ void reshade::vulkan::device_impl::update_texture_region(const api::subresource_
 {
 	assert(resource != 0);
 	assert(data.data != nullptr);
+
+	const auto immediate_command_list = get_immediate_command_list();
+	if (immediate_command_list == nullptr)
+		return; // No point in creating upload buffer when it cannot be uploaded
 
 	const auto resource_data = get_private_data_for_object<VK_OBJECT_TYPE_IMAGE>((VkImage)resource.handle);
 
@@ -1076,13 +1080,10 @@ void reshade::vulkan::device_impl::update_texture_region(const api::subresource_
 		vmaUnmapMemory(_alloc, intermediate_mem);
 
 		// Copy data from upload buffer into target texture using the first available immediate command list
-		if (const auto immediate_command_list = get_first_immediate_command_list())
-		{
-			immediate_command_list->copy_buffer_to_texture({ (uint64_t)intermediate }, 0, 0, 0, resource, subresource, box);
+		immediate_command_list->copy_buffer_to_texture({ (uint64_t)intermediate }, 0, 0, 0, resource, subresource, box);
 
-			// Wait for command to finish executing before destroying the upload buffer
-			immediate_command_list->flush_and_wait();
-		}
+		// Wait for command to finish executing before destroying the upload buffer
+		immediate_command_list->flush_and_wait();
 	}
 
 	vmaDestroyBuffer(_alloc, intermediate, intermediate_mem);
@@ -2164,7 +2165,7 @@ bool reshade::vulkan::device_impl::create_query_heap(api::query_type type, uint3
 
 		// Reset all queries for initial use
 #if 1
-		if (const auto immediate_command_list = get_first_immediate_command_list())
+		if (const auto immediate_command_list = get_immediate_command_list())
 		{
 			vk.CmdResetQueryPool(immediate_command_list->_orig, pool, 0, count);
 
@@ -2402,10 +2403,15 @@ void reshade::vulkan::device_impl::advance_transient_descriptor_pool()
 	vk.ResetDescriptorPool(_orig, next_pool, 0);
 }
 
-reshade::vulkan::command_list_immediate_impl *reshade::vulkan::device_impl::get_first_immediate_command_list()
+reshade::vulkan::command_list_immediate_impl *reshade::vulkan::device_impl::get_immediate_command_list()
 {
+	// Choosing the right queue is a delicate situation, since it is possible to deadlock when choosing a queue (and using 'flush_and_wait') that is waiting on a fence yet to be signaled by the current thread
+	// Prefer the last immediate command list used on this thread, as that is less likely to wait on another thread to signal
+	const auto last_immediate_command_list = command_list_immediate_impl::s_last_immediate_command_list;
+	if (last_immediate_command_list != nullptr && last_immediate_command_list->get_device() == this)
+		return last_immediate_command_list;
+	// Otherwise fall back to the first immediate command list created
 	assert(!_queues.empty());
-
 	for (command_queue_impl *const queue : _queues)
 		if (const auto immediate_command_list = static_cast<command_list_immediate_impl *>(queue->get_immediate_command_list()))
 			return immediate_command_list;

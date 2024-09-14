@@ -387,7 +387,7 @@ bool reshade::d3d12::device_impl::create_resource(const api::resource_desc &desc
 			assert(initial_state != api::resource_usage::undefined);
 
 			// Transition resource into the initial state using the first available immediate command list
-			if (const auto immediate_command_list = get_first_immediate_command_list())
+			if (const auto immediate_command_list = get_immediate_command_list())
 			{
 				const api::resource_usage states_upload[2] = { initial_state, api::resource_usage::copy_dest };
 				immediate_command_list->barrier(1, out_resource, &states_upload[0], &states_upload[1]);
@@ -433,7 +433,22 @@ reshade::api::resource_desc reshade::d3d12::device_impl::get_resource_desc(api::
 	D3D12_HEAP_PROPERTIES heap_props = {};
 	reinterpret_cast<ID3D12Resource *>(resource.handle)->GetHeapProperties(&heap_props, &heap_flags);
 
-	return convert_resource_desc(reinterpret_cast<ID3D12Resource *>(resource.handle)->GetDesc(), heap_props, heap_flags);
+	D3D12_RESOURCE_DESC desc = reinterpret_cast<ID3D12Resource *>(resource.handle)->GetDesc();
+	if (desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER)
+	{
+		D3D12_SUBRESOURCE_FOOTPRINT footprint;
+		UINT extra_data_size = sizeof(footprint);
+		if (SUCCEEDED(reinterpret_cast<ID3D12Resource *>(resource.handle)->GetPrivateData(extra_data_guid, &extra_data_size, &footprint)))
+		{
+			desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+			desc.Width = footprint.Width;
+			desc.Height = footprint.Height;
+			desc.DepthOrArraySize = static_cast<UINT16>(footprint.Depth);
+			desc.Format = footprint.Format;
+		}
+	}
+
+	return convert_resource_desc(desc, heap_props, heap_flags);
 }
 
 bool reshade::d3d12::device_impl::create_resource_view(api::resource resource, api::resource_usage usage_type, const api::resource_view_desc &desc, api::resource_view *out_view)
@@ -677,6 +692,10 @@ void reshade::d3d12::device_impl::update_buffer_region(const void *data, api::re
 	assert(resource != 0);
 	assert(data != nullptr);
 
+	const auto immediate_command_list = get_immediate_command_list();
+	if (immediate_command_list == nullptr)
+		return; // No point in creating upload buffer when it cannot be uploaded
+
 	// Allocate host memory for upload
 	D3D12_RESOURCE_DESC intermediate_desc = { D3D12_RESOURCE_DIMENSION_BUFFER };
 	intermediate_desc.Width = size;
@@ -706,13 +725,10 @@ void reshade::d3d12::device_impl::update_buffer_region(const void *data, api::re
 	ID3D12Resource_Unmap(intermediate.get(), 0, nullptr);
 
 	// Copy data from upload buffer into target texture using the first available immediate command list
-	if (const auto immediate_command_list = get_first_immediate_command_list())
-	{
-		immediate_command_list->copy_buffer_region(api::resource { reinterpret_cast<uintptr_t>(intermediate.get()) }, 0, resource, offset, size);
+	immediate_command_list->copy_buffer_region(api::resource { reinterpret_cast<uintptr_t>(intermediate.get()) }, 0, resource, offset, size);
 
-		// Wait for command to finish executing before destroying the upload buffer
-		immediate_command_list->flush_and_wait();
-	}
+	// Wait for command to finish executing before destroying the upload buffer
+	immediate_command_list->flush_and_wait();
 }
 void reshade::d3d12::device_impl::update_texture_region(const api::subresource_data &data, api::resource resource, uint32_t subresource, const api::subresource_box *box)
 {
@@ -728,6 +744,10 @@ void reshade::d3d12::device_impl::update_texture_region(const api::subresource_d
 		update_buffer_region(data.data, resource, 0, data.slice_pitch);
 		return;
 	}
+
+	const auto immediate_command_list = get_immediate_command_list();
+	if (immediate_command_list == nullptr)
+		return; // No point in creating upload buffer when it cannot be uploaded
 
 	UINT width = static_cast<UINT>(desc.Width);
 	UINT num_rows = desc.Height;
@@ -791,13 +811,10 @@ void reshade::d3d12::device_impl::update_texture_region(const api::subresource_d
 	ID3D12Resource_Unmap(intermediate.get(), 0, nullptr);
 
 	// Copy data from upload buffer into target texture using the first available immediate command list
-	if (const auto immediate_command_list = get_first_immediate_command_list())
-	{
-		immediate_command_list->copy_buffer_to_texture(api::resource { reinterpret_cast<uintptr_t>(intermediate.get()) }, 0, 0, 0, resource, subresource, box);
+	immediate_command_list->copy_buffer_to_texture(api::resource { reinterpret_cast<uintptr_t>(intermediate.get()) }, 0, 0, 0, resource, subresource, box);
 
-		// Wait for command to finish executing before destroying the upload buffer
-		immediate_command_list->flush_and_wait();
-	}
+	// Wait for command to finish executing before destroying the upload buffer
+	immediate_command_list->flush_and_wait();
 }
 
 bool reshade::d3d12::device_impl::create_pipeline(api::pipeline_layout layout, uint32_t subobject_count, const api::pipeline_subobject *subobjects, api::pipeline *out_pipeline)
@@ -2071,10 +2088,16 @@ void reshade::d3d12::device_impl::register_resource_view(D3D12_CPU_DESCRIPTOR_HA
 		assert(false);
 }
 
-reshade::d3d12::command_list_immediate_impl *reshade::d3d12::device_impl::get_first_immediate_command_list()
+reshade::d3d12::command_list_immediate_impl *reshade::d3d12::device_impl::get_immediate_command_list()
 {
+	// Choosing the right queue is a delicate situation, since it is possible to deadlock when choosing a queue (and using 'flush_and_wait') that is waiting on a fence yet to be signaled by the current thread
+	// Alternatively could create a dedicated queue just for ReShade ...
+	// For now, prefer the last immediate command list used on this thread, as that is less likely to wait on another thread to signal
+	const auto last_immediate_command_list = command_list_immediate_impl::s_last_immediate_command_list;
+	if (last_immediate_command_list != nullptr && last_immediate_command_list->get_device() == this)
+		return last_immediate_command_list;
+	// Otherwise fall back to the first immediate command list created
 	assert(!_queues.empty());
-
 	for (command_queue_impl *const queue : _queues)
 		if (const auto immediate_command_list = static_cast<command_list_immediate_impl *>(queue->get_immediate_command_list()))
 			return immediate_command_list;

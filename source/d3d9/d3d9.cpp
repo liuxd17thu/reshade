@@ -6,7 +6,7 @@
 #include "d3d9_device.hpp"
 #include "d3d9_swapchain.hpp"
 #include "d3d9_impl_type_convert.hpp"
-#include "dll_log.hpp" // Include late to get HRESULT log overloads
+#include "dll_log.hpp" // Include late to get 'hr_to_string' helper function
 #include "hook_manager.hpp"
 #include "addon_manager.hpp"
 
@@ -36,7 +36,7 @@ static std::string format_to_string(D3DFORMAT format)
 	}
 }
 
-void dump_and_modify_present_parameters(D3DPRESENT_PARAMETERS &pp, IDirect3D9 *d3d, UINT adapter_index, [[maybe_unused]] HWND focus_window)
+void dump_and_modify_present_parameters(D3DPRESENT_PARAMETERS &pp, [[maybe_unused]] IDirect3D9 *d3d, [[maybe_unused]] UINT adapter_index, [[maybe_unused]] HWND focus_window)
 {
 	reshade::log::message(reshade::log::level::info, "Dumping presentation parameters:");
 	reshade::log::message(reshade::log::level::info, "  +-----------------------------------------+-----------------------------------------+");

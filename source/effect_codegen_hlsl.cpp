@@ -75,8 +75,6 @@ private:
 		if (_shader_model < 40)
 			return;
 
-		_module.num_sampler_bindings = static_cast<uint32_t>(_sampler_lookup.size());
-
 		for (technique &tech : _module.techniques)
 			for (pass &pass : tech.passes)
 				pass.sampler_bindings.assign(_sampler_lookup.begin(), _sampler_lookup.end());
@@ -293,23 +291,19 @@ private:
 
 		// Add function definitions
 		for (const std::unique_ptr<function> &func : _functions)
-			code += _blocks.at(func->definition);
+			code += _blocks.at(func->id);
 
 		return code;
 	}
 	std::string finalize_code_for_entry_point(const std::string &entry_point_name) const override
 	{
-		const auto entry_point_it = std::find_if(_functions.begin(), _functions.end(),
-			[&entry_point_name](const std::unique_ptr<function> &func) {
-				return func->unique_name == entry_point_name;
-			});
-		if (entry_point_it == _functions.end())
+		const function *const entry_point = find_function(entry_point_name);
+		if (entry_point == nullptr)
 			return {};
-		const function &entry_point = *entry_point_it->get();
 
 		std::string code = finalize_preamble();
 
-		if (_shader_model < 40 && entry_point.type == shader_type::pixel)
+		if (_shader_model < 40 && entry_point->type == shader_type::pixel)
 			// Overwrite position semantic in pixel shaders
 			code += "#define POSITION VPOS\n";
 
@@ -324,23 +318,23 @@ private:
 			};
 
 		// Add referenced texture and sampler definitions
-		for (uint32_t binding = 0; binding < entry_point.referenced_samplers.size(); ++binding)
+		for (uint32_t binding = 0; binding < entry_point->referenced_samplers.size(); ++binding)
 		{
-			if (entry_point.referenced_samplers[binding] == 0)
+			if (entry_point->referenced_samplers[binding] == 0)
 				continue;
 
-			std::string block_code = _blocks.at(entry_point.referenced_samplers[binding]);
+			std::string block_code = _blocks.at(entry_point->referenced_samplers[binding]);
 			replace_binding(block_code, binding);
 			code += block_code;
 		}
 
 		// Add referenced storage definitions
-		for (uint32_t binding = 0; binding < entry_point.referenced_storages.size(); ++binding)
+		for (uint32_t binding = 0; binding < entry_point->referenced_storages.size(); ++binding)
 		{
-			if (entry_point.referenced_storages[binding] == 0)
+			if (entry_point->referenced_storages[binding] == 0)
 				continue;
 
-			std::string block_code = _blocks.at(entry_point.referenced_storages[binding]);
+			std::string block_code = _blocks.at(entry_point->referenced_storages[binding]);
 			replace_binding(block_code, binding);
 			code += block_code;
 		}
@@ -348,11 +342,11 @@ private:
 		// Add referenced function definitions
 		for (const std::unique_ptr<function> &func : _functions)
 		{
-			if (func.get() != &entry_point &&
-				std::find(entry_point.referenced_functions.begin(), entry_point.referenced_functions.end(), func->definition) == entry_point.referenced_functions.end())
+			if (func->id != entry_point->id &&
+				std::find(entry_point->referenced_functions.begin(), entry_point->referenced_functions.end(), func->id) == entry_point->referenced_functions.end())
 				continue;
 
-			code += _blocks.at(func->definition);
+			code += _blocks.at(func->id);
 		}
 
 		return code;
@@ -774,8 +768,8 @@ private:
 
 	id   define_struct(const location &loc, struct_type &info) override
 	{
-		info.definition = make_id();
-		define_name<naming::unique>(info.definition, info.unique_name);
+		const id res = info.id = make_id();
+		define_name<naming::unique>(res, info.unique_name);
 
 		_structs.push_back(info);
 
@@ -783,7 +777,7 @@ private:
 
 		write_location(code, loc);
 
-		code += "struct " + id_to_name(info.definition) + "\n{\n";
+		code += "struct " + id_to_name(res) + "\n{\n";
 
 		for (const member_type &member : info.member_list)
 		{
@@ -802,23 +796,22 @@ private:
 
 		code += "};\n";
 
-		return info.definition;
+		return res;
 	}
 	id   define_texture(const location &, texture &info) override
 	{
-		info.id = make_id();
+		const id res = info.id = make_id();
 
 		_module.textures.push_back(info);
 
-		return info.id;
+		return res;
 	}
 	id   define_sampler(const location &loc, const texture &tex_info, sampler &info) override
 	{
-		info.id = create_block();
+		const id res = info.id = create_block();
+		define_name<naming::unique>(res, info.unique_name);
 
-		define_name<naming::unique>(info.id, info.unique_name);
-
-		std::string &code = _blocks.at(info.id);
+		std::string &code = _blocks.at(res);
 
 		// Default to a register index equivalent to the entry in the sampler list (this is later overwritten in 'finalize_code_for_entry_point' to a more optimal placement)
 		const uint32_t default_binding = static_cast<uint32_t>(_module.samplers.size());
@@ -828,7 +821,8 @@ private:
 		{
 			// Try and reuse a sampler binding with the same sampler description
 			const auto existing_sampler_it = std::find_if(_sampler_lookup.begin(), _sampler_lookup.end(),
-				[&info](const sampler_desc &existing_info) {
+				[this, &info](const sampler_binding &existing_binding) {
+					const sampler_desc &existing_info = _module.samplers[existing_binding.index];
 					return
 						existing_info.filter == info.filter &&
 						existing_info.address_u == info.address_u &&
@@ -840,21 +834,15 @@ private:
 				});
 			if (existing_sampler_it != _sampler_lookup.end())
 			{
-				sampler_state_binding = existing_sampler_it->binding;
+				sampler_state_binding = existing_sampler_it->entry_point_binding;
 			}
 			else
 			{
 				sampler_state_binding = static_cast<uint32_t>(_sampler_lookup.size());
 
 				sampler_binding s;
-				s.filter = info.filter;
-				s.address_u = info.address_u;
-				s.address_v = info.address_v;
-				s.address_w = info.address_w;
-				s.min_lod = info.min_lod;
-				s.max_lod = info.max_lod;
-				s.lod_bias = info.lod_bias;
-				s.binding = sampler_state_binding;
+				s.index = default_binding;
+				s.entry_point_binding = sampler_state_binding;
 				_sampler_lookup.push_back(std::move(s));
 
 				if (_shader_model >= 60)
@@ -876,7 +864,7 @@ private:
 
 			code += "static const ";
 			write_type(code, info.type);
-			code += ' ' + id_to_name(info.id) + " = { __" + info.unique_name + "_t, __s" + std::to_string(sampler_state_binding) + " };\n";
+			code += ' ' + id_to_name(res) + " = { __" + info.unique_name + "_t, __s" + std::to_string(sampler_state_binding) + " };\n";
 		}
 		else
 		{
@@ -890,7 +878,7 @@ private:
 
 			code += "static const ";
 			write_type(code, info.type);
-			code += ' ' + id_to_name(info.id) + " = { __" + info.unique_name + "_s, float" + to_digit(texture_dimension) + '(';
+			code += ' ' + id_to_name(res) + " = { __" + info.unique_name + "_s, float" + to_digit(texture_dimension) + '(';
 
 			if (tex_info.semantic.empty())
 			{
@@ -911,20 +899,19 @@ private:
 
 		_module.samplers.push_back(info);
 
-		return info.id;
+		return res;
 	}
 	id   define_storage(const location &loc, const texture &, storage &info) override
 	{
-		info.id = create_block();
-
-		define_name<naming::unique>(info.id, info.unique_name);
+		const id res = info.id = create_block();
+		define_name<naming::unique>(res, info.unique_name);
 
 		// Default to a register index equivalent to the entry in the storage list (this is later overwritten in 'finalize_code_for_entry_point' to a more optimal placement)
 		const uint32_t default_binding = static_cast<uint32_t>(_module.storages.size());
 
 		if (_shader_model >= 50)
 		{
-			std::string &code = _blocks.at(info.id);
+			std::string &code = _blocks.at(res);
 
 			write_location(code, loc);
 
@@ -937,12 +924,11 @@ private:
 
 		_module.storages.push_back(info);
 
-		return info.id;
+		return res;
 	}
 	id   define_uniform(const location &loc, uniform &info) override
 	{
 		const id res = make_id();
-
 		define_name<naming::unique>(res, info.name);
 
 		if (_uniforms_to_spec_constants && info.has_initializer_value)
@@ -1064,9 +1050,8 @@ private:
 	}
 	id   define_function(const location &loc, function &info) override
 	{
-		info.definition = make_id();
-
-		define_name<naming::unique>(info.definition, info.unique_name);
+		const id res = info.id = make_id();
+		define_name<naming::unique>(res, info.unique_name);
 
 		assert(_current_block == 0 && (_current_function_declaration.empty() || info.type != shader_type::unknown));
 		std::string &code = _current_function_declaration;
@@ -1074,18 +1059,18 @@ private:
 		write_location(code, loc);
 
 		write_type(code, info.return_type);
-		code += ' ' + id_to_name(info.definition) + '(';
+		code += ' ' + id_to_name(res) + '(';
 
 		for (member_type &param : info.parameter_list)
 		{
-			param.definition = make_id();
-			define_name<naming::unique>(param.definition, param.name);
+			param.id = make_id();
+			define_name<naming::unique>(param.id, param.name);
 
 			code += '\n';
 			write_location(code, param.location);
 			code += '\t';
 			write_type<true>(code, param.type);
-			code += ' ' + id_to_name(param.definition);
+			code += ' ' + id_to_name(param.id);
 
 			if (param.type.is_array())
 				code += '[' + std::to_string(param.type.array_length) + ']';
@@ -1110,7 +1095,7 @@ private:
 		_functions.push_back(std::make_unique<function>(info));
 		_current_function = _functions.back().get();
 
-		return info.definition;
+		return res;
 	}
 
 	void define_entry_point(function &func) override
@@ -1139,7 +1124,7 @@ private:
 			return;
 
 		function entry_point = func;
-		entry_point.referenced_functions.push_back(func.definition);
+		entry_point.referenced_functions.push_back(func.id);
 
 		const auto is_color_semantic = [](const std::string &semantic) {
 			return semantic.compare(0, 9, "SV_TARGET") == 0 || semantic.compare(0, 5, "COLOR") == 0; };
@@ -1177,7 +1162,7 @@ private:
 			{
 				for (const member_type &member : get_struct(param.type.struct_definition).member_list)
 					if (is_position_semantic(member.semantic))
-						position_variable_name = id_to_name(param.definition) + '.' + member.name;
+						position_variable_name = id_to_name(param.id) + '.' + member.name;
 			}
 
 			if (is_color_semantic(param.semantic))
@@ -1188,7 +1173,7 @@ private:
 			{
 				if (func.type == shader_type::vertex)
 					// Keep track of the position output variable
-					position_variable_name = id_to_name(param.definition);
+					position_variable_name = id_to_name(param.id);
 				else if (func.type == shader_type::pixel)
 					// Change the position input semantic in pixel shaders
 					param.semantic = "VPOS";
@@ -1211,7 +1196,7 @@ private:
 		for (const member_type &param : entry_point.parameter_list)
 		{
 			if (is_color_semantic(param.semantic))
-				code += '\t' + id_to_name(param.definition) + " = float4(0.0, 0.0, 0.0, 0.0);\n";
+				code += '\t' + id_to_name(param.id) + " = float4(0.0, 0.0, 0.0, 0.0);\n";
 		}
 
 		code += '\t';
@@ -1226,16 +1211,18 @@ private:
 		}
 
 		// Call the function this entry point refers to
-		code += id_to_name(func.definition) + '(';
+		code += id_to_name(func.id) + '(';
 
-		for (size_t i = 0, num_params = func.parameter_list.size(); i < num_params; ++i)
+		for (size_t i = 0; i < func.parameter_list.size(); ++i)
 		{
-			code += id_to_name(entry_point.parameter_list[i].definition);
+			code += id_to_name(entry_point.parameter_list[i].id);
 
-			if (is_color_semantic(func.parameter_list[i].semantic))
+			const member_type &param = func.parameter_list[i];
+
+			if (is_color_semantic(param.semantic))
 			{
 				code += '.';
-				for (unsigned int c = 0; c < func.parameter_list[i].type.rows; c++)
+				for (unsigned int c = 0; c < param.type.rows; c++)
 					code += "xyzw"[c];
 			}
 
@@ -2117,11 +2104,9 @@ private:
 	}
 	void leave_function() override
 	{
-		assert(_last_block != 0);
+		assert(_current_function != nullptr && _last_block != 0);
 
-		const id current_function = _current_function->definition;
-
-		_blocks.emplace(current_function, _current_function_declaration + "{\n" + _blocks.at(_last_block) + "}\n");
+		_blocks.emplace(_current_function->id, _current_function_declaration + "{\n" + _blocks.at(_last_block) + "}\n");
 
 		_current_function = nullptr;
 		_current_function_declaration.clear();

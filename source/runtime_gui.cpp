@@ -1355,10 +1355,10 @@ void reshade::runtime::draw_gui()
 		if (show_spinner)
 		{
 			const auto remaining_effects = (_reload_remaining_effects.load() == std::numeric_limits<size_t>::max()) ? 0 : _reload_remaining_effects.load();
-			imgui::aurora_progress((_effects.size() - remaining_effects) / float(_effects.size()), 16, 10);
+			imgui::aurora_progress((_effects.size() - remaining_effects) / float(_effects.size()), 16.0f * _font_size / 13, 10.0f * _font_size / 13);
 			ImGui::SameLine();
 			auto cursorY = ImGui::GetCursorPosY();
-			ImGui::SetCursorPosY(cursorY + ImGui::GetTextLineHeight() * 0.5f);
+			ImGui::SetCursorPosY(cursorY + ImGui::GetTextLineHeight());
 			ImGui::PushStyleColor(ImGuiCol_Text, reinterpret_cast<ImVec4 &>(_fps_col));
 			ImGui::Text("%d / %d", _effects.size() - remaining_effects, _effects.size());
 			ImGui::PopStyleColor();
@@ -2313,10 +2313,10 @@ void reshade::runtime::draw_gui_home()
 
 	if (_reload_remaining_effects != std::numeric_limits<size_t>::max())
 	{
-		ImGui::SetCursorPos(ImGui::GetWindowSize() * 0.5f - ImVec2(21, 21));
-		// imgui::spinner((_effects.size() - _reload_remaining_effects) / float(_effects.size()), 16, 10);
+		ImGui::SetCursorPos(ImGui::GetWindowSize() * 0.5f - ImVec2(21.0f * _font_size / 13, 21.0f * _font_size / 13));
+		// imgui::spinner((_effects.size() - _reload_remaining_effects) / float(_effects.size()), 16.0f * _font_size / 13, 10.0f * _font_size / 13);
 		const size_t remaining_effects = (_reload_remaining_effects.load() == std::numeric_limits<size_t>::max()) ? 0 : _reload_remaining_effects.load();
-		imgui::aurora_progress((_effects.size() - remaining_effects) / float(_effects.size()), 16, 10);
+		imgui::aurora_progress((_effects.size() - remaining_effects) / float(_effects.size()), 16.0f * _font_size / 13, 10.0f * _font_size / 13);
 		char buf[32] = "";
 		ImFormatString(buf, 32, "%d / %d", _effects.size() - remaining_effects, _effects.size());
 		ImGui::SetCursorPosX(ImGui::GetWindowSize().x * 0.5f - ImGui::CalcTextSize(buf).x * 0.5f);
@@ -3250,7 +3250,9 @@ void reshade::runtime::draw_gui_statistics()
 
 		for (const texture &tex : _textures)
 		{
-			if (tex.resource == 0 || !tex.semantic.empty() || !std::any_of(tex.shared.cbegin(), tex.shared.cend(), [this](size_t effect_index) { return _effects[effect_index].rendering; }))
+			if (tex.resource == 0 || !tex.semantic.empty() ||
+				!std::any_of(tex.shared.cbegin(), tex.shared.cend(),
+					[this](size_t effect_index) { return _effects[effect_index].rendering; }))
 				continue;
 
 			ImGui::PushID(texture_index);
@@ -3323,7 +3325,7 @@ void reshade::runtime::draw_gui_statistics()
 					bool referenced = false;
 					for (const reshadefx::texture_binding &binding : tech.passes[pass_index].texture_bindings)
 					{
-						if (binding.texture_name == tex.unique_name)
+						if (_effects[tech.effect_index].module.samplers[binding.index].texture_name == tex.unique_name)
 						{
 							referenced = true;
 							reference.second.emplace_back(pass_name + " (sampler)");
@@ -3333,7 +3335,7 @@ void reshade::runtime::draw_gui_statistics()
 
 					for (const reshadefx::storage_binding &binding : tech.passes[pass_index].storage_bindings)
 					{
-						if (binding.texture_name == tex.unique_name)
+						if (_effects[tech.effect_index].module.storages[binding.index].texture_name == tex.unique_name)
 						{
 							referenced = true;
 							reference.second.emplace_back(pass_name + " (storage)");

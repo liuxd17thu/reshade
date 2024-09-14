@@ -1131,10 +1131,12 @@ namespace ReShade.Setup
 			}
 			if (compatibilityIni != null && !config.HasValue("GENERAL", "PreprocessorDefinitions"))
 			{
-				string depthReversed = compatibilityIni.GetString(currentInfo.targetName, "DepthReversed", "0");
-				string depthUpsideDown = compatibilityIni.GetString(currentInfo.targetName, "DepthUpsideDown", "0");
-				string depthLogarithmic = compatibilityIni.GetString(currentInfo.targetName, "DepthLogarithmic", "0");
-				if (!compatibilityIni.HasValue(currentInfo.targetName, "DepthReversed"))
+				string executableName = Path.GetFileName(currentInfo.targetPath);
+
+				string depthReversed = compatibilityIni.GetString(executableName, "DepthReversed", "0");
+				string depthUpsideDown = compatibilityIni.GetString(executableName, "DepthUpsideDown", "0");
+				string depthLogarithmic = compatibilityIni.GetString(executableName, "DepthLogarithmic", "0");
+				if (!compatibilityIni.HasValue(executableName, "DepthReversed"))
 				{
 					var info = FileVersionInfo.GetVersionInfo(currentInfo.targetPath);
 					if (info.LegalCopyright != null)
@@ -1154,16 +1156,16 @@ namespace ReShade.Setup
 					"RESHADE_DEPTH_INPUT_IS_REVERSED=" + depthReversed,
 					"RESHADE_DEPTH_INPUT_IS_LOGARITHMIC=" + depthLogarithmic);
 
-				if (compatibilityIni.HasValue(currentInfo.targetName, "DepthCopyBeforeClears") ||
-					compatibilityIni.HasValue(currentInfo.targetName, "DepthCopyAtClearIndex") ||
-					compatibilityIni.HasValue(currentInfo.targetName, "UseAspectRatioHeuristics"))
+				if (compatibilityIni.HasValue(executableName, "DepthCopyBeforeClears") ||
+					compatibilityIni.HasValue(executableName, "DepthCopyAtClearIndex") ||
+					compatibilityIni.HasValue(executableName, "UseAspectRatioHeuristics"))
 				{
 					config.SetValue("DEPTH", "DepthCopyBeforeClears",
-						compatibilityIni.GetString(currentInfo.targetName, "DepthCopyBeforeClears", "0"));
+						compatibilityIni.GetString(executableName, "DepthCopyBeforeClears", "0"));
 					config.SetValue("DEPTH", "DepthCopyAtClearIndex",
-						compatibilityIni.GetString(currentInfo.targetName, "DepthCopyAtClearIndex", "0"));
+						compatibilityIni.GetString(executableName, "DepthCopyAtClearIndex", "0"));
 					config.SetValue("DEPTH", "UseAspectRatioHeuristics",
-						compatibilityIni.GetString(currentInfo.targetName, "UseAspectRatioHeuristics", "1"));
+						compatibilityIni.GetString(executableName, "UseAspectRatioHeuristics", "1"));
 				}
 			}
 
@@ -1879,7 +1881,15 @@ namespace ReShade.Setup
 					string addonPath = Directory.EnumerateFiles(tempPath, currentInfo.is64Bit ? "*.addon64" : "*.addon32", SearchOption.AllDirectories).FirstOrDefault();
 					if (addonPath == null)
 					{
-						addonPath = Directory.EnumerateFiles(tempPath, "*.addon").FirstOrDefault(x => x.Contains(currentInfo.is64Bit ? "x64" : "x86") || Path.GetFileNameWithoutExtension(x).EndsWith(currentInfo.is64Bit ? "64" : "32"));
+						IEnumerable<string> addonPaths = Directory.EnumerateFiles(tempPath, "*.addon");
+						if (addonPaths.Count() == 1)
+						{
+							addonPath = addonPaths.First();
+						}
+						else
+						{
+							addonPath = addonPaths.FirstOrDefault(x => x.Contains(currentInfo.is64Bit ? "x64" : "x86") || Path.GetFileNameWithoutExtension(x).EndsWith(currentInfo.is64Bit ? "64" : "32"));
+						}
 					}
 					if (addonPath == null)
 					{

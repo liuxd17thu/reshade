@@ -8,7 +8,7 @@
 #include "effect_codegen.hpp"
 #include <cassert>
 #include <iterator> // std::back_inserter
-#include <algorithm> // std::lower_bound, std::set_union
+#include <algorithm> // std::find_if, std::lower_bound, std::set_union
 
 #define RESHADEFX_SHORT_CIRCUIT 0
 
@@ -22,16 +22,22 @@ reshadefx::parser::~parser()
 void reshadefx::parser::error(const location &location, unsigned int code, const std::string &message)
 {
 	_errors += location.source;
-	_errors += '(' + std::to_string(location.line) + ", " + std::to_string(location.column) + ')' + ": error";
-	_errors += (code == 0) ? ": " : " X" + std::to_string(code) + ": ";
+	_errors += '(' + std::to_string(location.line) + ", " + std::to_string(location.column) + ')';
+	_errors += ": error";
+	if (code != 0)
+		_errors += " X" + std::to_string(code);
+	_errors += ": ";
 	_errors += message;
 	_errors += '\n';
 }
 void reshadefx::parser::warning(const location &location, unsigned int code, const std::string &message)
 {
 	_errors += location.source;
-	_errors += '(' + std::to_string(location.line) + ", " + std::to_string(location.column) + ')' + ": warning";
-	_errors += (code == 0) ? ": " : " X" + std::to_string(code) + ": ";
+	_errors += '(' + std::to_string(location.line) + ", " + std::to_string(location.column) + ')';
+	_errors += ": warning";
+	if (code != 0)
+		_errors += " X" + std::to_string(code);
+	_errors += ": ";
 	_errors += message;
 	_errors += '\n';
 }
@@ -39,11 +45,10 @@ void reshadefx::parser::warning(const location &location, unsigned int code, con
 void reshadefx::parser::backup()
 {
 	_token_backup = _token_next;
-	_lexer_backup_offset = _lexer->input_offset();
 }
 void reshadefx::parser::restore()
 {
-	_lexer->reset_to_offset(_lexer_backup_offset);
+	_lexer->reset_to_offset(_token_backup.offset + _token_backup.length);
 	_token_next = _token_backup; // Copy instead of move here, since restore may be called twice (from 'accept_type_class' and then again from 'parse_expression_unary')
 }
 
@@ -602,7 +607,7 @@ bool reshadefx::parser::parse_expression(expression &exp)
 
 bool reshadefx::parser::parse_expression_unary(expression &exp)
 {
-	auto location = _token_next.location;
+	location location = _token_next.location;
 
 	// Check if a prefix operator exists
 	if (accept_unary_op())
@@ -1352,14 +1357,8 @@ bool reshadefx::parser::parse_expression_unary(expression &exp)
 				const std::vector<member_type> &member_list = _codegen->get_struct(exp.type.struct_definition).member_list;
 
 				// Find member with matching name is structure definition
-				uint32_t member_index = 0;
-				for (const member_type &member : member_list)
-				{
-					if (member.name == subscript)
-						break;
-					++member_index;
-				}
-
+				const size_t member_index = std::find_if(member_list.begin(), member_list.end(),
+					[&subscript](const member_type &member) { return member.name == subscript; }) - member_list.begin();
 				if (member_index >= member_list.size())
 				{
 					error(location, 3018, "invalid subscript '" + subscript + '\'');
@@ -1367,7 +1366,7 @@ bool reshadefx::parser::parse_expression_unary(expression &exp)
 				}
 
 				// Add field index to current access chain
-				exp.add_member_access(member_index, member_list[member_index].type);
+				exp.add_member_access(static_cast<unsigned int>(member_index), member_list[member_index].type);
 			}
 			else if (exp.type.is_scalar())
 			{

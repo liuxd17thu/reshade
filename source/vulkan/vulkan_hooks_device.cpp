@@ -84,8 +84,7 @@ VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDevi
 	assert(instance_dispatch.instance != VK_NULL_HANDLE);
 
 	// Look for layer link info if installed as a layer (provided by the Vulkan loader)
-	VkLayerDeviceCreateInfo *const link_info = find_layer_info<VkLayerDeviceCreateInfo>(
-		pCreateInfo->pNext, VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO, VK_LAYER_LINK_INFO);
+	VkLayerDeviceCreateInfo *const link_info = find_layer_info<VkLayerDeviceCreateInfo>(pCreateInfo->pNext, VK_STRUCTURE_TYPE_LOADER_DEVICE_CREATE_INFO, VK_LAYER_LINK_INFO);
 
 	// Get trampoline function pointers
 	PFN_vkCreateDevice trampoline = nullptr;
@@ -122,9 +121,9 @@ VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDevi
 	for (uint32_t i = 0; i < pCreateInfo->enabledExtensionCount; ++i)
 		reshade::log::message(reshade::log::level::info, "  %s", pCreateInfo->ppEnabledExtensionNames[i]);
 
-	auto enum_queue_families = instance_dispatch.GetPhysicalDeviceQueueFamilyProperties;
+	const auto enum_queue_families = instance_dispatch.GetPhysicalDeviceQueueFamilyProperties;
 	assert(enum_queue_families != nullptr);
-	auto enum_device_extensions = instance_dispatch.EnumerateDeviceExtensionProperties;
+	const auto enum_device_extensions = instance_dispatch.EnumerateDeviceExtensionProperties;
 	assert(enum_device_extensions != nullptr);
 
 	uint32_t num_queue_families = 0;
@@ -258,7 +257,7 @@ VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDevi
 	}
 
 	VkDeviceCreateInfo create_info = *pCreateInfo;
-	create_info.enabledExtensionCount = uint32_t(enabled_extensions.size());
+	create_info.enabledExtensionCount = static_cast<uint32_t>(enabled_extensions.size());
 	create_info.ppEnabledExtensionNames = enabled_extensions.data();
 
 	// Patch the enabled features
@@ -733,8 +732,14 @@ VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDevi
 
 		for (uint32_t queue_index = 0; queue_index < queue_create_info.queueCount; ++queue_index)
 		{
+			VkDeviceQueueInfo2 queue_info = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2 };
+			queue_info.flags = queue_create_info.flags;
+			queue_info.queueFamilyIndex = queue_create_info.queueFamilyIndex;
+			queue_info.queueIndex = queue_index;
+
 			VkQueue queue = VK_NULL_HANDLE;
-			dispatch_table.GetDeviceQueue(device, queue_create_info.queueFamilyIndex, queue_index, &queue);
+			// According to the spec, 'vkGetDeviceQueue' must only be used to get queues where 'VkDeviceQueueCreateInfo::flags' is set to zero, so use 'vkGetDeviceQueue2' instead
+			dispatch_table.GetDeviceQueue2(device, &queue_info, &queue);
 			assert(VK_NULL_HANDLE != queue);
 
 			// Subsequent layers (like the validation layer or the Steam overlay) expect the loader to have set the dispatch pointer, but this does not happen when calling down the layer chain from here, so fix it
@@ -818,7 +823,7 @@ VkResult VKAPI_CALL vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreat
 		// Add required usage flags to create info
 		create_info.imageUsage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 
-		// Add required formats, so views with different formats can be created for the swap chain images
+		// Add required format variants, so e.g. both linear and sRGB views can be created for the swap chain images
 		format_list.push_back(reshade::vulkan::convert_format(
 			reshade::api::format_to_default_typed(reshade::vulkan::convert_format(create_info.imageFormat), 0)));
 		format_list.push_back(reshade::vulkan::convert_format(
@@ -1768,6 +1773,7 @@ VkResult VKAPI_CALL vkCreateImageView(VkDevice device, const VkImageViewCreateIn
 
 	const auto resource_data = device_impl->get_private_data_for_object<VK_OBJECT_TYPE_IMAGE>(create_info.image);
 	data.image_extent = resource_data->create_info.extent;
+	// Update subresource range to the actual dimensions of the image
 	if (VK_REMAINING_MIP_LEVELS == data.create_info.subresourceRange.levelCount)
 		data.create_info.subresourceRange.levelCount = resource_data->create_info.mipLevels;
 	if (VK_REMAINING_ARRAY_LAYERS == data.create_info.subresourceRange.layerCount)
@@ -2588,8 +2594,7 @@ VkResult VKAPI_CALL vkCreateDescriptorSetLayout(VkDevice device, const VkDescrip
 		{
 			const VkDescriptorSetLayoutBinding &binding = pCreateInfo->pBindings[i];
 
-			if (binding.binding >= data.binding_to_offset.size())
-				data.binding_to_offset.resize(binding.binding + 1);
+			data.binding_to_offset.resize(std::max(data.binding_to_offset.size(), static_cast<size_t>(binding.binding) + 1));
 			data.binding_to_offset[binding.binding] = binding.descriptorCount;
 
 			if ((binding.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER || binding.descriptorType == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) && binding.pImmutableSamplers != nullptr)
@@ -2887,9 +2892,14 @@ VkResult VKAPI_CALL vkCreateFramebuffer(VkDevice device, const VkFramebufferCrea
 	// Keep track of the frame buffer attachments
 	reshade::vulkan::object_data<VK_OBJECT_TYPE_FRAMEBUFFER> &data = *device_impl->register_object<VK_OBJECT_TYPE_FRAMEBUFFER>(*pFramebuffer);
 	if ((pCreateInfo->flags & VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT) != 0)
+	{
 		data.attachments.resize(pCreateInfo->attachmentCount);
+	}
 	else
+	{
+		assert(pCreateInfo->pAttachments != nullptr);
 		data.attachments.assign(pCreateInfo->pAttachments, pCreateInfo->pAttachments + pCreateInfo->attachmentCount);
+	}
 #endif
 
 	return result;
