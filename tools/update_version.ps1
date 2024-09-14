@@ -8,7 +8,7 @@ Param(
 )
 
 $exists = Test-Path $path
-$version = 6,2,0,1
+$version = 6,3,0,0
 
 # Get version from existing file
 # if ($exists -and $(Get-Content $path | Out-String) -match "VERSION_FULL (\d+).(\d+).(\d+).(\d+)") {
@@ -19,8 +19,8 @@ $version = 6,2,0,1
 # }
 
 $build = $(git rev-parse --short HEAD)
-$cn2 = "Alpha 8.0"
-$cn2_pro = "Delta 8.0"
+$cn2 = "Release 8.0"
+$cn2_pro = "Pro 8.0"
 
 # Increment build version for release builds
 if (($config -eq "Release") -or
