@@ -4099,6 +4099,7 @@ void reshade::runtime::draw_variable_editor()
 				preset.get(raw_effect_name, "PreprocessorDefinitions", _preset_preprocessor_definitions[raw_effect_name]);
 				reload_effect(_preset_section_editing);
 
+				_preset_is_modified = (!_auto_save_preset) && preset_section_modified;
 				preset_section_modified = false;
 				_preset_section_editing = std::numeric_limits<size_t>::max();
 			}
