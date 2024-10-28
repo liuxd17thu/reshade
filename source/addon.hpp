@@ -26,6 +26,8 @@ namespace reshade
 		std::string description;
 		std::string file;
 		std::string author;
+		std::string website_url;
+		std::string issues_url;
 		union version
 		{
 			struct number
@@ -37,6 +39,7 @@ namespace reshade
 			} number;
 			uint64_t value;
 		} version = {};
+		bool external = true;
 
 		std::vector<std::pair<uint32_t, void *>> event_callbacks;
 #if RESHADE_GUI
