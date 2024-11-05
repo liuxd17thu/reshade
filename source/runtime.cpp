@@ -1972,11 +1972,6 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 		effect.source_file = source_file;
 		effect.source_hash = source_hash;
 	}
-	else if (!effect.compiled)
-	{
-		// Clear any errors from a previous failed loading attempt (since it will now try again and append to the errors list)
-		effect.errors.clear();
-	}
 
 	if (_effect_load_skipping && !force_load)
 	{
@@ -2000,6 +1995,7 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 
 	bool skip_optimization = false;
 	std::string code_preamble;
+	std::string errors;
 
 	bool source_cached = false;
 	std::string source;
@@ -2054,7 +2050,7 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 		effect.preprocessed = pp.append_file(source_file);
 
 		// Append preprocessor errors to the error list
-		effect.errors += pp.errors();
+		errors += pp.errors();
 
 		if (effect.preprocessed)
 		{
@@ -2176,7 +2172,7 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 		effect.compiled = parser.parse(std::move(source), codegen.get());
 
 		// Append parser errors to the error list
-		effect.errors  += parser.errors();
+		errors += parser.errors();
 
 		// Write result to effect module
 		effect.module = codegen->module();
@@ -2279,7 +2275,11 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 							break;
 						case reshadefx::type::t_float:
 							char temp[64];
-							const std::to_chars_result res = std::to_chars(temp, temp + sizeof(temp), constant.initializer_value.as_float[i], std::chars_format::scientific, 8);
+							const std::to_chars_result res = std::to_chars(temp, temp + sizeof(temp), constant.initializer_value.as_float[i]
+#if !defined(_HAS_COMPLETE_CHARCONV) || _HAS_COMPLETE_CHARCONV
+								, std::chars_format::scientific, 8
+#endif
+								);
 							if (res.ec == std::errc())
 								code_preamble.append(temp, res.ptr);
 							else
@@ -2302,6 +2302,9 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 			return load_effect(source_file, preset, effect_index, force_load, true);
 		}
 	}
+
+	if (!errors.empty())
+		effect.errors = std::move(errors);
 
 	if ( effect.compiled && (effect.preprocessed || source_cached))
 	{
@@ -3193,6 +3196,8 @@ bool reshade::runtime::create_effect(size_t effect_index)
 	effect.assembly.clear();
 #endif
 
+	load_textures(effect_index);
+
 	return true;
 }
 bool reshade::runtime::create_effect_sampler_state(const reshadefx::sampler_desc &info, api::sampler &sampler)
@@ -3317,12 +3322,14 @@ void reshade::runtime::destroy_effect(size_t effect_index)
 	// Do not clear effect here, since it is common to be reused immediately
 }
 
-void reshade::runtime::load_textures()
+void reshade::runtime::load_textures(size_t effect_index)
 {
 	for (texture &tex : _textures)
 	{
 		if (tex.resource == 0 || !tex.semantic.empty())
 			continue; // Ignore textures that are not created yet and those that are handled in the runtime implementation
+		if (std::find(tex.shared.begin(), tex.shared.end(), effect_index) == tex.shared.end())
+			continue; // Ignore textures not being used with this effect
 
 		std::filesystem::path source_path = std::filesystem::u8path(tex.annotation_as_string("source"));
 		// Ignore textures that have no image file attached to them (e.g. plain render targets)
@@ -3496,8 +3503,6 @@ void reshade::runtime::load_textures()
 
 		tex.loaded = true;
 	}
-
-	_textures_loaded = true;
 }
 bool reshade::runtime::create_texture(texture &tex)
 {
@@ -3935,7 +3940,6 @@ void reshade::runtime::destroy_effects()
 	assert(_textures.empty());
 	assert(_techniques.empty() && _technique_sorting.empty());
 
-	_textures_loaded = false;
 	_reload_required_effects.clear();
 }
 
@@ -4180,61 +4184,50 @@ void reshade::runtime::update_effects()
 		return;
 	}
 
-	if (_reload_remaining_effects != std::numeric_limits<size_t>::max())
+	if (_reload_remaining_effects != std::numeric_limits<size_t>::max() || _reload_create_queue.empty())
 		return;
 
-	if (!_reload_create_queue.empty())
+	// Pop an effect from the queue
+	const size_t effect_index = _reload_create_queue.back();
+	_reload_create_queue.pop_back();
+
+	if (!create_effect(effect_index))
 	{
-		// Pop an effect from the queue
-		const size_t effect_index = _reload_create_queue.back();
-		_reload_create_queue.pop_back();
+		_graphics_queue->wait_idle();
 
-		if (!create_effect(effect_index))
-		{
-			_graphics_queue->wait_idle();
+		// Destroy all textures belonging to this effect
+		for (texture &tex : _textures)
+			if (tex.effect_index == effect_index && tex.shared.size() <= 1)
+				destroy_texture(tex);
+		// Disable all techniques belonging to this effect
+		for (technique &tech : _techniques)
+			if (tech.effect_index == effect_index)
+				disable_technique(tech);
 
-			// Destroy all textures belonging to this effect
-			for (texture &tex : _textures)
-				if (tex.effect_index == effect_index && tex.shared.size() <= 1)
-					destroy_texture(tex);
-			// Disable all techniques belonging to this effect
-			for (technique &tech : _techniques)
-				if (tech.effect_index == effect_index)
-					disable_technique(tech);
-
-			_effects[effect_index].compiled = false;
-			_last_reload_successful = false;
-		}
-
-		// An effect has changed, need to reload textures
-		_textures_loaded = false;
+		_effects[effect_index].compiled = false;
+		_last_reload_successful = false;
+	}
 
 #if RESHADE_GUI
-		const effect &effect = _effects[effect_index];
+	const effect &effect = _effects[effect_index];
 
-		// Update assembly in all code editors after a reload
-		for (editor_instance &instance : _editors)
-		{
-			if (!instance.generated || instance.entry_point_name.empty() || instance.file_path != effect.source_file)
-				continue;
-
-			assert(instance.effect_index == effect_index);
-
-			if (effect.assembly_text.find(instance.entry_point_name) != effect.assembly_text.end())
-				open_code_editor(instance);
-		}
-#endif
-	}
-
-	if (!_textures_loaded && _reload_create_queue.empty())
+	// Update assembly in all code editors after a reload
+	for (editor_instance &instance : _editors)
 	{
-		// Now that all effects were created, load all textures
-		load_textures();
+		if (!instance.generated || instance.entry_point_name.empty() || instance.file_path != effect.source_file)
+			continue;
+
+		assert(instance.effect_index == effect_index);
+
+		if (effect.assembly_text.find(instance.entry_point_name) != effect.assembly_text.end())
+			open_code_editor(instance);
+	}
+#endif
 
 #if RESHADE_ADDON
+	if (_reload_create_queue.empty())
 		invoke_addon_event<addon_event::reshade_reloaded_effects>(this);
 #endif
-	}
 }
 void reshade::runtime::render_effects(api::command_list *cmd_list, api::resource_view rtv, api::resource_view rtv_srgb)
 {
@@ -5461,7 +5454,7 @@ bool reshade::runtime::get_texture_data(api::resource resource, api::resource_us
 		view_format != api::format::r10g10b10a2_unorm &&
 		view_format != api::format::b10g10r10a2_unorm)
 	{
-		log::message(log::level::error, "Screenshots are not supported for format %u!", static_cast<uint32_t>(desc.texture.format));
+		log::message(log::level::error, "Screenshots are not supported for format %u! HDR needs to be disabled for screenshots to work.", static_cast<uint32_t>(desc.texture.format));
 		return false;
 	}
 

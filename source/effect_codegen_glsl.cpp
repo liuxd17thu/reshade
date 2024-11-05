@@ -76,6 +76,7 @@ private:
 	bool _uses_componentwise_and = false;
 	bool _uses_componentwise_cond = false;
 	bool _uses_control_flow_attributes = false;
+	bool _uses_derivative_control = false;
 
 	std::string finalize_preamble() const
 	{
@@ -86,6 +87,9 @@ private:
 			preamble += "#extension GL_NV_gpu_shader5 : require\n";
 		if (_uses_control_flow_attributes)
 			preamble += "#extension GL_EXT_control_flow_attributes : enable\n";
+		if (_uses_derivative_control)
+			// Core only starting in GLSL version 4.5
+			preamble += "#extension GL_ARB_derivative_control : enable\n";
 
 		if (_uses_fmod)
 			preamble += "float fmodHLSL(float x, float y) { return x - y * trunc(x / y); }\n"
@@ -484,7 +488,11 @@ private:
 					break;
 				}
 				char temp[64];
-				const std::to_chars_result res = std::to_chars(temp, temp + sizeof(temp), data.as_float[i], std::chars_format::scientific, 8);
+				const std::to_chars_result res = std::to_chars(temp, temp + sizeof(temp), data.as_float[i]
+#if !defined(_HAS_COMPLETE_CHARCONV) || _HAS_COMPLETE_CHARCONV
+					, std::chars_format::scientific, 8
+#endif
+					);
 				if (res.ec == std::errc())
 					s.append(temp, res.ptr);
 				else
