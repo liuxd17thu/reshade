@@ -3282,8 +3282,7 @@ void reshade::runtime::draw_gui_statistics()
 				memory_view = std::lldiv(memory_size, 1024);
 				memory_size_unit = "KiB";
 			}
-
-			ImGui::TextColored(ImVec4(1, 1, 1, 1), "%s%s", tex.unique_name.c_str(), tex.shared.size() > 1 ? " (pooled)" : "");
+			ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_Text), "%s%s", tex.unique_name.c_str(), tex.shared.size() > 1 ? " (pooled)" : "");
 			switch (tex.type)
 			{
 			case reshadefx::texture_type::texture_1d:
