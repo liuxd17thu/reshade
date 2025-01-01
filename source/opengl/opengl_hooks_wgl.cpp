@@ -112,6 +112,9 @@ static std::vector<class wgl_swapchain *> s_opengl_swapchains;
 
 extern thread_local reshade::opengl::device_context_impl *g_opengl_context;
 
+// Set during OpenGL presentation, to avoid hooking internal D3D devices and layered DXGI swapchain
+extern thread_local bool g_in_dxgi_runtime;
+
 class wgl_device : public reshade::opengl::device_impl, public reshade::opengl::device_context_impl
 {
 	friend class wgl_swapchain;
@@ -1327,7 +1330,11 @@ extern "C" BOOL  WINAPI wglSwapBuffers(HDC hdc)
 	}
 
 	static const auto trampoline = reshade::hooks::call(wglSwapBuffers);
-	return trampoline(hdc);
+	assert(!g_in_dxgi_runtime);
+	g_in_dxgi_runtime = true;
+	const BOOL result = trampoline(hdc);
+	g_in_dxgi_runtime = false;
+	return result;
 }
 extern "C" BOOL  WINAPI wglSwapLayerBuffers(HDC hdc, UINT i)
 {

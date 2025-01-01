@@ -11,12 +11,7 @@
 
 extern bool is_windows7();
 
-reshade::d3d11::device_impl::device_impl(ID3D11Device *device) :
-	api_object_impl(device)
-{
-}
-
-static const com_ptr<IDXGIAdapter> get_adapter_for_device(ID3D11Device *device, DXGI_ADAPTER_DESC &adapter_desc)
+static auto adapter_from_device(ID3D11Device *device, DXGI_ADAPTER_DESC *adapter_desc = nullptr) -> const com_ptr<IDXGIAdapter>
 {
 	com_ptr<IDXGIDevice> dxgi_device;
 	if (SUCCEEDED(device->QueryInterface(&dxgi_device)))
@@ -24,7 +19,8 @@ static const com_ptr<IDXGIAdapter> get_adapter_for_device(ID3D11Device *device, 
 		com_ptr<IDXGIAdapter> dxgi_adapter;
 		if (SUCCEEDED(dxgi_device->GetAdapter(&dxgi_adapter)))
 		{
-			dxgi_adapter->GetDesc(&adapter_desc);
+			if (adapter_desc != nullptr)
+				dxgi_adapter->GetDesc(adapter_desc);
 			return dxgi_adapter;
 		}
 	}
@@ -32,17 +28,20 @@ static const com_ptr<IDXGIAdapter> get_adapter_for_device(ID3D11Device *device, 
 	return nullptr;
 }
 
+reshade::d3d11::device_impl::device_impl(ID3D11Device *device) :
+	api_object_impl(device)
+{
+}
+
 bool reshade::d3d11::device_impl::get_property(api::device_properties property, void *data) const
 {
-	DXGI_ADAPTER_DESC adapter_desc;
-
 	switch (property)
 	{
 	case api::device_properties::api_version:
 		*static_cast<uint32_t *>(data) = _orig->GetFeatureLevel();
 		return true;
 	case api::device_properties::driver_version:
-		if (const auto dxgi_adapter = get_adapter_for_device(_orig, adapter_desc))
+		if (const auto dxgi_adapter = adapter_from_device(_orig))
 		{
 			LARGE_INTEGER umd_version = {};
 			dxgi_adapter->CheckInterfaceSupport(__uuidof(IDXGIDevice), &umd_version);
@@ -51,21 +50,24 @@ bool reshade::d3d11::device_impl::get_property(api::device_properties property, 
 		}
 		return false;
 	case api::device_properties::vendor_id:
-		if (get_adapter_for_device(_orig, adapter_desc))
+		if (DXGI_ADAPTER_DESC adapter_desc;
+			adapter_from_device(_orig, &adapter_desc))
 		{
 			*static_cast<uint32_t *>(data) = adapter_desc.VendorId;
 			return true;
 		}
 		return false;
 	case api::device_properties::device_id:
-		if (get_adapter_for_device(_orig, adapter_desc))
+		if (DXGI_ADAPTER_DESC adapter_desc;
+			adapter_from_device(_orig, &adapter_desc))
 		{
 			*static_cast<uint32_t *>(data) = adapter_desc.DeviceId;
 			return true;
 		}
 		return false;
 	case api::device_properties::description:
-		if (get_adapter_for_device(_orig, adapter_desc))
+		if (DXGI_ADAPTER_DESC adapter_desc;
+			adapter_from_device(_orig, &adapter_desc))
 		{
 			static_assert(std::size(adapter_desc.Description) <= 256);
 			utf8::unchecked::utf16to8(adapter_desc.Description, adapter_desc.Description + std::size(adapter_desc.Description), static_cast<char *>(data));
@@ -1383,20 +1385,17 @@ bool reshade::d3d11::device_impl::get_query_heap_results(api::query_heap heap, u
 	return true;
 }
 
-// WKPDID_D3DDebugObjectName
-inline constexpr GUID s_debug_object_name_guid = { 0x429b8c22, 0x9188, 0x4b0c, { 0x87, 0x42, 0xac, 0xb0, 0xbf, 0x85, 0xc2, 0x00} };
-
 void reshade::d3d11::device_impl::set_resource_name(api::resource resource, const char *name)
 {
 	assert(resource != 0);
 
-	reinterpret_cast<ID3D11DeviceChild *>(resource.handle)->SetPrivateData(s_debug_object_name_guid, static_cast<UINT>(std::strlen(name)), name);
+	reinterpret_cast<ID3D11DeviceChild *>(resource.handle)->SetPrivateData(WKPDID_D3DDebugObjectName, static_cast<UINT>(std::strlen(name)), name);
 }
 void reshade::d3d11::device_impl::set_resource_view_name(api::resource_view view, const char *name)
 {
 	assert(view != 0);
 
-	reinterpret_cast<ID3D11DeviceChild *>(view.handle)->SetPrivateData(s_debug_object_name_guid, static_cast<UINT>(std::strlen(name)), name);
+	reinterpret_cast<ID3D11DeviceChild *>(view.handle)->SetPrivateData(WKPDID_D3DDebugObjectName, static_cast<UINT>(std::strlen(name)), name);
 }
 
 bool reshade::d3d11::device_impl::create_fence(uint64_t initial_value, api::fence_flags flags, api::fence *out_fence, HANDLE *shared_handle)

@@ -83,7 +83,7 @@ static bool install_internal(const char *name, reshade::hook &hook, hook_method 
 		return false;
 
 #if RESHADE_VERBOSE_LOG
-	reshade::log::message(reshade::log::level::debug, "Installing hook for %s at 0x%p with 0x%p using method %d ...", name, hook.target, hook.replacement, static_cast<int>(method));
+	reshade::log::message(reshade::log::level::debug, "Installing hook for %s at %p with %p using method %d ...", name, hook.target, hook.replacement, static_cast<int>(method));
 #endif
 	auto status = reshade::hook::status::unknown;
 
@@ -152,9 +152,9 @@ static bool install_internal(HMODULE target_module, HMODULE replacement_module, 
 
 #if RESHADE_VERBOSE_LOG
 	reshade::log::message(reshade::log::level::debug, "> Dumping matches in export table:");
-	reshade::log::message(reshade::log::level::debug, "  +--------------------+---------+----------------------------------------------------+");
-	reshade::log::message(reshade::log::level::debug, "  | Address            | Ordinal | Name                                               |");
-	reshade::log::message(reshade::log::level::debug, "  +--------------------+---------+----------------------------------------------------+");
+	reshade::log::message(reshade::log::level::debug, "  +------------------+---------+----------------------------------------------------+");
+	reshade::log::message(reshade::log::level::debug, "  | Address          | Ordinal | Name                                               |");
+	reshade::log::message(reshade::log::level::debug, "  +------------------+---------+----------------------------------------------------+");
 #endif
 
 	// Analyze export tables and find entries that exist in both modules
@@ -187,14 +187,14 @@ static bool install_internal(HMODULE target_module, HMODULE replacement_module, 
 			std::strcmp(symbol.name, "Direct3D9EnableMaximizedWindowedModeShim") != 0)
 		{
 #if RESHADE_VERBOSE_LOG
-			reshade::log::message(reshade::log::level::debug, "  | 0x%016p | %-7hu | %-50s |", symbol.address, symbol.ordinal, symbol.name);
+			reshade::log::message(reshade::log::level::debug, "  | %-016p | %-7hu | %-50s |", reinterpret_cast<uintptr_t>(symbol.address), symbol.ordinal, symbol.name);
 #endif
 			matches.push_back(std::make_tuple(symbol.name, symbol.address, it->address));
 		}
 	}
 
 #if RESHADE_VERBOSE_LOG
-	reshade::log::message(reshade::log::level::debug, "  +--------------------+---------+----------------------------------------------------+");
+	reshade::log::message(reshade::log::level::debug, "  +------------------+---------+----------------------------------------------------+");
 #endif
 	reshade::log::message(reshade::log::level::info, "> Found %zu match(es). Installing ...", matches.size());
 
@@ -315,6 +315,10 @@ static void install_delayed_hooks(const std::filesystem::path &loaded_path)
 	{
 		const auto remove = std::remove_if(s_delayed_hook_paths.begin(), s_delayed_hook_paths.end(),
 			[&loaded_path](const std::filesystem::path &path) {
+				// Skip export module if it was loaded somehow before/outside of 'ensure_export_module_loaded' below
+				if (path == s_export_hook_path)
+					return false;
+
 				// Pin the module so it cannot be unloaded by the application and cause problems when ReShade tries to call into it afterwards
 				HMODULE delayed_handle = nullptr;
 				if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_PIN, path.c_str(), &delayed_handle))
@@ -451,8 +455,9 @@ void reshade::hooks::uninstall()
 #ifndef RESHADE_TEST_APPLICATION
 	if (s_dll_notification_cookie && s_dll_notification_cookie != reinterpret_cast<PVOID>(-1))
 	{
-		const auto LdrUnregisterDllNotification = reinterpret_cast<LONG(NTAPI *)(PVOID Cookie)>(
-			GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "LdrUnregisterDllNotification"));
+		const auto ntdll_module = GetModuleHandleW(L"ntdll.dll");
+		assert(ntdll_module != nullptr);
+		const auto LdrUnregisterDllNotification = reinterpret_cast<LONG(NTAPI *)(PVOID Cookie)>(GetProcAddress(ntdll_module, "LdrUnregisterDllNotification"));
 		if (LdrUnregisterDllNotification != nullptr)
 			LdrUnregisterDllNotification(s_dll_notification_cookie);
 	}
@@ -476,8 +481,9 @@ void reshade::hooks::register_module(const std::filesystem::path &target_path)
 #ifndef RESHADE_TEST_APPLICATION
 	if (s_dll_notification_cookie == nullptr)
 	{
-		const auto LdrRegisterDllNotification = reinterpret_cast<LONG (NTAPI *)(ULONG Flags, FARPROC NotificationFunction, PVOID Context, PVOID *Cookie)>(
-			GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "LdrRegisterDllNotification"));
+		const auto ntdll_module = GetModuleHandleW(L"ntdll.dll");
+		assert(ntdll_module != nullptr);
+		const auto LdrRegisterDllNotification = reinterpret_cast<LONG (NTAPI *)(ULONG Flags, FARPROC NotificationFunction, PVOID Context, PVOID *Cookie)>(GetProcAddress(ntdll_module, "LdrRegisterDllNotification"));
 		if (LdrRegisterDllNotification == nullptr ||
 			// The Steam overlay is using 'LoadLibrary' hooks, so always use them too if it is used, to ensure that ReShade installs hooks after the Steam overlay already did so
 			// Detect whether the Steam overlay is used by checking for a 'SteamOverlayGameId' environment variable that Steam sets, instead of looking for 'GameOverlayRenderer[64].dll', since ReShade may be injected before the Steam overlay DLL
@@ -586,7 +592,7 @@ reshade::hook::address reshade::hooks::call(hook::address replacement, hook::add
 			ensure_export_module_loaded();
 	}
 
-	log::message(log::level::error, "Unable to resolve hook for 0x%p!", replacement);
+	log::message(log::level::error, "Unable to resolve hook for %p!", replacement);
 
 	return nullptr;
 }

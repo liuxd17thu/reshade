@@ -1131,7 +1131,7 @@ void reshade::runtime::draw_gui()
 		{
 			_input->block_mouse_input(false);
 			_input->block_keyboard_input(false);
-			_input->immobilize_cursor(false);
+			_input->block_mouse_cursor_warping(false);
 		}
 		return; // Early-out to avoid costly ImGui calls when no GUI elements are on the screen
 	}
@@ -1807,10 +1807,12 @@ void reshade::runtime::draw_gui()
 	if (_input != nullptr)
 	{
 		const bool block_input = _input_processing_mode != 0 && (_show_overlay || _block_input_next_frame);
+		const bool block_mouse_input = block_input && (imgui_io.WantCaptureMouse || _input_processing_mode == 2);
+		const bool block_keyboard_input = block_input && (imgui_io.WantCaptureKeyboard || _input_processing_mode == 2);
 
-		_input->block_mouse_input(block_input && (imgui_io.WantCaptureMouse || _input_processing_mode == 2));
-		_input->block_keyboard_input(block_input && (imgui_io.WantCaptureKeyboard || _input_processing_mode == 2));
-		_input->immobilize_cursor(_show_overlay || _block_input_next_frame || (block_input && (imgui_io.WantCaptureMouse || _input_processing_mode == 2)));
+		_input->block_mouse_input(block_mouse_input);
+		_input->block_keyboard_input(block_keyboard_input);
+		_input->block_mouse_cursor_warping(_show_overlay || _block_input_next_frame || block_mouse_input);
 	}
 
 	if (ImDrawData *const draw_data = ImGui::GetDrawData();
@@ -2713,12 +2715,22 @@ void reshade::runtime::draw_gui_settings()
 				"HH-mm-ss");
 		}
 
-		modified |= ImGui::Combo(_("Screenshot format"), reinterpret_cast<int *>(&_screenshot_format), "Bitmap (*.bmp)\0Portable Network Graphics (*.png)\0JPEG (*.jpeg)\0");
-
-		if (_screenshot_format == 2)
-			modified |= ImGui::SliderInt(_("JPEG quality"), reinterpret_cast<int *>(&_screenshot_jpeg_quality), 1, 100, "%d", ImGuiSliderFlags_AlwaysClamp);
+		// HDR screenshots only support PNG, and have no alpha channel
+		if (_back_buffer_format == reshade::api::format::r16g16b16a16_float ||
+			_back_buffer_color_space == reshade::api::color_space::hdr10_st2084)
+		{
+			modified |= ImGui::Checkbox(_("Copy image to clipboard"), &_screenshot_clipboard_copy);
+			modified |= ImGui::SliderInt(_("HDR PNG quality"), reinterpret_cast<int *>(&_screenshot_hdr_bits), 7, 16, "%d bit", ImGuiSliderFlags_AlwaysClamp);
+		}
 		else
-			modified |= ImGui::Checkbox(_("Clear alpha channel"), &_screenshot_clear_alpha);
+		{
+			modified |= ImGui::Combo(_("Screenshot format"), reinterpret_cast<int *>(&_screenshot_format), "Bitmap (*.bmp)\0Portable Network Graphics (*.png)\0JPEG (*.jpeg)\0");
+
+			if (_screenshot_format == 2)
+				modified |= ImGui::SliderInt(_("JPEG quality"), reinterpret_cast<int *>(&_screenshot_jpeg_quality), 1, 100, "%d", ImGuiSliderFlags_AlwaysClamp);
+			else
+				modified |= ImGui::Checkbox(_("Clear alpha channel"), &_screenshot_clear_alpha);
+		}
 
 #if RESHADE_FX
 		modified |= ImGui::Checkbox(_("Save current preset file"), &_screenshot_include_preset);
@@ -2984,8 +2996,8 @@ void reshade::runtime::draw_gui_settings()
 		}
 
 		// Only show on possible HDR swap chains
-		if (((_renderer_id & 0xB000) == 0xB000 || (_renderer_id & 0xC000) == 0xC000 || (_renderer_id & 0x20000) == 0x20000) &&
-			(_back_buffer_format == reshade::api::format::r10g10b10a2_unorm || _back_buffer_format == reshade::api::format::b10g10r10a2_unorm || _back_buffer_format == reshade::api::format::r16g16b16a16_float))
+		if (_back_buffer_format == reshade::api::format::r16g16b16a16_float ||
+			_back_buffer_color_space == reshade::api::color_space::hdr10_st2084)
 		{
 			if (ImGui::SliderFloat(_("HDR overlay brightness"), &_hdr_overlay_brightness, 20.f, 400.f, "%.0f nits", ImGuiSliderFlags_AlwaysClamp))
 				modified = true;
@@ -3132,7 +3144,7 @@ void reshade::runtime::draw_gui_statistics()
 		ImGui::TextUnformatted(g_target_executable_path.filename().u8string().c_str());
 		ImGui::Text("%.4d-%.2d-%.2d %d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour * 3600 + tm.tm_min * 60 + tm.tm_sec);
 #if RESHADE_FX
-		ImGui::Text("%ux%u", _effect_width, _effect_height);
+		ImGui::Text("%ux%u", _effect_permutations[0].width, _effect_permutations[0].height);
 #endif
 		ImGui::Text("%.2f fps", _imgui_context->IO.Framerate);
 #if RESHADE_FX
@@ -3151,7 +3163,7 @@ void reshade::runtime::draw_gui_statistics()
 		ImGui::Text("0x%X", static_cast<unsigned int>(std::hash<std::string>()(g_target_executable_path.stem().u8string()) & 0xFFFFFFFF));
 		ImGui::Text("%.0f ms", std::chrono::duration_cast<std::chrono::nanoseconds>(_last_present_time - _start_time).count() * 1e-6f);
 #if RESHADE_FX
-		ImGui::Text("Format %u (%u bpc)", static_cast<unsigned int>(_effect_color_format), api::format_bit_depth(_effect_color_format));
+		ImGui::Text("Format %u (%u bpc)", static_cast<unsigned int>(_effect_permutations[0].color_format), api::format_bit_depth(_effect_permutations[0].color_format));
 #endif
 		ImGui::Text("%*.3f ms", gpu_digits + 4, _last_frame_duration.count() * 1e-6f);
 #if RESHADE_FX
@@ -3178,8 +3190,8 @@ void reshade::runtime::draw_gui_statistics()
 			if (!tech.enabled)
 				continue;
 
-			if (tech.passes.size() > 1)
-				ImGui::Text("%s (%zu passes)", tech.name.c_str(), tech.passes.size());
+			if (tech.permutations[0].passes.size() > 1)
+				ImGui::Text("%s (%zu passes)", tech.name.c_str(), tech.permutations[0].passes.size());
 			else
 				ImGui::TextUnformatted(tech.name.c_str(), tech.name.c_str() + tech.name.size());
 
@@ -3321,17 +3333,17 @@ void reshade::runtime::draw_gui_statistics()
 				std::pair<size_t, std::vector<std::string>> &reference = references.emplace_back();
 				reference.first = tech.effect_index;
 
-				for (size_t pass_index = 0; pass_index < tech.passes.size(); ++pass_index)
+				for (size_t pass_index = 0; pass_index < tech.permutations[0].passes.size(); ++pass_index)
 				{
-					std::string pass_name = tech.passes[pass_index].name;
+					std::string pass_name = tech.permutations[0].passes[pass_index].name;
 					if (pass_name.empty())
 						pass_name = "pass " + std::to_string(pass_index);
 					pass_name = tech.name + ' ' + pass_name;
 
 					bool referenced = false;
-					for (const reshadefx::texture_binding &binding : tech.passes[pass_index].texture_bindings)
+					for (const reshadefx::texture_binding &binding : tech.permutations[0].passes[pass_index].texture_bindings)
 					{
-						if (_effects[tech.effect_index].module.samplers[binding.index].texture_name == tex.unique_name)
+						if (_effects[tech.effect_index].permutations[0].module.samplers[binding.index].texture_name == tex.unique_name)
 						{
 							referenced = true;
 							reference.second.emplace_back(pass_name + " (sampler)");
@@ -3339,9 +3351,9 @@ void reshade::runtime::draw_gui_statistics()
 						}
 					}
 
-					for (const reshadefx::storage_binding &binding : tech.passes[pass_index].storage_bindings)
+					for (const reshadefx::storage_binding &binding : tech.permutations[0].passes[pass_index].storage_bindings)
 					{
-						if (_effects[tech.effect_index].module.storages[binding.index].texture_name == tex.unique_name)
+						if (_effects[tech.effect_index].permutations[0].module.storages[binding.index].texture_name == tex.unique_name)
 						{
 							referenced = true;
 							reference.second.emplace_back(pass_name + " (storage)");
@@ -3349,7 +3361,7 @@ void reshade::runtime::draw_gui_statistics()
 						}
 					}
 
-					for (const std::string &render_target : tech.passes[pass_index].render_target_names)
+					for (const std::string &render_target : tech.permutations[0].passes[pass_index].render_target_names)
 					{
 						if (render_target == tex.unique_name)
 						{
@@ -3752,10 +3764,12 @@ void reshade::runtime::draw_gui_addons()
 
 		for (addon_info &info : addon_loaded_info)
 		{
-			if (!filter_text(info.name, _addons_filter))
+			const std::string name = !info.name.empty() ? info.name : std::filesystem::u8path(info.file).stem().u8string();
+
+			if (!filter_text(name, _addons_filter))
 				continue;
 
-			ImGui::BeginChild(info.name.c_str(), ImVec2(child_window_width, 0.0f), ImGuiChildFlags_Border | ImGuiChildFlags_AutoResizeY, ImGuiWindowFlags_NoScrollbar);
+			ImGui::BeginChild(name.c_str(), ImVec2(child_window_width, 0.0f), ImGuiChildFlags_Border | ImGuiChildFlags_AutoResizeY, ImGuiWindowFlags_NoScrollbar);
 
 			const bool builtin = (info.file == g_reshade_dll_path.filename().u8string());
 
@@ -3772,11 +3786,11 @@ void reshade::runtime::draw_gui_addons()
 					const size_t at_pos = addon_name.find('@');
 					if (at_pos == std::string_view::npos)
 						return addon_name == info.name;
-					return addon_name.substr(0, at_pos) == info.name && addon_name.substr(at_pos + 1) == info.file;
+					return (at_pos == 0 || addon_name.substr(0, at_pos) == info.name) && addon_name.substr(at_pos + 1) == info.file;
 				});
 
 			bool enabled = (disabled_it == disabled_addons.end());
-			if (ImGui::Checkbox(info.name.c_str(), &enabled))
+			if (ImGui::Checkbox(name.c_str(), &enabled))
 			{
 				if (enabled)
 					disabled_addons.erase(disabled_it);
@@ -4856,11 +4870,13 @@ void reshade::runtime::draw_technique_editor()
 			ImGui::PushStyleColor(ImGuiCol_Text, COLOR_RED);
 			ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
 
-			char label[128] = "";
-			ImFormatString(label, sizeof(label), _("[%s] failed to compile"), effect.source_file.filename().u8string().c_str());
+			{
+				char label[128] = "";
+				ImFormatString(label, sizeof(label), _("[%s] failed to compile"), effect.source_file.filename().u8string().c_str());
 
-			bool value = false;
-			ImGui::Checkbox(label, &value);
+				bool value = false;
+				ImGui::Checkbox(label, &value);
+			}
 
 			ImGui::PopItemFlag();
 
@@ -4959,17 +4975,24 @@ void reshade::runtime::draw_technique_editor()
 					}
 				}
 
-				if (!effect.generated_code.empty() &&
-					imgui::popup_button(_("Show compiled results"), 18.0f * _font_size))
+				for (size_t permutation_index = 0; permutation_index < effect.permutations.size(); ++permutation_index)
 				{
-					const bool open_generated_code = ImGui::MenuItem(_("Generated code"));
+					std::string label = _("Show compiled results");
+					if (effect.permutations.size() > 1)
+						label += " (" + std::to_string(permutation_index) + ")";
 
-					ImGui::EndPopup();
-
-					if (open_generated_code)
+					if (!effect.permutations[permutation_index].generated_code.empty() &&
+						imgui::popup_button(label.c_str(), 18.0f * _font_size))
 					{
-						open_code_editor(effect_index, std::string());
-						ImGui::CloseCurrentPopup();
+						const bool open_generated_code = ImGui::MenuItem(_("Generated code"));
+
+						ImGui::EndPopup();
+
+						if (open_generated_code)
+						{
+							open_code_editor(effect_index, permutation_index, std::string());
+							ImGui::CloseCurrentPopup();
+						}
 					}
 				}
 
@@ -5291,25 +5314,32 @@ void reshade::runtime::draw_technique_editor()
 					}
 				}
 
-				if (!effect.generated_code.empty() &&
-					imgui::popup_button(_("Show compiled results"), 18.0f * _font_size))
+				for (size_t permutation_index = 0; permutation_index < effect.permutations.size(); ++permutation_index)
 				{
-					const bool open_generated_code = ImGui::MenuItem(_("Generated code"));
+					std::string label = _("Show compiled results");
+					if (effect.permutations.size() > 1)
+						label += " (" + std::to_string(permutation_index) + ")";
 
-					ImGui::Separator();
-
-					std::string entry_point_name;
-					for (const std::pair<std::string, reshadefx::shader_type> &entry_point : effect.module.entry_points)
-						if (const auto assembly_it = effect.assembly_text.find(entry_point.first);
-							assembly_it != effect.assembly_text.end() && ImGui::MenuItem(entry_point.first.c_str()))
-							entry_point_name = entry_point.first;
-
-					ImGui::EndPopup();
-
-					if (open_generated_code || !entry_point_name.empty())
+					if (!effect.permutations[permutation_index].generated_code.empty() &&
+						imgui::popup_button(label.c_str(), 18.0f * _font_size))
 					{
-						open_code_editor(tech.effect_index, entry_point_name);
-						ImGui::CloseCurrentPopup();
+						const bool open_generated_code = ImGui::MenuItem(_("Generated code"));
+
+						ImGui::Separator();
+
+						std::string entry_point_name;
+						for (const std::pair<std::string, reshadefx::shader_type> &entry_point : effect.permutations[permutation_index].module.entry_points)
+							if (const auto assembly_it = effect.permutations[permutation_index].assembly_text.find(entry_point.first);
+								assembly_it != effect.permutations[permutation_index].assembly_text.end() && ImGui::MenuItem(entry_point.first.c_str()))
+								entry_point_name = entry_point.first;
+
+						ImGui::EndPopup();
+
+						if (open_generated_code || !entry_point_name.empty())
+						{
+							open_code_editor(tech.effect_index, permutation_index, entry_point_name);
+							ImGui::CloseCurrentPopup();
+						}
 					}
 				}
 
@@ -5461,15 +5491,15 @@ void reshade::runtime::draw_technique_editor()
 	}
 }
 
-void reshade::runtime::open_code_editor(size_t effect_index, const std::string &entry_point)
+void reshade::runtime::open_code_editor(size_t effect_index, size_t permutation_index, const std::string &entry_point)
 {
 	assert(effect_index < _effects.size());
 
 	const std::filesystem::path &path = _effects[effect_index].source_file;
 
 	if (const auto it = std::find_if(_editors.begin(), _editors.end(),
-			[effect_index, &path, &entry_point](const editor_instance &instance) {
-				return instance.effect_index == effect_index && instance.file_path == path && instance.generated && instance.entry_point_name == entry_point;
+			[effect_index, permutation_index, &path, &entry_point](const editor_instance &instance) {
+				return instance.effect_index == effect_index && instance.permutation_index == permutation_index && instance.file_path == path && instance.generated && instance.entry_point_name == entry_point;
 			});
 		it != _editors.end())
 	{
@@ -5478,7 +5508,7 @@ void reshade::runtime::open_code_editor(size_t effect_index, const std::string &
 	}
 	else
 	{
-		editor_instance instance { effect_index, path, entry_point, true, true };
+		editor_instance instance { effect_index, permutation_index, path, entry_point, true, true };
 		open_code_editor(instance);
 		_editors.push_back(std::move(instance));
 	}
@@ -5498,7 +5528,7 @@ void reshade::runtime::open_code_editor(size_t effect_index, const std::filesyst
 	}
 	else
 	{
-		editor_instance instance { effect_index, path, std::string(), true, false };
+		editor_instance instance { effect_index, std::numeric_limits<size_t>::max(), path, std::string(), true, false };
 		open_code_editor(instance);
 		_editors.push_back(std::move(instance));
 	}
@@ -5510,9 +5540,9 @@ void reshade::runtime::open_code_editor(editor_instance &instance) const
 	if (instance.generated)
 	{
 		if (instance.entry_point_name.empty())
-			instance.editor.set_text(effect.generated_code);
+			instance.editor.set_text(effect.permutations[instance.permutation_index].generated_code);
 		else
-			instance.editor.set_text(effect.assembly_text.at(instance.entry_point_name));
+			instance.editor.set_text(effect.permutations[instance.permutation_index].assembly_text.at(instance.entry_point_name));
 		instance.editor.set_readonly(true);
 		return; // Errors only apply to the effect source, not generated code
 	}
@@ -5626,18 +5656,7 @@ bool reshade::runtime::init_imgui_resources()
 			layout_params[num_layout_params++] = api::descriptor_range { 0, 0, 0, 1, api::shader_stage::pixel, 1, api::descriptor_type::shader_resource_view }; // t0
 		}
 
-		uint32_t num_push_constants = 16;
-		reshade::api::shader_stage shader_stage = api::shader_stage::vertex;
-
-		// Add HDR push constants for possible HDR swap chains
-		if (((_renderer_id & 0xB000) == 0xB000 || (_renderer_id & 0xC000) == 0xC000 || (_renderer_id & 0x20000) == 0x20000) &&
-			(_back_buffer_format == reshade::api::format::r10g10b10a2_unorm || _back_buffer_format == reshade::api::format::b10g10r10a2_unorm || _back_buffer_format == reshade::api::format::r16g16b16a16_float))
-		{
-			num_push_constants += 4;
-			shader_stage |= api::shader_stage::pixel;
-		}
-
-		layout_params[num_layout_params++] = api::constant_range { 0, 0, 0, num_push_constants, shader_stage }; // b0
+		layout_params[num_layout_params++] = api::constant_range { 0, 0, 0, 18, api::shader_stage::vertex | api::shader_stage::pixel }; // b0
 
 		if (!_device->create_pipeline_layout(num_layout_params, layout_params, &_imgui_pipeline_layout))
 		{
@@ -5649,10 +5668,6 @@ bool reshade::runtime::init_imgui_resources()
 	if (_imgui_pipeline != 0)
 		return true;
 
-	const bool is_possibe_hdr_swapchain =
-		((_renderer_id & 0xB000) == 0xB000 || (_renderer_id & 0xC000) == 0xC000 || (_renderer_id & 0x20000) == 0x20000) &&
-		(_back_buffer_format == reshade::api::format::r10g10b10a2_unorm || _back_buffer_format == reshade::api::format::b10g10r10a2_unorm || _back_buffer_format == reshade::api::format::r16g16b16a16_float);
-
 	const resources::data_resource vs_res = resources::load_data_resource(
 		_renderer_id >= 0x20000 ? IDR_IMGUI_VS_SPIRV :
 		_renderer_id >= 0x10000 ? IDR_IMGUI_VS_GLSL :
@@ -5662,9 +5677,9 @@ bool reshade::runtime::init_imgui_resources()
 	vs_desc.code_size = vs_res.data_size;
 
 	const resources::data_resource ps_res = resources::load_data_resource(
-		_renderer_id >= 0x20000 ? (!is_possibe_hdr_swapchain ? IDR_IMGUI_PS_SPIRV : IDR_IMGUI_PS_SPIRV_HDR) :
+		_renderer_id >= 0x20000 ? IDR_IMGUI_PS_SPIRV :
 		_renderer_id >= 0x10000 ? IDR_IMGUI_PS_GLSL :
-		_renderer_id >= 0x0a000 ? (!is_possibe_hdr_swapchain ? IDR_IMGUI_PS_4_0 : IDR_IMGUI_PS_4_0_HDR) : IDR_IMGUI_PS_3_0);
+		_renderer_id >= 0x0a000 ? IDR_IMGUI_PS_4_0 : IDR_IMGUI_PS_3_0);
 	api::shader_desc ps_desc;
 	ps_desc.code = ps_res.data;
 	ps_desc.code_size = ps_res.data_size;
@@ -5811,40 +5826,31 @@ void reshade::runtime::render_imgui_draw_data(api::command_list *cmd_list, ImDra
 	const bool adjust_half_pixel = _renderer_id < 0xa000; // Bake half-pixel offset into matrix in D3D9
 	const bool depth_clip_zero_to_one = (_renderer_id & 0x10000) == 0;
 
-	const float ortho_projection[16] = {
-		2.0f / draw_data->DisplaySize.x, 0.0f, 0.0f, 0.0f,
-		0.0f, (flip_y ? 2.0f : -2.0f) / draw_data->DisplaySize.y, 0.0f, 0.0f,
-		0.0f,                            0.0f, depth_clip_zero_to_one ? 0.5f : -1.0f, 0.0f,
-		                   -(2 * draw_data->DisplayPos.x + draw_data->DisplaySize.x + (adjust_half_pixel ? 1.0f : 0.0f)) / draw_data->DisplaySize.x,
-		(flip_y ? -1 : 1) * (2 * draw_data->DisplayPos.y + draw_data->DisplaySize.y + (adjust_half_pixel ? 1.0f : 0.0f)) / draw_data->DisplaySize.y, depth_clip_zero_to_one ? 0.5f : 0.0f, 1.0f,
+	const struct {
+		float ortho_projection[16];
+		api::color_space color_space;
+		float hdr_overlay_brightness;
+	} push_constants = {
+		{
+			2.0f / draw_data->DisplaySize.x, 0.0f, 0.0f, 0.0f,
+			0.0f, (flip_y ? 2.0f : -2.0f) / draw_data->DisplaySize.y, 0.0f, 0.0f,
+			0.0f,                            0.0f, depth_clip_zero_to_one ? 0.5f : -1.0f, 0.0f,
+							   -(2 * draw_data->DisplayPos.x + draw_data->DisplaySize.x + (adjust_half_pixel ? 1.0f : 0.0f)) / draw_data->DisplaySize.x,
+			(flip_y ? -1 : 1) * (2 * draw_data->DisplayPos.y + draw_data->DisplaySize.y + (adjust_half_pixel ? 1.0f : 0.0f)) / draw_data->DisplaySize.y, depth_clip_zero_to_one ? 0.5f : 0.0f, 1.0f,
+		},
+		_hdr_overlay_overwrite_color_space != api::color_space::unknown ?
+			_hdr_overlay_overwrite_color_space :
+			// Workaround for early HDR games, RGBA16F without a color space defined is pretty much guaranteed to be HDR for games
+			_back_buffer_format == api::format::r16g16b16a16_float ?
+				api::color_space::extended_srgb_linear : _back_buffer_color_space,
+		_hdr_overlay_brightness
 	};
 
-	const bool has_hdr_push_constants =
-		((_renderer_id & 0xB000) == 0xB000 || (_renderer_id & 0xC000) == 0xC000 || (_renderer_id & 0x20000) == 0x20000) &&
-		(_back_buffer_format == reshade::api::format::r10g10b10a2_unorm || _back_buffer_format == reshade::api::format::b10g10r10a2_unorm || _back_buffer_format == reshade::api::format::r16g16b16a16_float);
 	const bool has_combined_sampler_and_view = _device->check_capability(api::device_caps::sampler_with_resource_view);
 
-	cmd_list->push_constants(has_hdr_push_constants ? api::shader_stage::vertex | api::shader_stage::pixel : api::shader_stage::vertex, _imgui_pipeline_layout, has_combined_sampler_and_view ? 1 : 2, 0, sizeof(ortho_projection) / 4, ortho_projection);
+	cmd_list->push_constants(api::shader_stage::vertex | api::shader_stage::pixel, _imgui_pipeline_layout, has_combined_sampler_and_view ? 1 : 2, 0, (_renderer_id != 0x9000 ? sizeof(push_constants) : sizeof(push_constants.ortho_projection)) / 4, &push_constants);
 	if (!has_combined_sampler_and_view)
 		cmd_list->push_descriptors(api::shader_stage::pixel, _imgui_pipeline_layout, 0, api::descriptor_table_update { {}, 0, 0, 1, api::descriptor_type::sampler, &_imgui_sampler_state });
-
-	// Add HDR push constants for possible HDR swap chains
-	if (has_hdr_push_constants)
-	{
-		const struct {
-			api::format back_buffer_format;
-			api::color_space back_buffer_color_space;
-			float hdr_overlay_brightness;
-			api::color_space hdr_overlay_overwrite_color_space;
-		} hdr_push_constants = {
-			_back_buffer_format,
-			_back_buffer_color_space,
-			_hdr_overlay_brightness,
-			_hdr_overlay_overwrite_color_space
-		};
-
-		cmd_list->push_constants(api::shader_stage::vertex | api::shader_stage::pixel, _imgui_pipeline_layout, has_combined_sampler_and_view ? 1 : 2, sizeof(ortho_projection) / 4, sizeof(hdr_push_constants) / 4, &hdr_push_constants);
-	}
 
 	int vtx_offset = 0, idx_offset = 0;
 	for (int n = 0; n < draw_data->CmdListsCount; ++n)

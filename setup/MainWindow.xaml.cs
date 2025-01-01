@@ -570,6 +570,12 @@ namespace ReShade.Setup
 			DownloadCompatibilityIni();
 
 			string executableName = Path.GetFileName(currentInfo.targetPath);
+			if (compatibilityIni?.GetString(executableName, "Banned") == "1")
+			{
+				UpdateStatusAndFinish(false, "The target application is known to have blocked or banned the usage of ReShade. Cannot continue installation.");
+				return;
+			}
+
 			if (compatibilityIni != null && compatibilityIni.HasValue(executableName, "RenderApi"))
 			{
 				if (compatibilityIni.HasValue(executableName, "InstallTarget"))
@@ -1539,8 +1545,16 @@ namespace ReShade.Setup
 		{
 			if (!string.IsNullOrEmpty(currentInfo.presetPath) && File.Exists(currentInfo.presetPath))
 			{
+				string basePath = Path.GetDirectoryName(currentInfo.configPath);
+				string presetPath = currentInfo.presetPath;
+				if (presetPath.StartsWith(basePath))
+				{
+					// Try and make preset path relative
+					presetPath = "." + presetPath.Substring(basePath.Length);
+				}
+
 				var config = new IniFile(currentInfo.configPath);
-				config.SetValue("GENERAL", "PresetPath", currentInfo.presetPath);
+				config.SetValue("GENERAL", "PresetPath", presetPath);
 				config.SaveFile();
 
 				MakeWritable(currentInfo.presetPath);
