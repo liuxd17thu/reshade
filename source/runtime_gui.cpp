@@ -4803,7 +4803,7 @@ void reshade::runtime::draw_variable_editor()
 		{
 			save_current_preset();
 
-			_preset_is_modified = false;
+			// _preset_is_modified = false;
 
 			const bool reload_successful_before = _last_reload_successful;
 
