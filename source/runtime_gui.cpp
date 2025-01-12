@@ -3248,11 +3248,11 @@ void reshade::runtime::draw_gui_statistics()
 	{
 		static const char *texture_formats[] = {
 			"unknown",
-			"R8", "R16", "R16F", "R32I", "R32U", "R32F", "RG8", "RG16", "RG16F", "RG32F", "RGBA8", "RGBA16", "RGBA16F", "RGBA32F", "RGB10A2"
+			"R8", "R16", "R16F", "R32I", "R32U", "R32F", "RG8", "RG16", "RG16F", "RG32F", "RGBA8", "RGBA16", "RGBA16F", "RGBA32I", "RGBA32U", "RGBA32F", "RGB10A2"
 		};
 		static constexpr uint32_t pixel_sizes[] = {
 			0,
-			1 /*R8*/, 2 /*R16*/, 2 /*R16F*/, 4 /*R32I*/, 4 /*R32U*/, 4 /*R32F*/, 2 /*RG8*/, 4 /*RG16*/, 4 /*RG16F*/, 8 /*RG32F*/, 4 /*RGBA8*/, 8 /*RGBA16*/, 8 /*RGBA16F*/, 16 /*RGBA32F*/, 4 /*RGB10A2*/
+			1 /*R8*/, 2 /*R16*/, 2 /*R16F*/, 4 /*R32I*/, 4 /*R32U*/, 4 /*R32F*/, 2 /*RG8*/, 4 /*RG16*/, 4 /*RG16F*/, 8 /*RG32F*/, 4 /*RGBA8*/, 8 /*RGBA16*/, 8 /*RGBA16F*/, 16 /*RGBA32I*/, 16 /*RGBA32U*/, 16 /*RGBA32F*/, 4 /*RGB10A2*/
 		};
 
 		static_assert((std::size(texture_formats) - 1) == static_cast<size_t>(reshadefx::texture_format::rgb10a2));
@@ -3759,6 +3759,8 @@ void reshade::runtime::draw_gui_addons()
 	{
 		std::vector<std::string> disabled_addons;
 		config.get("ADDON", "DisabledAddons", disabled_addons);
+		std::vector<std::string> collapsed_addons;
+		config.get("ADDON", "CollapsedAddons", collapsed_addons);
 
 		const float child_window_width = ImGui::GetContentRegionAvail().x;
 
@@ -3772,10 +3774,28 @@ void reshade::runtime::draw_gui_addons()
 			ImGui::BeginChild(name.c_str(), ImVec2(child_window_width, 0.0f), ImGuiChildFlags_Border | ImGuiChildFlags_AutoResizeY, ImGuiWindowFlags_NoScrollbar);
 
 			const bool builtin = (info.file == g_reshade_dll_path.filename().u8string());
+			const std::string unique_name = builtin ? info.name : info.name + '@' + info.file;
 
-			bool open = ImGui::GetStateStorage()->GetBool(ImGui::GetID("##addon_open"), builtin);
+			const auto collapsed_it = std::find(collapsed_addons.begin(), collapsed_addons.end(), unique_name);
+
+			bool open = ImGui::GetStateStorage()->GetBool(ImGui::GetID("##addon_open"), builtin ? collapsed_it == collapsed_addons.end() : collapsed_it != collapsed_addons.end());
 			if (ImGui::ArrowButton("##addon_open", open ? ImGuiDir_Down : ImGuiDir_Right))
+			{
 				ImGui::GetStateStorage()->SetBool(ImGui::GetID("##addon_open"), open = !open);
+
+				if (builtin ? open : !open)
+				{
+					if (collapsed_it != collapsed_addons.end())
+						collapsed_addons.erase(collapsed_it);
+				}
+				else
+				{
+					if (collapsed_it == collapsed_addons.end())
+						collapsed_addons.push_back(unique_name);
+				}
+
+				config.set("ADDON", "CollapsedAddons", collapsed_addons);
+			}
 
 			ImGui::SameLine();
 
@@ -3795,7 +3815,7 @@ void reshade::runtime::draw_gui_addons()
 				if (enabled)
 					disabled_addons.erase(disabled_it);
 				else
-					disabled_addons.push_back(builtin ? info.name : info.name + '@' + info.file);
+					disabled_addons.push_back(unique_name);
 
 				config.set("ADDON", "DisabledAddons", disabled_addons);
 			}
@@ -4475,7 +4495,21 @@ void reshade::runtime::draw_variable_editor()
 				{
 					case reshadefx::type::t_bool:
 					{
-						if (ui_type == "combo")
+						if (ui_type == "button")
+						{
+							if (ImGui::Button(label.data(), ImVec2(ImGui::CalcItemWidth(), 0)))
+							{
+								value.as_uint[0] = 1;
+								modified = true;
+							}
+							else if (value.as_uint[0] != 0)
+							{
+								// Reset value again next frame after button was pressed
+								value.as_uint[0] = 0;
+								modified = true;
+							}
+						}
+						else if (ui_type == "combo")
 							modified = imgui::combo_with_buttons(label.data(), reinterpret_cast<bool *>(&value.as_uint[0]));
 						else
 							modified = imgui::checkbox_list(label.data(), get_localized_annotation(variable, "ui_items", _current_language), value.as_uint, variable.type.components());

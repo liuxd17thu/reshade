@@ -74,6 +74,8 @@ namespace reshadefx
 		rgba8,
 		rgba16,
 		rgba16f,
+		rgba32i,
+		rgba32u,
 		rgba32f,
 		rgb10a2
 	};
@@ -88,7 +90,7 @@ namespace reshadefx
 		uint16_t depth = 1;
 		uint16_t levels = 1;
 		texture_type type = texture_type::texture_2d;
-		texture_format format = texture_format::rgba8;
+		texture_format format = texture_format::unknown;
 	};
 
 	/// <summary>
