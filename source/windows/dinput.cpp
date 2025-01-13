@@ -3,7 +3,6 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#define INITGUID
 // Set version to DirectInput 7
 #define DIRECTINPUT_VERSION 0x0700
 
@@ -11,10 +10,6 @@
 #include "dll_log.hpp" // Include late to get 'hr_to_string' helper function
 #include "hook_manager.hpp"
 #include "input.hpp"
-
-// It is technically possible to associate these hooks back to a device (cooperative level), but it may not be the same window as ReShade renders on
-extern bool is_blocking_mouse_input(reshade::input::window_handle window = reshade::input::any_window);
-extern bool is_blocking_keyboard_input(reshade::input::window_handle window = reshade::input::any_window);
 
 #define IDirectInputDevice_SetCooperativeLevel_Impl(vtable_index, device_interface_version, encoding) \
 	HRESULT STDMETHODCALLTYPE IDirectInputDevice##device_interface_version##encoding##_SetCooperativeLevel(IDirectInputDevice##device_interface_version##encoding *pDevice, HWND hwnd, DWORD dwFlags) \
@@ -45,6 +40,7 @@ IDirectInputDevice_SetCooperativeLevel_Impl(13, 2, W)
 IDirectInputDevice_SetCooperativeLevel_Impl(13, 7, A)
 IDirectInputDevice_SetCooperativeLevel_Impl(13, 7, W)
 
+// It is technically possible to associate these hooks back to a device (cooperative level), but it may not be the same window as ReShade renders on
 #define IDirectInputDevice_GetDeviceState_Impl(vtable_index, device_interface_version, encoding) \
 	HRESULT STDMETHODCALLTYPE IDirectInputDevice##device_interface_version##encoding##_GetDeviceState(IDirectInputDevice##device_interface_version##encoding *pDevice, DWORD cbData, LPVOID lpvData) \
 	{ \
@@ -53,14 +49,14 @@ IDirectInputDevice_SetCooperativeLevel_Impl(13, 7, W)
 		switch (LOBYTE(info.dwDevType)) \
 		{ \
 		case DIDEVTYPE_MOUSE: \
-			if (is_blocking_mouse_input()) \
+			if (reshade::input::is_blocking_any_mouse_input()) \
 			{ \
 				std::memset(lpvData, 0, cbData); \
 				return DI_OK; \
 			} \
 			break; \
 		case DIDEVTYPE_KEYBOARD: \
-			if (is_blocking_keyboard_input()) \
+			if (reshade::input::is_blocking_any_keyboard_input()) \
 			{ \
 				std::memset(lpvData, 0, cbData); \
 				return DI_OK; \
@@ -88,14 +84,14 @@ IDirectInputDevice_GetDeviceState_Impl(9, 7, W)
 			switch (LOBYTE(info.dwDevType)) \
 			{ \
 			case DIDEVTYPE_MOUSE: \
-				if (is_blocking_mouse_input()) \
+				if (reshade::input::is_blocking_any_mouse_input()) \
 				{ \
 					*pdwInOut = 0; \
 					return DI_OK; \
 				} \
 				break; \
 			case DIDEVTYPE_KEYBOARD: \
-				if (is_blocking_keyboard_input()) \
+				if (reshade::input::is_blocking_any_keyboard_input()) \
 				{ \
 					*pdwInOut = 0; \
 					return DI_OK; \
