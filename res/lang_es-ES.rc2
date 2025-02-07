@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////////
-// Spanish (Spain, International Sort) resources
+// Spanish (Spain) resources
 
 #if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ESN)
 LANGUAGE 10, 3
@@ -38,7 +38,7 @@ BEGIN
 46542 "Preset anterior"
 52128 "Preset siguiente"
 52993 "Descripción del Preset"
-20029 "Crear un preset nuevo"
+52495 "Crear un preset nuevo."
 33659 "Abrir carpeta"
 16638 "Autoguard. act."
 1761 "Autoguardado"
@@ -47,7 +47,6 @@ BEGIN
 16681 "Resetear el preset."
 5457 "Limpiar y guardar el preset actual (remueve la configuración de los efectos desactivados)."
 54866 "Guardar preset."
-52495 "Crear un preset nuevo."
 27867 "Configuración para AuroraShade"
 1204 "Encendido"
 17794 "Apagado"
@@ -68,7 +67,6 @@ BEGIN
 36976 "Eliminar esta variación"
 48641 " Separar"
 2703 "¡Bienvenido! Ya que esta es tu primera vez instalando AuroraShade, vamos a hacer un tutorial rápido mostrándote las partes más importantes.\n\nSi tenés dificultades leyendo este texto, mantené apretado 'Ctrl' y ajustá el tamaño de la letra con la rueda del mouse. El tamaño de la ventana también se puede cambiar agarrando su esquina y moviéndola.\n\nTambién se puede usar el teclado para navegar el menú en caso que el mouse no funcione. Usá las flechas para navegar, el espacio para seleccionar y el escape para salir. Apretá 'Ctrl + Tab' para cambiar de pestañas y ventanas (usá esta combinación de teclas para llegar a esa página en caso de que las otras teclas no funcionen).\n\nHacé click en el botón 'Continuar' para continuar con el tutorial."
-25545 "Cargando ..."
 24836 "Activados para arriba"
 46707 "Colapsar todos"
 20841 "Expandir todos"
@@ -225,12 +223,17 @@ BEGIN
 25121 "Apagado\nEncendido\n"
 58027 "Automatic depth buffer detection that works in the majority of games."
 57350 "Adds preset synchronization between different effect runtime instances, e.g. to have changes in a desktop window reflect in VR."
+63526 "Default"
+60560 "Higher vertices"
+28934 "Higher draw calls"
+59778 "Draw stats heuristic"
 32459 "None"
 25611 "Similar aspect ratio"
 56346 "Multiples of resolution (for DLSS or resolution scaling)"
 14210 "Match resolution exactly"
 50503 "Match custom width and height exactly"
-51879 "Aspect ratio heuristics"
+26218 "Aspect ratio heuristic"
+19379 "Filter by width and height"
 7887 "Filter by depth buffer format"
 36533 "Copy depth buffer before clear operations"
 7736 "Enable this when the depth buffer is empty"
@@ -249,5 +252,5 @@ BEGIN
 
 END
 
-#endif    // Spanish (Spain, International Sort) resources
+#endif    // Spanish (Spain) resources
 /////////////////////////////////////////////////////////////////////////////
