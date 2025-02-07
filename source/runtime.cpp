@@ -2118,6 +2118,10 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 			if (!skip_optimization)
 				source_cached = save_effect_cache(source_file.stem().u8string() + '-' + std::to_string(_renderer_id) + '-' + std::to_string(source_hash), "i", source);
 		}
+		// use insert to avoid overwriting definition_binds added above
+		effect.definitions.insert(effect.definitions.end(),
+									std::make_move_iterator(preprocessor_definitions.begin()),
+									std::make_move_iterator(preprocessor_definitions.end()));
 
 		// Keep track of included files
 		effect.included_files = pp.included_files();
