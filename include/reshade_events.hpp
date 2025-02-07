@@ -764,7 +764,7 @@ namespace reshade
 		/// <item><description>ID3D12Device::CreateQueryHeap</description></item>
 		/// <item><description>vkCreateQueryPool</description></item>
 		/// </list>
-		/// <para>Callback function signature: <c>void (api::device *device, api::query_type type, uint32_t size, api::query_heap heap)</c></para>
+		/// <para>Callback function signature: <c>void (api::device *device, api::query_type type, uint32_t count, api::query_heap heap)</c></para>
 		/// </summary>
 		init_query_heap,
 
@@ -774,7 +774,7 @@ namespace reshade
 		/// <item><description>ID3D12Device::CreateQueryHeap</description></item>
 		/// <item><description>vkCreateQueryPool</description></item>
 		/// </list>
-		/// <para>Callback function signature: <c>bool (api::device *device, api::query_type type, uint32_t &amp;size)</c></para>
+		/// <para>Callback function signature: <c>bool (api::device *device, api::query_type type, uint32_t &amp;count)</c></para>
 		/// </summary>
 		create_query_heap,
 
@@ -1320,7 +1320,7 @@ namespace reshade
 		/// <item><description>vkCmdResolveImage</description></item>
 		/// <item><description>vkCmdResolveImage2</description></item>
 		/// </list>
-		/// <para>Callback function signature: <c>bool (api::command_list *cmd_list, api::resource source, uint32_t source_subresource, const api::subresource_box *source_box, api::resource dest, uint32_t dest_subresource, int32_t dest_x, int32_t dest_y, int32_t dest_z, api::format format)</c></para>
+		/// <para>Callback function signature: <c>bool (api::command_list *cmd_list, api::resource source, uint32_t source_subresource, const api::subresource_box *source_box, api::resource dest, uint32_t dest_subresource, uint32_t dest_x, uint32_t dest_y, uint32_t dest_z, api::format format)</c></para>
 		/// </summary>
 		/// <remarks>
 		/// To prevent this command from being executed, return <see langword="true"/>, otherwise return <see langword="false"/>.
@@ -1492,6 +1492,16 @@ namespace reshade
 		/// Scratch buffer will be in the <see cref="api::resource_usage::unordered_access"/> resource state.
 		/// </remarks>
 		build_acceleration_structure = 92,
+
+		/// <summary>
+		/// Called before:
+		/// <list type="bullet">
+		/// <item><description>ID3D12GraphicsCommandList4::EmitRaytracingAccelerationStructurePostbuildInfo</description></item>
+		/// <item><description>vkCmdWriteAccelerationStructuresPropertiesKHR</description></item>
+		/// </list>
+		/// <para>Callback function signature: <c>bool (api::command_list *cmd_list, uint32_t count, const api::resource_view *acceleration_structures, api::query_heap heap, api::query_type type, uint32_t first)</c></para>
+		/// </summary>
+		query_acceleration_structures = 95,
 
 		/// <summary>
 		/// Called before:
@@ -1706,7 +1716,7 @@ namespace reshade
 		reshade_overlay_technique,
 
 #if RESHADE_ADDON
-		max = 95 // Last value used internally by ReShade to determine number of events in this enum
+		max = 96 // Last value used internally by ReShade to determine number of events in this enum
 #endif
 	};
 
@@ -1767,8 +1777,8 @@ namespace reshade
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::copy_descriptor_tables, bool, api::device *device, uint32_t count, const api::descriptor_table_copy *copies);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::update_descriptor_tables, bool, api::device *device, uint32_t count, const api::descriptor_table_update *updates);
 
-	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::init_query_heap, void, api::device *device, api::query_type type, uint32_t size, api::query_heap heap);
-	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::create_query_heap, bool, api::device *device, api::query_type type, uint32_t &size);
+	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::init_query_heap, void, api::device *device, api::query_type type, uint32_t count, api::query_heap heap);
+	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::create_query_heap, bool, api::device *device, api::query_type type, uint32_t &count);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::destroy_query_heap, void, api::device *device, api::query_heap heap);
 
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::get_query_heap_results, bool, api::device *device, api::query_heap heap, uint32_t first, uint32_t count, void *results, uint32_t stride);
@@ -1802,7 +1812,7 @@ namespace reshade
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::copy_buffer_to_texture, bool, api::command_list *cmd_list, api::resource source, uint64_t source_offset, uint32_t row_length, uint32_t slice_height, api::resource dest, uint32_t dest_subresource, const api::subresource_box *dest_box);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::copy_texture_region, bool, api::command_list *cmd_list, api::resource source, uint32_t source_subresource, const api::subresource_box *source_box, api::resource dest, uint32_t dest_subresource, const api::subresource_box *dest_box, api::filter_mode filter);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::copy_texture_to_buffer, bool, api::command_list *cmd_list, api::resource source, uint32_t source_subresource, const api::subresource_box *source_box, api::resource dest, uint64_t dest_offset, uint32_t row_length, uint32_t slice_height);
-	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::resolve_texture_region, bool, api::command_list *cmd_list, api::resource source, uint32_t source_subresource, const api::subresource_box *source_box, api::resource dest, uint32_t dest_subresource, int32_t dest_x, int32_t dest_y, int32_t dest_z, api::format format);
+	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::resolve_texture_region, bool, api::command_list *cmd_list, api::resource source, uint32_t source_subresource, const api::subresource_box *source_box, api::resource dest, uint32_t dest_subresource, uint32_t dest_x, uint32_t dest_y, uint32_t dest_z, api::format format);
 
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::clear_depth_stencil_view, bool, api::command_list *cmd_list, api::resource_view dsv, const float *depth, const uint8_t *stencil, uint32_t rect_count, const api::rect *rects);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::clear_render_target_view, bool, api::command_list *cmd_list, api::resource_view rtv, const float color[4], uint32_t rect_count, const api::rect *rects);
@@ -1817,6 +1827,7 @@ namespace reshade
 
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::copy_acceleration_structure, bool, api::command_list *cmd_list, api::resource_view source, api::resource_view dest, api::acceleration_structure_copy_mode mode);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::build_acceleration_structure, bool, api::command_list *cmd_list, api::acceleration_structure_type type, api::acceleration_structure_build_flags flags, uint32_t input_count, const api::acceleration_structure_build_input *inputs, api::resource scratch, uint64_t scratch_offset, api::resource_view source, api::resource_view dest, api::acceleration_structure_build_mode mode);
+	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::query_acceleration_structures, bool, api::command_list *cmd_list, uint32_t count, const api::resource_view *acceleration_structures, api::query_heap heap, api::query_type type, uint32_t first);
 
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::reset_command_list, void, api::command_list *cmd_list);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::close_command_list, void, api::command_list *cmd_list);

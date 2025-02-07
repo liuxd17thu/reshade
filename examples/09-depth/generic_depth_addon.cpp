@@ -18,13 +18,30 @@ using namespace reshade::api;
 
 static std::shared_mutex s_mutex;
 
+enum class draw_stats_heuristic : unsigned int
+{
+	prefer_vertices = 0,
+	vertices,
+	drawcalls
+};
+enum class aspect_ratio_heuristic : unsigned int
+{
+	none = 0,
+	similar_aspect_ratio,
+	multiples_of_resolution,
+	match_resolution_exactly,
+	match_custom_resolution_exactly
+};
+
 static bool s_disable_intz = false;
 // Enable or disable the creation of backup copies at clear operations on the selected depth-stencil
 static unsigned int s_preserve_depth_buffers = 0;
+// Choose impact of draw statistics in the detection heuristic
+static draw_stats_heuristic s_draw_stats_heuristic = draw_stats_heuristic::prefer_vertices;
 // Enable or disable the aspect ratio check from 'check_aspect_ratio' in the detection heuristic
-static unsigned int s_use_aspect_ratio_heuristics = 1;
+static aspect_ratio_heuristic s_aspect_ratio_heuristic = aspect_ratio_heuristic::similar_aspect_ratio;
 // Enable or disable the format check from 'check_depth_format' in the detection heuristic
-static unsigned int s_use_format_filtering = 0;
+static unsigned int s_format_filtering = 0;
 static unsigned int s_custom_resolution_filtering[2] = {};
 
 enum class clear_op : uint8_t
@@ -40,6 +57,20 @@ struct draw_stats
 	uint32_t drawcalls = 0;
 	uint32_t drawcalls_indirect = 0;
 	viewport last_viewport = {};
+
+	bool operator>(const draw_stats &other) const
+	{
+		if (s_draw_stats_heuristic == draw_stats_heuristic::vertices)
+			return vertices > other.vertices;
+		if (s_draw_stats_heuristic == draw_stats_heuristic::drawcalls)
+			return drawcalls > other.drawcalls;
+
+		return (drawcalls_indirect < (drawcalls / 3) ?
+			// Choose snapshot with the most vertices, since that is likely to contain the main scene
+			vertices > other.vertices :
+			// Or check draw calls, since vertices may not be accurate if application is using indirect draw calls
+			drawcalls > other.drawcalls);
+	}
 };
 struct clear_stats : public draw_stats
 {
@@ -300,7 +331,7 @@ struct __declspec(uuid("e006e162-33ac-4b9f-b10f-0e15335c7bdb")) generic_depth_de
 
 static bool check_depth_format(format format)
 {
-	switch (s_use_format_filtering)
+	switch (s_format_filtering)
 	{
 	default:
 		return false;
@@ -326,9 +357,9 @@ static bool check_aspect_ratio(float width_to_check, float height_to_check, floa
 	if (width_to_check == 0.0f || height_to_check == 0.0f)
 		return true;
 
-	if (s_use_aspect_ratio_heuristics == 3 || (s_use_aspect_ratio_heuristics == 4 && s_custom_resolution_filtering[0] == 0 && s_custom_resolution_filtering[1] == 0))
+	if (s_aspect_ratio_heuristic == aspect_ratio_heuristic::match_resolution_exactly || (s_aspect_ratio_heuristic == aspect_ratio_heuristic::match_custom_resolution_exactly && s_custom_resolution_filtering[0] == 0 && s_custom_resolution_filtering[1] == 0))
 		return width_to_check == width && height_to_check == height;
-	if (s_use_aspect_ratio_heuristics == 4)
+	if (s_aspect_ratio_heuristic == aspect_ratio_heuristic::match_custom_resolution_exactly)
 		return width_to_check == s_custom_resolution_filtering[0] && width_to_check == s_custom_resolution_filtering[1];
 
 	float w_ratio = width / width_to_check;
@@ -337,7 +368,7 @@ static bool check_aspect_ratio(float width_to_check, float height_to_check, floa
 
 	// Accept if dimensions are similar in value or almost exact multiples
 	return std::abs(aspect_ratio_delta) <= 0.1f && ((w_ratio <= 1.85f && w_ratio >= 0.5f && h_ratio <= 1.85f && h_ratio >= 0.5f) ||
-		(s_use_aspect_ratio_heuristics == 2 && std::modf(w_ratio, &w_ratio) <= 0.02f && std::modf(h_ratio, &h_ratio) <= 0.02f));
+		(s_aspect_ratio_heuristic == aspect_ratio_heuristic::multiples_of_resolution && std::modf(w_ratio, &w_ratio) <= 0.02f && std::modf(h_ratio, &h_ratio) <= 0.02f));
 }
 
 static void on_clear_depth_impl(command_list *cmd_list, state_tracking &state, resource depth_stencil, clear_op op)
@@ -461,14 +492,15 @@ static void on_init_device(device *device)
 
 	reshade::get_config_value(nullptr, "DEPTH", "DisableINTZ", s_disable_intz);
 	reshade::get_config_value(nullptr, "DEPTH", "DepthCopyBeforeClears", s_preserve_depth_buffers);
-	reshade::get_config_value(nullptr, "DEPTH", "UseAspectRatioHeuristics", s_use_aspect_ratio_heuristics);
+	reshade::get_config_value(nullptr, "DEPTH", "DrawStatsHeuristic", reinterpret_cast<unsigned int &>(s_draw_stats_heuristic));
+	reshade::get_config_value(nullptr, "DEPTH", "UseAspectRatioHeuristics", reinterpret_cast<unsigned int &>(s_aspect_ratio_heuristic));
 
-	reshade::get_config_value(nullptr, "DEPTH", "FilterFormat", s_use_format_filtering);
+	reshade::get_config_value(nullptr, "DEPTH", "FilterFormat", s_format_filtering);
 	reshade::get_config_value(nullptr, "DEPTH", "FilterResolutionWidth", s_custom_resolution_filtering[0]);
 	reshade::get_config_value(nullptr, "DEPTH", "FilterResolutionHeight", s_custom_resolution_filtering[1]);
 
-	if (s_use_aspect_ratio_heuristics > 4)
-		s_use_aspect_ratio_heuristics = 1;
+	if (s_aspect_ratio_heuristic > aspect_ratio_heuristic::match_custom_resolution_exactly)
+		s_aspect_ratio_heuristic = aspect_ratio_heuristic::similar_aspect_ratio;
 }
 static void on_init_command_list(command_list *cmd_list)
 {
@@ -918,17 +950,14 @@ static void on_begin_render_effects(effect_runtime *runtime, command_list *cmd_l
 		if (desc.texture.samples > 1 && !device->check_capability(device_caps::resolve_depth_stencil))
 			continue; // Ignore multisampled textures, since they would need to be resolved first
 
-		if (s_use_format_filtering && !check_depth_format(desc.texture.format))
+		if (s_format_filtering != 0 && !check_depth_format(desc.texture.format))
 			continue;
-		if (s_use_aspect_ratio_heuristics && !check_aspect_ratio(static_cast<float>(desc.texture.width), static_cast<float>(desc.texture.height), static_cast<float>(frame_width), static_cast<float>(frame_height)))
+		if (s_aspect_ratio_heuristic != aspect_ratio_heuristic::none && !check_aspect_ratio(static_cast<float>(desc.texture.width), static_cast<float>(desc.texture.height), static_cast<float>(frame_width), static_cast<float>(frame_height)))
 			continue; // Not a good fit
 
 		const depth_stencil_frame_stats &snapshot = info.last_counters;
-		if (best_snapshot == nullptr || (snapshot.total_stats.drawcalls_indirect < (snapshot.total_stats.drawcalls / 3) ?
-				// Choose snapshot with the most vertices, since that is likely to contain the main scene
-				snapshot.total_stats.vertices > best_snapshot->total_stats.vertices :
-				// Or check draw calls, since vertices may not be accurate if application is using indirect draw calls
-				snapshot.total_stats.drawcalls > best_snapshot->total_stats.drawcalls))
+		if (best_snapshot == nullptr ||
+			snapshot.total_stats > best_snapshot->total_stats)
 		{
 			best_match = resource;
 			best_match_desc = desc;
@@ -1135,25 +1164,39 @@ static void draw_settings_overlay(effect_runtime *runtime)
 {
 	bool force_reset = false;
 
-	const std::vector<std::string> heuristic_items_std = {
+	const std::vector<std::string> draw_stats_heuristic_items = {
+		_("Default"),
+		_("Higher vertices"),
+		_("Higher draw calls")
+	};
+	std::vector<const char *> draw_stats_heuristic_items_c;
+	for(auto &str : draw_stats_heuristic_items)
+		draw_stats_heuristic_items_c.push_back(str.c_str());
+	if (ImGui::Combo(_("Draw stats heuristic"), reinterpret_cast<int *>(&s_draw_stats_heuristic), &draw_stats_heuristic_items_c[0], static_cast<int>(std::size(draw_stats_heuristic_items_c))))
+	{
+		reshade::set_config_value(nullptr, "DEPTH", "DrawStatsHeuristic", static_cast<unsigned int>(s_draw_stats_heuristic));
+		force_reset = true;
+	}
+
+	const std::vector<std::string> aspect_ratio_heuristic_items = {
 		_("None"),
 		_("Similar aspect ratio"),
 		_("Multiples of resolution (for DLSS or resolution scaling)"),
 		_("Match resolution exactly"),
 		_("Match custom width and height exactly")
 	};
-	std::vector<const char *> heuristic_items;
-	for (auto &str : heuristic_items_std)
-		heuristic_items.push_back(str.c_str());
-	if (ImGui::Combo(_("Aspect ratio heuristics"), reinterpret_cast<int *>(&s_use_aspect_ratio_heuristics), &heuristic_items[0], static_cast<int>(std::size(heuristic_items))))
+	std::vector<const char *> aspect_ratio_heuristic_items_c;
+	for (auto &str : aspect_ratio_heuristic_items)
+		aspect_ratio_heuristic_items_c.push_back(str.c_str());
+	if (ImGui::Combo(_("Aspect ratio heuristic"), reinterpret_cast<int *>(&s_aspect_ratio_heuristic), &aspect_ratio_heuristic_items_c[0], static_cast<int>(std::size(aspect_ratio_heuristic_items_c))))
 	{
-		reshade::set_config_value(nullptr, "DEPTH", "UseAspectRatioHeuristics", s_use_aspect_ratio_heuristics);
+		reshade::set_config_value(nullptr, "DEPTH", "UseAspectRatioHeuristics", static_cast<unsigned int>(s_aspect_ratio_heuristic));
 		force_reset = true;
 	}
 
-	if (s_use_aspect_ratio_heuristics == 4)
+	if (s_aspect_ratio_heuristic == aspect_ratio_heuristic::match_custom_resolution_exactly)
 	{
-		if (ImGui::InputInt2("Filter by width and height", reinterpret_cast<int *>(s_custom_resolution_filtering)))
+		if (ImGui::InputInt2(_("Filter by width and height"), reinterpret_cast<int *>(s_custom_resolution_filtering)))
 		{
 			reshade::set_config_value(nullptr, "DEPTH", "FilterResolutionWidth", s_custom_resolution_filtering[0]);
 			reshade::set_config_value(nullptr, "DEPTH", "FilterResolutionHeight", s_custom_resolution_filtering[1]);
@@ -1171,9 +1214,9 @@ static void draw_settings_overlay(effect_runtime *runtime)
 		"D32S8",
 		"INTZ "
 	};
-	if (ImGui::Combo(_("Filter by depth buffer format"), reinterpret_cast<int *>(&s_use_format_filtering), depth_format_items, static_cast<int>(std::size(depth_format_items))))
+	if (ImGui::Combo(_("Filter by depth buffer format"), reinterpret_cast<int *>(&s_format_filtering), depth_format_items, static_cast<int>(std::size(depth_format_items))))
 	{
-		reshade::set_config_value(nullptr, "DEPTH", "FilterFormat", s_use_format_filtering);
+		reshade::set_config_value(nullptr, "DEPTH", "FilterFormat", s_format_filtering);
 		force_reset = true;
 	}
 
@@ -1256,8 +1299,8 @@ static void draw_settings_overlay(effect_runtime *runtime)
 
 		const bool selected = item.resource == data.selected_depth_stencil;
 		const bool candidate =
-			(!s_use_format_filtering || check_depth_format(item.desc.texture.format)) &&
-			(!s_use_aspect_ratio_heuristics || check_aspect_ratio(static_cast<float>(item.desc.texture.width), static_cast<float>(item.desc.texture.height), static_cast<float>(frame_width), static_cast<float>(frame_height)));
+			(s_format_filtering == 0 || check_depth_format(item.desc.texture.format)) &&
+			(s_aspect_ratio_heuristic == aspect_ratio_heuristic::none || check_aspect_ratio(static_cast<float>(item.desc.texture.width), static_cast<float>(item.desc.texture.height), static_cast<float>(frame_width), static_cast<float>(frame_height)));
 
 		char label[21];
 		std::snprintf(label, std::size(label), "%c 0x%016llx", (selected ? '>' : ' '), item.resource.handle);

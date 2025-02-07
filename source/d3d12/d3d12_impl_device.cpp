@@ -18,12 +18,47 @@
 
 extern bool is_windows7();
 
-#ifdef _WIN64
-constexpr size_t heap_index_start = 28;
-#else
+#ifndef _WIN64
 // Make a bit more space for the heap index in descriptor handles, at the cost of less space for the descriptor index, due to overall limit of only 32-bit being available
 constexpr size_t heap_index_start = 24;
+#else
+constexpr size_t heap_index_start = 28;
 #endif
+
+static auto adapter_from_device(ID3D12Device *device, DXGI_ADAPTER_DESC *adapter_desc) -> const com_ptr<IDXGIAdapter>
+{
+	const auto dxgi_module = GetModuleHandleW(L"dxgi.dll");
+	assert(dxgi_module != nullptr);
+	const auto CreateDXGIFactory1 = reinterpret_cast<HRESULT(WINAPI *)(REFIID riid, void **ppFactory)>(GetProcAddress(dxgi_module, "CreateDXGIFactory1"));
+	assert(CreateDXGIFactory1 != nullptr);
+	const auto CreateDXGIFactory2 = reinterpret_cast<HRESULT(WINAPI *)(UINT Flags, REFIID riid, void **ppFactory)>(GetProcAddress(dxgi_module, "CreateDXGIFactory2"));
+	assert(CreateDXGIFactory2 != nullptr || is_windows7());
+
+	const LUID luid = device->GetAdapterLuid();
+
+	com_ptr<IDXGIAdapter> dxgi_adapter;
+
+	if (com_ptr<IDXGIFactory4> factory4;
+		CreateDXGIFactory2 != nullptr && SUCCEEDED(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory4))))
+	{
+		if (SUCCEEDED(factory4->EnumAdapterByLuid(luid, IID_PPV_ARGS(&dxgi_adapter))))
+		{
+			dxgi_adapter->GetDesc(adapter_desc);
+		}
+	}
+	else
+	if (com_ptr<IDXGIFactory1> factory1;
+		SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(&factory1))))
+	{
+		for (UINT i = 0; factory1->EnumAdapters(i, &dxgi_adapter) != DXGI_ERROR_NOT_FOUND; ++i, dxgi_adapter.reset())
+		{
+			if (SUCCEEDED(dxgi_adapter->GetDesc(adapter_desc)) && std::memcmp(&adapter_desc->AdapterLuid, &luid, sizeof(luid)) == 0)
+				break;
+		}
+	}
+
+	return dxgi_adapter;
+}
 
 reshade::d3d12::device_impl::device_impl(ID3D12Device *device) :
 	api_object_impl(device),
@@ -87,52 +122,16 @@ reshade::d3d12::device_impl::~device_impl()
 #endif
 }
 
-static const com_ptr<IDXGIAdapter> get_adapter_for_device(ID3D12Device *device, DXGI_ADAPTER_DESC &adapter_desc)
-{
-	const LUID luid = device->GetAdapterLuid();
-
-	com_ptr<IDXGIAdapter> dxgi_adapter;
-
-	const auto CreateDXGIFactory1 = reinterpret_cast<HRESULT(WINAPI *)(REFIID riid, void **ppFactory)>(
-		GetProcAddress(GetModuleHandleW(L"dxgi.dll"), "CreateDXGIFactory1"));
-	assert(CreateDXGIFactory1 != nullptr);
-	const auto CreateDXGIFactory2 = reinterpret_cast<HRESULT(WINAPI *)(UINT Flags, REFIID riid, void **ppFactory)>(
-		GetProcAddress(GetModuleHandleW(L"dxgi.dll"), "CreateDXGIFactory2"));
-	assert(CreateDXGIFactory2 != nullptr || is_windows7());
-
-	if (com_ptr<IDXGIFactory4> factory4;
-		CreateDXGIFactory2 != nullptr && SUCCEEDED(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory4))))
-	{
-		if (SUCCEEDED(factory4->EnumAdapterByLuid(luid, IID_PPV_ARGS(&dxgi_adapter))))
-		{
-			dxgi_adapter->GetDesc(&adapter_desc);
-		}
-	}
-	else
-	if (com_ptr<IDXGIFactory1> factory1;
-		SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(&factory1))))
-	{
-		for (UINT i = 0; factory1->EnumAdapters(i, &dxgi_adapter) != DXGI_ERROR_NOT_FOUND; ++i, dxgi_adapter.reset())
-		{
-			if (SUCCEEDED(dxgi_adapter->GetDesc(&adapter_desc)) && std::memcmp(&adapter_desc.AdapterLuid, &luid, sizeof(luid)) == 0)
-				break;
-		}
-	}
-
-	return dxgi_adapter;
-}
-
 bool reshade::d3d12::device_impl::get_property(api::device_properties property, void *data) const
 {
-	DXGI_ADAPTER_DESC adapter_desc;
-
 	switch (property)
 	{
 	case api::device_properties::api_version:
 		*static_cast<uint32_t *>(data) = D3D_FEATURE_LEVEL_12_0;
 		return true;
 	case api::device_properties::driver_version:
-		if (const auto dxgi_adapter = get_adapter_for_device(_orig, adapter_desc))
+		DXGI_ADAPTER_DESC temp_adapter_desc;
+		if (const auto dxgi_adapter = adapter_from_device(_orig, &temp_adapter_desc))
 		{
 			LARGE_INTEGER umd_version = {};
 			dxgi_adapter->CheckInterfaceSupport(__uuidof(IDXGIDevice), &umd_version);
@@ -141,21 +140,24 @@ bool reshade::d3d12::device_impl::get_property(api::device_properties property, 
 		}
 		return false;
 	case api::device_properties::vendor_id:
-		if (get_adapter_for_device(_orig, adapter_desc))
+		if (DXGI_ADAPTER_DESC adapter_desc;
+			adapter_from_device(_orig, &adapter_desc))
 		{
 			*static_cast<uint32_t *>(data) = adapter_desc.VendorId;
 			return true;
 		}
 		return false;
 	case api::device_properties::device_id:
-		if (get_adapter_for_device(_orig, adapter_desc))
+		if (DXGI_ADAPTER_DESC adapter_desc;
+			adapter_from_device(_orig, &adapter_desc))
 		{
 			*static_cast<uint32_t *>(data) = adapter_desc.DeviceId;
 			return true;
 		}
 		return false;
 	case api::device_properties::description:
-		if (get_adapter_for_device(_orig, adapter_desc))
+		if (DXGI_ADAPTER_DESC adapter_desc;
+			adapter_from_device(_orig, &adapter_desc))
 		{
 			static_assert(std::size(adapter_desc.Description) <= 256);
 			utf8::unchecked::utf16to8(adapter_desc.Description, adapter_desc.Description + std::size(adapter_desc.Description), static_cast<char *>(data));
@@ -849,6 +851,7 @@ bool reshade::d3d12::device_impl::create_pipeline(api::pipeline_layout layout, u
 	uint32_t max_attribute_size = 2 * sizeof(float); // Default triangle attributes
 	uint32_t max_recursion_depth = 1;
 	api::pipeline_flags flags = api::pipeline_flags::none;
+	bool ray_tracing = false;
 
 	for (uint32_t i = 0; i < subobject_count; ++i)
 	{
@@ -984,14 +987,17 @@ bool reshade::d3d12::device_impl::create_pipeline(api::pipeline_layout layout, u
 		case api::pipeline_subobject_type::max_payload_size:
 			assert(subobjects[i].count == 1);
 			max_payload_size = *static_cast<const uint32_t *>(subobjects[i].data);
+			ray_tracing = true;
 			break;
 		case api::pipeline_subobject_type::max_attribute_size:
 			assert(subobjects[i].count == 1);
 			max_attribute_size = *static_cast<const uint32_t *>(subobjects[i].data);
+			ray_tracing = true;
 			break;
 		case api::pipeline_subobject_type::max_recursion_depth:
 			assert(subobjects[i].count == 1);
 			max_recursion_depth = *static_cast<const uint32_t *>(subobjects[i].data);
+			ray_tracing = true;
 			break;
 		case api::pipeline_subobject_type::flags:
 			assert(subobjects[i].count == 1);
@@ -1003,7 +1009,7 @@ bool reshade::d3d12::device_impl::create_pipeline(api::pipeline_layout layout, u
 		}
 	}
 
-	if (!raygen_desc.empty() || !shader_groups.empty())
+	if (ray_tracing || !raygen_desc.empty() || !shader_groups.empty())
 	{
 		com_ptr<ID3D12Device5> device5;
 		if (SUCCEEDED(_orig->QueryInterface(&device5)))
@@ -1051,6 +1057,8 @@ bool reshade::d3d12::device_impl::create_pipeline(api::pipeline_layout layout, u
 				D3D12_DXIL_LIBRARY_DESC &desc = library_descs[i++];
 				desc.DXILLibrary.pShaderBytecode = shader_bytecode.first;
 				desc.DXILLibrary.BytecodeLength = shader_bytecode.second;
+				desc.NumExports = 0;
+				desc.pExports = nullptr;
 
 				internal_subobjects.push_back({ D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY, &desc });
 			}
@@ -1312,7 +1320,7 @@ void reshade::d3d12::device_impl::destroy_pipeline(api::pipeline pipeline)
 		reinterpret_cast<IUnknown *>(pipeline.handle)->Release();
 }
 
-bool reshade::d3d12::device_impl::create_pipeline_layout(uint32_t param_count, const api::pipeline_layout_param *params, api::pipeline_layout *out_layout)
+bool reshade::d3d12::device_impl::create_pipeline_layout(uint32_t param_count, const api::pipeline_layout_param *params, api::pipeline_layout *out_layout, D3D12_ROOT_SIGNATURE_FLAGS flags)
 {
 	*out_layout = { 0 };
 
@@ -1320,6 +1328,7 @@ bool reshade::d3d12::device_impl::create_pipeline_layout(uint32_t param_count, c
 	std::vector<D3D12_STATIC_SAMPLER_DESC> internal_static_samplers;
 	std::vector<std::vector<D3D12_DESCRIPTOR_RANGE>> internal_ranges(param_count);
 	const auto set_ranges = new std::pair<D3D12_DESCRIPTOR_HEAP_TYPE, UINT>[param_count];
+	api::shader_stage global_visibility_mask = static_cast<api::shader_stage>(0);
 
 	const auto add_internal_param = [&internal_params](uint32_t index) -> D3D12_ROOT_PARAMETER & {
 		const uint32_t prev_size = static_cast<uint32_t>(internal_params.size());
@@ -1383,6 +1392,8 @@ bool reshade::d3d12::device_impl::create_pipeline_layout(uint32_t param_count, c
 				internal_param.Descriptor.ShaderRegister = range->dx_register_index;
 				internal_param.Descriptor.RegisterSpace = range->dx_register_space;
 				internal_param.ShaderVisibility = convert_shader_visibility(range->visibility);
+
+				global_visibility_mask |= range->visibility;
 			}
 			else
 			{
@@ -1436,6 +1447,8 @@ bool reshade::d3d12::device_impl::create_pipeline_layout(uint32_t param_count, c
 				internal_param.DescriptorTable.NumDescriptorRanges = static_cast<uint32_t>(internal_ranges[i].size());
 				internal_param.DescriptorTable.pDescriptorRanges = internal_ranges[i].data();
 				internal_param.ShaderVisibility = convert_shader_visibility(visibility_mask);
+
+				global_visibility_mask |= visibility_mask;
 			}
 		}
 		else
@@ -1446,11 +1459,14 @@ bool reshade::d3d12::device_impl::create_pipeline_layout(uint32_t param_count, c
 			internal_param.Constants.RegisterSpace = params[i].push_constants.dx_register_space;
 			internal_param.Constants.Num32BitValues = params[i].push_constants.count;
 			internal_param.ShaderVisibility = convert_shader_visibility(params[i].push_constants.visibility);
+
+			global_visibility_mask |= params[i].push_constants.visibility;
 		}
 	}
 
-	const auto D3D12SerializeRootSignature = reinterpret_cast<HRESULT(WINAPI *)(const D3D12_ROOT_SIGNATURE_DESC *pRootSignature, D3D_ROOT_SIGNATURE_VERSION Version, ID3DBlob **ppBlob, ID3DBlob **ppErrorBlob)>(
-		GetProcAddress(GetModuleHandleW(L"d3d12.dll"), "D3D12SerializeRootSignature"));
+	const auto d3d12_module = GetModuleHandleW(L"d3d12.dll");
+	assert(d3d12_module != nullptr);
+	const auto D3D12SerializeRootSignature = reinterpret_cast<HRESULT(WINAPI *)(const D3D12_ROOT_SIGNATURE_DESC *pRootSignature, D3D_ROOT_SIGNATURE_VERSION Version, ID3DBlob **ppBlob, ID3DBlob **ppErrorBlob)>(GetProcAddress(d3d12_module, "D3D12SerializeRootSignature"));
 	assert(D3D12SerializeRootSignature != nullptr);
 
 	D3D12_ROOT_SIGNATURE_DESC internal_desc = {};
@@ -1458,14 +1474,34 @@ bool reshade::d3d12::device_impl::create_pipeline_layout(uint32_t param_count, c
 	internal_desc.pParameters = internal_params.data();
 	internal_desc.NumStaticSamplers = static_cast<uint32_t>(internal_static_samplers.size());
 	internal_desc.pStaticSamplers = internal_static_samplers.data();
-	internal_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+	internal_desc.Flags = flags;
 
-	if (std::pair<D3D12_FEATURE_DATA_SHADER_MODEL, D3D12_FEATURE_DATA_D3D12_OPTIONS> options = { { D3D_SHADER_MODEL_6_6 }, {} };
-		SUCCEEDED(_orig->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &options.first, sizeof(options.first))) &&
-		SUCCEEDED(_orig->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &options.second, sizeof(options.second))) &&
-		options.first.HighestShaderModel >= D3D_SHADER_MODEL_6_6 &&
-		options.second.ResourceBindingTier >= D3D12_RESOURCE_BINDING_TIER_3)
-		internal_desc.Flags |= D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED | D3D12_ROOT_SIGNATURE_FLAG_SAMPLER_HEAP_DIRECTLY_INDEXED;
+	if (flags == D3D12_ROOT_SIGNATURE_FLAG_NONE)
+	{
+		internal_desc.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
+
+		if ((global_visibility_mask & api::shader_stage::vertex) == 0)
+			internal_desc.Flags |= D3D12_ROOT_SIGNATURE_FLAG_DENY_VERTEX_SHADER_ROOT_ACCESS;
+		if ((global_visibility_mask & api::shader_stage::hull) == 0)
+			internal_desc.Flags |= D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS;
+		if ((global_visibility_mask & api::shader_stage::domain) == 0)
+			internal_desc.Flags |= D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS;
+		if ((global_visibility_mask & api::shader_stage::geometry) == 0)
+			internal_desc.Flags |= D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
+		if ((global_visibility_mask & api::shader_stage::pixel) == 0)
+			internal_desc.Flags |= D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS;
+		if ((global_visibility_mask & api::shader_stage::amplification) == 0)
+			internal_desc.Flags |= D3D12_ROOT_SIGNATURE_FLAG_DENY_AMPLIFICATION_SHADER_ROOT_ACCESS;
+		if ((global_visibility_mask & api::shader_stage::mesh) == 0)
+			internal_desc.Flags |= D3D12_ROOT_SIGNATURE_FLAG_DENY_MESH_SHADER_ROOT_ACCESS;
+
+		if (std::pair<D3D12_FEATURE_DATA_SHADER_MODEL, D3D12_FEATURE_DATA_D3D12_OPTIONS> options = { { D3D_SHADER_MODEL_6_6 }, {} };
+			SUCCEEDED(_orig->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &options.first, sizeof(options.first))) &&
+			SUCCEEDED(_orig->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &options.second, sizeof(options.second))) &&
+			options.first.HighestShaderModel >= D3D_SHADER_MODEL_6_6 &&
+			options.second.ResourceBindingTier >= D3D12_RESOURCE_BINDING_TIER_3)
+			internal_desc.Flags |= D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED | D3D12_ROOT_SIGNATURE_FLAG_SAMPLER_HEAP_DIRECTLY_INDEXED;
+	}
 
 	com_ptr<ID3DBlob> signature_blob, error_blob;
 	com_ptr<ID3D12RootSignature> signature;
@@ -1504,6 +1540,10 @@ bool reshade::d3d12::device_impl::create_pipeline_layout(uint32_t param_count, c
 		*out_layout = { 0 };
 		return false;
 	}
+}
+bool reshade::d3d12::device_impl::create_pipeline_layout(uint32_t param_count, const api::pipeline_layout_param *params, api::pipeline_layout *out_layout)
+{
+	return create_pipeline_layout(param_count, params, out_layout, D3D12_ROOT_SIGNATURE_FLAG_NONE);
 }
 void reshade::d3d12::device_impl::destroy_pipeline_layout(api::pipeline_layout layout)
 {
@@ -1738,68 +1778,85 @@ void reshade::d3d12::device_impl::update_descriptor_tables(uint32_t count, const
 	}
 }
 
-bool reshade::d3d12::device_impl::create_query_heap(api::query_type type, uint32_t size, api::query_heap *out_heap)
+bool reshade::d3d12::device_impl::create_query_heap(api::query_type type, uint32_t count, api::query_heap *out_heap)
 {
-	com_ptr<ID3D12Resource> readback_resource;
-	std::vector<com_ptr<ID3D12Fence>> fences(size);
+	*out_heap = { 0 };
+
+	query_heap_extra_data extra_data;
+	extra_data.type = type;
+	extra_data.count = count;
 
 	D3D12_RESOURCE_DESC readback_desc = {};
 	readback_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	readback_desc.Width = size * sizeof(uint64_t);
+	readback_desc.Width = static_cast<UINT64>(count) * get_query_size(type).first;
 	readback_desc.Height = 1;
 	readback_desc.DepthOrArraySize = 1;
 	readback_desc.MipLevels = 1;
 	readback_desc.SampleDesc = { 1, 0 };
 	readback_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-	const D3D12_HEAP_PROPERTIES heap_props = { D3D12_HEAP_TYPE_READBACK };
+	const D3D12_HEAP_PROPERTIES readback_heap_props = { D3D12_HEAP_TYPE_READBACK };
 
-	if (FAILED(_orig->CreateCommittedResource(&heap_props, D3D12_HEAP_FLAG_NONE, &readback_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&readback_resource))))
-	{
-		*out_heap = { 0 };
+	com_ptr<ID3D12Resource> readback_resource;
+	if (FAILED(_orig->CreateCommittedResource(&readback_heap_props, D3D12_HEAP_FLAG_NONE, &readback_desc, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&readback_resource))))
 		return false;
-	}
 
-	for (uint32_t i = 0; i < size; i++)
-	{
+	std::vector<com_ptr<ID3D12Fence>> fences(count);
+	for (uint32_t i = 0; i < count; i++)
 		if (FAILED(_orig->CreateFence(0ull, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fences[i]))))
-		{
-			*out_heap = { 0 };
 			return false;
-		}
-	}
 
-	D3D12_QUERY_HEAP_DESC internal_desc = {};
-	internal_desc.Type = convert_query_type_to_heap_type(type);
-	internal_desc.Count = size;
-
-	if (com_ptr<ID3D12QueryHeap> object;
-		SUCCEEDED(_orig->CreateQueryHeap(&internal_desc, IID_PPV_ARGS(&object))))
+	if (type == api::query_type::acceleration_structure_size ||
+		type == api::query_type::acceleration_structure_compacted_size ||
+		type == api::query_type::acceleration_structure_serialization_size ||
+		type == api::query_type::acceleration_structure_bottom_level_acceleration_structure_pointers)
 	{
-		query_heap_extra_data extra_data;
-		extra_data.size = size;
-		extra_data.readback_resource = readback_resource.release();
-		extra_data.fences = new std::pair<ID3D12Fence *, UINT64>[size];
-		for (uint32_t i = 0; i < extra_data.size; ++i)
-			// Start with fence value above the initial value, so that 'get_query_heap_results' will return false for the first frame as well
-			extra_data.fences[i] = std::make_pair(fences[i].release(), 1ull);
+		readback_desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+		const D3D12_HEAP_PROPERTIES heap_props = { D3D12_HEAP_TYPE_DEFAULT };
 
-		object->SetPrivateData(extra_data_guid, sizeof(extra_data), &extra_data);
+		if (com_ptr<ID3D12Resource> object;
+			SUCCEEDED(_orig->CreateCommittedResource(&heap_props, D3D12_HEAP_FLAG_NONE, &readback_desc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&object))))
+		{
+			extra_data.readback_resource = readback_resource.release();
+			extra_data.fences = new std::pair<ID3D12Fence *, UINT64>[count];
+			for (uint32_t i = 0; i < extra_data.count; ++i)
+				extra_data.fences[i] = std::make_pair(fences[i].release(), 1ull);
 
-		*out_heap = { reinterpret_cast<uintptr_t>(object.release()) };
-		return true;
+			object->SetPrivateData(extra_data_guid, sizeof(extra_data), &extra_data);
+
+			*out_heap = { reinterpret_cast<uintptr_t>(object.release()) };
+			return true;
+		}
 	}
 	else
 	{
-		*out_heap = { 0 };
-		return false;
+		D3D12_QUERY_HEAP_DESC internal_desc = {};
+		internal_desc.Type = convert_query_type_to_heap_type(type);
+		internal_desc.Count = count;
+
+		if (com_ptr<ID3D12QueryHeap> object;
+			SUCCEEDED(_orig->CreateQueryHeap(&internal_desc, IID_PPV_ARGS(&object))))
+		{
+			extra_data.readback_resource = readback_resource.release();
+			extra_data.fences = new std::pair<ID3D12Fence *, UINT64>[count];
+			for (uint32_t i = 0; i < extra_data.count; ++i)
+				// Start with fence value above the initial value, so that 'get_query_heap_results' will return false for the first frame as well
+				extra_data.fences[i] = std::make_pair(fences[i].release(), 1ull);
+
+			object->SetPrivateData(extra_data_guid, sizeof(extra_data), &extra_data);
+
+			*out_heap = { reinterpret_cast<uintptr_t>(object.release()) };
+			return true;
+		}
 	}
+
+	return false;
 }
 void reshade::d3d12::device_impl::destroy_query_heap(api::query_heap heap)
 {
 	if (heap == 0)
 		return;
 
-	const auto heap_object = reinterpret_cast<ID3D12QueryHeap *>(heap.handle);
+	const auto heap_object = reinterpret_cast<ID3D12Object *>(heap.handle);
 
 	query_heap_extra_data extra_data;
 	UINT extra_data_size = sizeof(extra_data);
@@ -1807,7 +1864,7 @@ void reshade::d3d12::device_impl::destroy_query_heap(api::query_heap heap)
 	{
 		extra_data.readback_resource->Release();
 
-		for (uint32_t i = 0; i < extra_data.size; ++i)
+		for (uint32_t i = 0; i < extra_data.count; ++i)
 			extra_data.fences[i].first->Release();
 		delete[] extra_data.fences;
 	}
@@ -1820,7 +1877,7 @@ bool reshade::d3d12::device_impl::get_query_heap_results(api::query_heap heap, u
 	assert(heap != 0);
 	assert(stride >= sizeof(uint64_t));
 
-	const auto heap_object = reinterpret_cast<ID3D12QueryHeap *>(heap.handle);
+	const auto heap_object = reinterpret_cast<ID3D12Object *>(heap.handle);
 
 	query_heap_extra_data extra_data;
 	UINT extra_data_size = sizeof(extra_data);
@@ -1835,14 +1892,16 @@ bool reshade::d3d12::device_impl::get_query_heap_results(api::query_heap heap, u
 				return false;
 		}
 
-		const D3D12_RANGE read_range = { static_cast<SIZE_T>(first) * sizeof(uint64_t), (static_cast<SIZE_T>(first) + static_cast<SIZE_T>(count)) * sizeof(uint64_t) };
+		const std::pair<uint32_t, uint32_t> query_size_and_offset = get_query_size(extra_data.type);
+
+		const D3D12_RANGE read_range = { static_cast<SIZE_T>(first) * query_size_and_offset.first, (static_cast<SIZE_T>(first) + static_cast<SIZE_T>(count)) * query_size_and_offset.first };
 		const D3D12_RANGE write_range = { 0, 0 };
 
 		void *mapped_data = nullptr;
 		if (SUCCEEDED(ID3D12Resource_Map(extra_data.readback_resource, 0, &read_range, &mapped_data)))
 		{
 			for (size_t i = 0; i < count; ++i)
-				*reinterpret_cast<uint64_t *>(reinterpret_cast<uint8_t *>(results) + i * stride) = static_cast<uint64_t *>(mapped_data)[first + i];
+				std::memcpy(static_cast<uint8_t *>(results) + i * stride, static_cast<uint8_t *>(mapped_data) + query_size_and_offset.second + static_cast<size_t>(first + i) * query_size_and_offset.first, std::min(stride, query_size_and_offset.first - query_size_and_offset.second));
 
 			ID3D12Resource_Unmap(extra_data.readback_resource, 0, &write_range);
 
@@ -2190,13 +2249,13 @@ void D3D12DescriptorHeap::initialize_descriptor_base_handle(size_t heap_index)
 	assert(heap_desc.Flags <= 0x1);
 	_internal_base_cpu_handle.ptr |= static_cast<SIZE_T>(heap_desc.Flags) << 2;
 
-#ifdef _WIN64
-	static_assert((D3D12_MAX_SHADER_VISIBLE_DESCRIPTOR_HEAP_SIZE_TIER_2 * 32) < (1 << heap_index_start));
-#else
+#ifndef _WIN64
 	if (heap_index >= (1ull << std::min(sizeof(SIZE_T) * 8 - heap_index_start, heap_index_start)))
 	{
 		reshade::log::message(reshade::log::level::error, "Descriptor heap index is too big to fit into handle!");
 	}
+#else
+	static_assert((D3D12_MAX_SHADER_VISIBLE_DESCRIPTOR_HEAP_SIZE_TIER_2 * 32) < (1 << heap_index_start));
 #endif
 	if (_device->GetDescriptorHandleIncrementSize(heap_desc.Type) < (1 << 3))
 	{

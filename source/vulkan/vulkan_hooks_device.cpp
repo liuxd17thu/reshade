@@ -16,7 +16,7 @@
 #include <cstring> // std::strcmp, std::strncmp
 #include <algorithm> // std::fill_n, std::find_if, std::min, std::sort, std::unique
 
-// Set during Vulkan device creation and presentation, to avoid hooking internal D3D devices created e.g. by NVIDIA Ansel and Optimus
+// Set during Vulkan device creation and presentation, to avoid hooking internal D3D devices created e.g. by NVIDIA Ansel, Optimus or layered DXGI swapchain
 extern thread_local bool g_in_dxgi_runtime;
 
 lockfree_linear_map<void *, reshade::vulkan::device_impl *, 8> g_vulkan_devices;
@@ -252,7 +252,8 @@ VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDevi
 			add_extension(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME, false) &&
 			add_extension(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME, false) &&
 			add_extension(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME, false) &&
-			add_extension(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME, false);
+			add_extension(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME, false) &&
+			add_extension(VK_KHR_RAY_TRACING_MAINTENANCE_1_EXTENSION_NAME, false);
 #endif
 	}
 
@@ -324,7 +325,8 @@ VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDevi
 	{
 		assert(instance_dispatch.api_version >= VK_API_VERSION_1_2);
 
-		timeline_semaphore_ext = existing_vulkan_12_features->timelineSemaphore;
+		// Force enable timeline semaphore support (used for effect runtime present/graphics queue synchronization in case of present from compute, e.g. in Indiana Jones and the Great Circle and DOOM Eternal)
+		const_cast<VkPhysicalDeviceVulkan12Features *>(existing_vulkan_12_features)->timelineSemaphore = VK_TRUE;
 	}
 	else
 	{
@@ -676,8 +678,9 @@ VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDevi
 	INIT_DISPATCH_PTR(DestroyAccelerationStructureKHR);
 	INIT_DISPATCH_PTR(CmdBuildAccelerationStructuresKHR);
 	INIT_DISPATCH_PTR(CmdBuildAccelerationStructuresIndirectKHR);
-	INIT_DISPATCH_PTR(CopyAccelerationStructureKHR);
+	INIT_DISPATCH_PTR(CmdCopyAccelerationStructureKHR);
 	INIT_DISPATCH_PTR(GetAccelerationStructureDeviceAddressKHR);
+	INIT_DISPATCH_PTR(CmdWriteAccelerationStructuresPropertiesKHR);
 	INIT_DISPATCH_PTR(GetAccelerationStructureBuildSizesKHR);
 
 	// VK_KHR_ray_tracing_pipeline

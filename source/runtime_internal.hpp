@@ -5,6 +5,8 @@
 
 #pragma once
 
+#if RESHADE_FX
+
 #include "effect_module.hpp"
 #include "moving_average.hpp"
 
@@ -31,8 +33,7 @@ namespace reshade
 		unknown
 	};
 
-#if RESHADE_FX
-	struct texture final : reshadefx::texture
+	struct texture : reshadefx::texture
 	{
 		texture(const reshadefx::texture &init) : reshadefx::texture(init) {}
 
@@ -80,7 +81,7 @@ namespace reshade
 		std::vector<api::resource_view> uav;
 	};
 
-	struct uniform final : reshadefx::uniform
+	struct uniform : reshadefx::uniform
 	{
 		uniform(const reshadefx::uniform &init) : reshadefx::uniform(init) {}
 
@@ -129,9 +130,12 @@ namespace reshade
 		special_uniform special = special_uniform::none;
 	};
 
-	struct technique final : reshadefx::technique
+	struct technique
 	{
-		technique(const reshadefx::technique &init) : reshadefx::technique(init) {}
+		std::string name;
+		size_t effect_index = std::numeric_limits<size_t>::max();
+
+		std::vector<reshadefx::annotation> annotations;
 
 		auto annotation_as_int(const std::string_view ann_name, size_t i = 0, int default_value = 0) const
 		{
@@ -162,7 +166,6 @@ namespace reshade
 				std::string_view(it->value.string_data) : default_value;
 		}
 
-		size_t effect_index = std::numeric_limits<size_t>::max();
 		unsigned int toggle_key_data[4] = {};
 
 		bool hidden = false;
@@ -170,8 +173,10 @@ namespace reshade
 		bool enabled_in_screenshot = true;
 		int64_t time_left = 0;
 
-		struct pass_data
+		struct pass : public reshadefx::pass
 		{
+			pass(const reshadefx::pass &init) : reshadefx::pass(init) {}
+
 			api::resource_view render_target_views[8] = {};
 			api::pipeline pipeline = {};
 			api::descriptor_table texture_table = {};
@@ -180,7 +185,14 @@ namespace reshade
 			std::vector<api::resource_view> generate_mipmap_views;
 		};
 
-		std::vector<pass_data> passes_data;
+		struct permutation
+		{
+			std::vector<pass> passes;
+			bool created = false;
+		};
+
+		std::vector<permutation> permutations;
+
 		uint32_t query_base_index = 0;
 		moving_average<uint64_t, 60> average_cpu_duration;
 		moving_average<uint64_t, 60> average_gpu_duration;
@@ -188,32 +200,24 @@ namespace reshade
 
 	struct effect
 	{
+		std::filesystem::path source_file;
+		size_t source_hash = 0;
+		bool addon = false;
+
 		unsigned int rendering = 0;
 		bool skipped = false;
 		bool compiled = false;
 		bool preprocessed = false;
 		std::string errors;
 
-		reshadefx::effect_module module;
-		size_t source_hash = 0;
-		std::filesystem::path source_file;
 		std::vector<std::filesystem::path> included_files;
 		std::vector<std::pair<std::string, std::string>> definitions;
-		std::string generated_code;
-		std::unordered_map<std::string, std::string> assembly;
-		std::unordered_map<std::string, std::string> assembly_text;
 
 		std::vector<uniform> uniforms;
 		std::vector<uint8_t> uniform_data_storage;
-
-		api::query_heap query_heap = {};
 		api::resource cb = {};
-		api::pipeline_layout layout = {};
 
-		api::descriptor_table cb_table = {};
-		api::descriptor_table sampler_table = {};
-
-		struct binding_data
+		struct binding
 		{
 			std::string semantic;
 			api::descriptor_table table;
@@ -221,10 +225,29 @@ namespace reshade
 			api::sampler sampler;
 			bool srgb;
 		};
-		std::vector<binding_data> texture_semantic_to_binding;
+
+		struct permutation
+		{
+			reshadefx::effect_module module;
+			std::string generated_code;
+			std::unordered_map<std::string, std::string> assembly;
+			std::unordered_map<std::string, std::string> assembly_text;
+
+			api::pipeline_layout layout = {};
+			api::descriptor_table cb_table = {};
+			api::descriptor_table sampler_table = {};
+
+			std::vector<binding> texture_semantic_to_binding;
+		};
+
+		std::vector<permutation> permutations;
+
+		api::query_heap query_heap = {};
+
 		std::unordered_map<std::string, std::pair<std::string, std::string>> definition_bindings;
 		std::string dup_id = "";
 		bool flair_touched = false;
 	};
-#endif
 }
+
+#endif

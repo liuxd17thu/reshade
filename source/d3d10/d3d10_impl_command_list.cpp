@@ -543,7 +543,7 @@ void reshade::d3d10::device_impl::copy_texture_to_buffer(api::resource, uint32_t
 {
 	assert(false);
 }
-void reshade::d3d10::device_impl::resolve_texture_region(api::resource src, uint32_t src_subresource, const api::subresource_box *src_box, api::resource dst, uint32_t dst_subresource, int32_t dst_x, int32_t dst_y, int32_t dst_z, api::format format)
+void reshade::d3d10::device_impl::resolve_texture_region(api::resource src, uint32_t src_subresource, const api::subresource_box *src_box, api::resource dst, uint32_t dst_subresource, uint32_t dst_x, uint32_t dst_y, uint32_t dst_z, api::format format)
 {
 	assert(src != 0 && dst != 0);
 	assert(src_box == nullptr && dst_x == 0 && dst_y == 0 && dst_z == 0);
@@ -605,6 +605,10 @@ void reshade::d3d10::device_impl::copy_acceleration_structure(api::resource_view
 	assert(false);
 }
 void reshade::d3d10::device_impl::build_acceleration_structure(api::acceleration_structure_type, api::acceleration_structure_build_flags, uint32_t, const api::acceleration_structure_build_input *, api::resource, uint64_t, api::resource_view, api::resource_view, api::acceleration_structure_build_mode)
+{
+	assert(false);
+}
+void reshade::d3d10::device_impl::query_acceleration_structures(uint32_t, const api::resource_view *, api::query_heap, api::query_type, uint32_t)
 {
 	assert(false);
 }

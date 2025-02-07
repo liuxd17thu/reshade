@@ -784,7 +784,14 @@ void reshade::runtime::update_texture_bindings([[maybe_unused]] const char *sema
 	// Update texture bindings
 	size_t num_bindings = 0;
 	for (const effect &effect_data : _effects)
-		num_bindings += effect_data.texture_semantic_to_binding.size();
+	{
+		if (!effect_data.compiled)
+			continue;
+
+		num_bindings += effect_data.permutations[0].texture_semantic_to_binding.size();
+	}
+
+	num_bindings *= _effect_permutations.size();
 
 	std::vector<api::descriptor_table_update> descriptor_writes;
 	descriptor_writes.reserve(num_bindings);
@@ -792,30 +799,39 @@ void reshade::runtime::update_texture_bindings([[maybe_unused]] const char *sema
 
 	for (const effect &effect_data : _effects)
 	{
-		for (const effect::binding_data &binding : effect_data.texture_semantic_to_binding)
+		if (!effect_data.compiled)
+			continue;
+
+		for (size_t permnutation_index = 0; permnutation_index < _effect_permutations.size(); ++permnutation_index)
 		{
-			if (binding.semantic != semantic)
-				continue;
+			if (permnutation_index >= effect_data.permutations.size())
+				break;
 
-			api::descriptor_table_update &write = descriptor_writes.emplace_back();
-			write.table = binding.table;
-			write.binding = binding.index;
-			write.count = 1;
-
-			if (binding.sampler != 0)
+			for (const effect::binding &binding : effect_data.permutations[permnutation_index].texture_semantic_to_binding)
 			{
-				write.type = api::descriptor_type::sampler_with_resource_view;
-				write.descriptors = &sampler_descriptors[--num_bindings];
+				if (binding.semantic != semantic)
+					continue;
 
-				sampler_descriptors[num_bindings].sampler = binding.sampler;
-			}
-			else
-			{
-				write.type = api::descriptor_type::shader_resource_view;
-				write.descriptors = &sampler_descriptors[--num_bindings].view;
-			}
+				api::descriptor_table_update &write = descriptor_writes.emplace_back();
+				write.table = binding.table;
+				write.binding = binding.index;
+				write.count = 1;
 
-			sampler_descriptors[num_bindings].view = binding.srgb ? srv_srgb : srv;
+				if (binding.sampler != 0)
+				{
+					write.type = api::descriptor_type::sampler_with_resource_view;
+					write.descriptors = &sampler_descriptors[--num_bindings];
+
+					sampler_descriptors[num_bindings].sampler = binding.sampler;
+				}
+				else
+				{
+					write.type = api::descriptor_type::shader_resource_view;
+					write.descriptors = &sampler_descriptors[--num_bindings].view;
+				}
+
+				sampler_descriptors[num_bindings].view = binding.srgb ? srv_srgb : srv;
+			}
 		}
 	}
 
@@ -1241,19 +1257,7 @@ void reshade::runtime::set_preprocessor_definition_for_effect([[maybe_unused]] c
 			ini_file::load_cache(_config_path).set("GENERAL", "PreprocessorDefinitions", _global_preprocessor_definitions);
 		}
 
-		if ((scope_mask_updated & (GLOBAL_SCOPE_FLAG | PRESET_SCOPE_FLAG)) != 0)
-		{
-			_reload_required_effects = { _effects.size() };
-		}
-		else
-		{
-			const size_t effect_index = std::distance(_effects.cbegin(), std::find_if(_effects.cbegin(), _effects.cend(),
-				[effect_name = std::filesystem::u8path(effect_name)](const effect &effect) { return effect.source_file.filename() == effect_name; }));
-
-			if (std::find(_reload_required_effects.cbegin(), _reload_required_effects.cend(), _effects.size()) == _reload_required_effects.cend() &&
-				std::find(_reload_required_effects.cbegin(), _reload_required_effects.cend(), effect_index) == _reload_required_effects.cend())
-				_reload_required_effects.push_back(effect_index);
-		}
+		reload_effect_next_frame((scope_mask_updated &(GLOBAL_SCOPE_FLAG | PRESET_SCOPE_FLAG)) != 0 ? nullptr : effect_name.c_str());
 	}
 #endif
 }
@@ -1404,18 +1408,17 @@ void reshade::runtime::render_technique(api::effect_technique handle, api::comma
 	if (tech == nullptr)
 		return;
 
-	// Queue effect file for initialization if it was not fully loaded yet
-	if (tech->passes_data.empty() &&
-		std::find(_reload_create_queue.cbegin(), _reload_create_queue.cend(), tech->effect_index) == _reload_create_queue.cend())
-		_reload_create_queue.push_back(tech->effect_index);
+	if (is_loading())
+		return; // Skip reload enqueue below when effects are already loading, to avoid enqueing an effect for creation that is already in the process of being created
 
-	if (rtv == 0 || is_loading())
+	if (rtv == 0)
 		return;
 	if (rtv_srgb == 0)
 		rtv_srgb = rtv;
 
 	const api::resource back_buffer_resource = _device->get_resource_from_view(rtv);
 
+	size_t permutation_index = 0;
 #if RESHADE_ADDON
 	{
 		const api::resource_desc back_buffer_desc = _device->get_resource_desc(back_buffer_resource);
@@ -1428,8 +1431,24 @@ void reshade::runtime::render_technique(api::effect_technique handle, api::comma
 
 		// Ensure dimensions and format of the effect color resource matches that of the input back buffer resource (so that the copy to the effect color resource succeeds)
 		// Never perform an immediate reload here, as the list of techniques must not be modified in case this was called from within 'enumerate_techniques'!
-		if (!update_effect_color_and_stencil_tex(back_buffer_desc.texture.width, back_buffer_desc.texture.height, color_format, _effect_stencil_format))
+		permutation_index = add_effect_permutation(back_buffer_desc.texture.width, back_buffer_desc.texture.height, color_format, _effect_permutations[0].stencil_format, _is_in_present_call ? _back_buffer_color_space : api::color_space::unknown);
+		if (permutation_index == std::numeric_limits<size_t>::max())
 			return;
+	}
+
+	if (permutation_index >= tech->permutations.size() || (!tech->permutations[permutation_index].created && _effects[tech->effect_index].permutations[permutation_index].assembly.empty()))
+	{
+		if (std::find(_reload_required_effects.begin(), _reload_required_effects.end(), std::make_pair(tech->effect_index, permutation_index)) == _reload_required_effects.end())
+			_reload_required_effects.emplace_back(tech->effect_index, permutation_index);
+		return;
+	}
+
+	// Queue effect file for initialization if it was not fully loaded yet
+	if (!tech->permutations[permutation_index].created)
+	{
+		if (std::find(_reload_create_queue.cbegin(), _reload_create_queue.cend(), std::make_pair(tech->effect_index, permutation_index)) == _reload_create_queue.cend())
+			_reload_create_queue.emplace_back(tech->effect_index, permutation_index);
+		return;
 	}
 
 	if (!_is_in_present_call)
@@ -1441,7 +1460,7 @@ void reshade::runtime::render_technique(api::effect_technique handle, api::comma
 	_is_in_api_call = true;
 #endif
 
-	render_technique(*tech, cmd_list, back_buffer_resource, rtv, rtv_srgb);
+	render_technique(*tech, cmd_list, back_buffer_resource, rtv, rtv_srgb, permutation_index);
 
 #if RESHADE_ADDON
 	_is_in_api_call = was_is_in_api_call;
@@ -1499,10 +1518,10 @@ void reshade::runtime::get_current_preset_path([[maybe_unused]] char *path, size
 }
 void reshade::runtime::set_current_preset_path([[maybe_unused]] const char *path)
 {
+#if RESHADE_FX
 	if (path == nullptr)
 		return;
 
-#if RESHADE_FX
 	std::error_code ec;
 	std::filesystem::path preset_path = std::filesystem::u8path(path);
 
@@ -1578,23 +1597,40 @@ bool reshade::runtime::open_overlay(bool /*open*/, api::input_source /*source*/)
 }
 #endif
 
+void reshade::runtime::set_color_space(api::color_space color_space)
+{
+	if (color_space == _back_buffer_color_space || color_space == api::color_space::unknown || !_is_initialized)
+		return;
+
+	_back_buffer_color_space = color_space;
+#if RESHADE_FX
+	_effect_permutations[0].color_space = color_space;
+
+	if (_frame_count != 0) // Do not need to reload effects here if they are already getting reloaded on next present anyway
+		reload_effects();
+#endif
+}
+
 void reshade::runtime::reload_effect_next_frame([[maybe_unused]] const char *effect_name)
 {
 #if RESHADE_FX
 	if (effect_name == nullptr)
 	{
-		_reload_required_effects = { _effects.size() };
+		_reload_required_effects = { std::make_pair(std::numeric_limits<size_t>::max(), 0u) };
 		return;
 	}
 
 	if (auto it = std::find_if(_effects.cbegin(), _effects.cend(),
-			[effect_name = std::filesystem::u8path(effect_name)](const effect &effect) { return effect.source_file.filename() == effect_name; });
+			[effect_name = std::filesystem::u8path(effect_name)](const effect &effect) {
+				return effect.source_file.filename() == effect_name;
+			});
 		it != _effects.cend())
 	{
-		if (const size_t effect_index = static_cast<size_t>(std::distance(_effects.cbegin(), it));
-			std::find(_reload_required_effects.cbegin(), _reload_required_effects.cend(), _effects.size()) == _reload_required_effects.cend() &&
-			std::find(_reload_required_effects.cbegin(), _reload_required_effects.cend(), effect_index) == _reload_required_effects.cend())
-			_reload_required_effects.push_back(effect_index);
+		const size_t effect_index = std::distance(_effects.cbegin(), it);
+
+		if (std::find(_reload_required_effects.cbegin(), _reload_required_effects.cend(), std::make_pair(std::numeric_limits<size_t>::max(), 0u)) == _reload_required_effects.cend() &&
+			std::find(_reload_required_effects.cbegin(), _reload_required_effects.cend(), std::make_pair(effect_index, 0u)) == _reload_required_effects.cend())
+			_reload_required_effects.emplace_back(effect_index, 0u);
 	}
 #endif
 }

@@ -465,6 +465,9 @@ namespace ReShade.Setup
 				case Api.DXGI:
 					startInfo.Arguments += " --api dxgi";
 					break;
+				case Api.DDraw:
+					startInfo.Arguments += " --api ddraw";
+					break;
 				case Api.OpenGL:
 					startInfo.Arguments += " --api opengl";
 					break;
@@ -560,6 +563,7 @@ namespace ReShade.Setup
 
 			bool isApiD3D9 = false;
 			bool isApiDXGI = false;
+			bool isApiDDraw = false;
 			bool isApiOpenGL = false;
 			bool isApiVulkan = false;
 			currentInfo.targetOpenXR = false;
@@ -570,6 +574,12 @@ namespace ReShade.Setup
 			DownloadCompatibilityIni();
 
 			string executableName = Path.GetFileName(currentInfo.targetPath);
+			if (compatibilityIni?.GetString(executableName, "Banned") == "1")
+			{
+				UpdateStatusAndFinish(false, "The target application is known to have blocked or banned the usage of ReShade. Cannot continue installation.");
+				return;
+			}
+
 			if (compatibilityIni != null && compatibilityIni.HasValue(executableName, "RenderApi"))
 			{
 				if (compatibilityIni.HasValue(executableName, "InstallTarget"))
@@ -587,6 +597,10 @@ namespace ReShade.Setup
 				{
 					isApiDXGI = true;
 				}
+				else if (api == "DDraw")
+				{
+					isApiDDraw = true;
+				}
 				else if (api == "OpenGL")
 				{
 					isApiOpenGL = true;
@@ -601,6 +615,7 @@ namespace ReShade.Setup
 				bool isApiD3D8 = peInfo.Modules.Any(s => s.StartsWith("d3d8", StringComparison.OrdinalIgnoreCase));
 				isApiD3D9 = isApiD3D8 || peInfo.Modules.Any(s => s.StartsWith("d3d9", StringComparison.OrdinalIgnoreCase));
 				isApiDXGI = peInfo.Modules.Any(s => s.StartsWith("dxgi", StringComparison.OrdinalIgnoreCase) || s.StartsWith("d3d1", StringComparison.OrdinalIgnoreCase) || s.Contains("GFSDK")); // Assume DXGI when GameWorks SDK is in use
+				isApiDDraw = peInfo.Modules.Any(s => s.StartsWith("ddraw", StringComparison.OrdinalIgnoreCase));
 				isApiOpenGL = peInfo.Modules.Any(s => s.StartsWith("opengl32", StringComparison.OrdinalIgnoreCase));
 				isApiVulkan = peInfo.Modules.Any(s => s.StartsWith("vulkan-1", StringComparison.OrdinalIgnoreCase));
 				// currentInfo.targetOpenXR = peInfo.Modules.Any(s => s.StartsWith("openxr_loader", StringComparison.OrdinalIgnoreCase));
@@ -652,6 +667,10 @@ namespace ReShade.Setup
 			else if (isApiOpenGL)
 			{
 				currentInfo.targetApi = Api.OpenGL;
+			}
+			else if (isApiDDraw)
+			{
+				currentInfo.targetApi = Api.DDraw;
 			}
 
 			if (isHeadless)
@@ -709,6 +728,10 @@ namespace ReShade.Setup
 					{
 						currentInfo.targetApi = Api.D3D12;
 					}
+					else if (api == "DDraw")
+					{
+						currentInfo.targetApi = Api.DDraw;
+					}
 					else if (api == "OpenGL")
 					{
 						currentInfo.targetApi = Api.OpenGL;
@@ -759,6 +782,9 @@ namespace ReShade.Setup
 						break;
 					case Api.DXGI:
 						currentInfo.modulePath = "dxgi.dll";
+						break;
+					case Api.DDraw:
+						currentInfo.modulePath = "ddraw.dll";
 						break;
 					case Api.OpenGL:
 						currentInfo.modulePath = "opengl32.dll";
@@ -1539,8 +1565,16 @@ namespace ReShade.Setup
 		{
 			if (!string.IsNullOrEmpty(currentInfo.presetPath) && File.Exists(currentInfo.presetPath))
 			{
+				string basePath = Path.GetDirectoryName(currentInfo.configPath);
+				string presetPath = currentInfo.presetPath;
+				if (presetPath.StartsWith(basePath))
+				{
+					// Try and make preset path relative
+					presetPath = "." + presetPath.Substring(basePath.Length);
+				}
+
 				var config = new IniFile(currentInfo.configPath);
-				config.SetValue("GENERAL", "PresetPath", currentInfo.presetPath);
+				config.SetValue("GENERAL", "PresetPath", presetPath);
 				config.SaveFile();
 
 				MakeWritable(currentInfo.presetPath);

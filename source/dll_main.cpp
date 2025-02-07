@@ -233,12 +233,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 					// Create dump with exception information for the first 100 occurrences
 					if (static unsigned int dump_index = 0; dump_index < 100)
 					{
-						const auto dbghelp = GetModuleHandleW(L"dbghelp.dll");
-						if (dbghelp == nullptr)
+						const auto dbghelp_module = GetModuleHandleW(L"dbghelp.dll");
+						if (dbghelp_module == nullptr)
 							goto continue_search;
 
 						const auto dbghelp_write_dump = reinterpret_cast<BOOL(WINAPI *)(HANDLE, DWORD, HANDLE, MINIDUMP_TYPE, PMINIDUMP_EXCEPTION_INFORMATION, PMINIDUMP_USER_STREAM_INFORMATION, PMINIDUMP_CALLBACK_INFORMATION)>(
-							GetProcAddress(dbghelp, "MiniDumpWriteDump"));
+							GetProcAddress(dbghelp_module, "MiniDumpWriteDump"));
 						if (dbghelp_write_dump == nullptr)
 							goto continue_search;
 
@@ -306,6 +306,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 					// Only register D3D hooks when module is not called opengl32.dll
 					if (!is_opengl)
 					{
+						// Register DirectDraw module in case it was used to load ReShade (but ignore otherwise)
+						if (_wcsicmp(module_name.c_str(), L"ddraw") == 0)
+							reshade::hooks::register_module(get_system_path() / L"ddraw.dll");
+
 						reshade::hooks::register_module(get_system_path() / L"d2d1.dll");
 						reshade::hooks::register_module(get_system_path() / L"d3d9.dll");
 						reshade::hooks::register_module(get_system_path() / L"d3d10.dll");
