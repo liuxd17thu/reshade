@@ -83,8 +83,8 @@ struct DECLSPEC_UUID("1F445F9F-9887-4C4C-9055-4E3BADAFCCA8") DXGISwapChain final
 	HRESULT STDMETHODCALLTYPE SetHDRMetaData(DXGI_HDR_METADATA_TYPE Type, UINT Size, void *pMetaData) override;
 	#pragma endregion
 
-	void on_init();
-	void on_reset();
+	void on_init(bool resize);
+	void on_reset(bool resize);
 	void on_present(UINT flags, [[maybe_unused]] const DXGI_PRESENT_PARAMETERS *params = nullptr);
 	void handle_device_loss(HRESULT hr);
 
@@ -107,5 +107,6 @@ struct DECLSPEC_UUID("1F445F9F-9887-4C4C-9055-4E3BADAFCCA8") DXGISwapChain final
 	reshade::api::swapchain *const _impl;
 	bool _is_initialized = false;
 	bool _was_still_drawing_last_frame = false;
+	UINT _sync_interval = UINT_MAX;
 	BOOL _current_fullscreen_state = -1;
 };

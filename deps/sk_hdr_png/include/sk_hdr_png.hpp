@@ -36,8 +36,6 @@
 #include <memory>
 #include <io.h>
 
-#include <shellapi.h>
-#include <ShlObj.h>
 #include <wincodec.h>
 
 #pragma comment (lib, "windowscodecs.lib")
@@ -310,7 +308,7 @@ namespace sk_hdr_png
     };
   };
 
-  bool         write_image_to_disk          (const wchar_t* image_path, unsigned int width, unsigned int height, const void*  pixels,          int quantization_bits, format fmt, bool use_clipboard);//, reshade::api::display* display);
+  bool         write_image_to_disk          (const wchar_t* image_path, unsigned int width, unsigned int height, const void*  pixels,          int quantization_bits, format fmt);//, reshade::api::display* display);
   bool         write_hdr_chunks             (const wchar_t* image_path, unsigned int width, unsigned int height, const float* luminance_array, int quantization_bits);//,                                 reshade::api::display* display);
   cLLi_Payload calculate_content_light_info (const float*   luminance,  unsigned int width, unsigned int height);
   bool         copy_to_clipboard            (const wchar_t* image_path);
@@ -758,63 +756,7 @@ sk_hdr_png::write_hdr_chunks (const wchar_t* image_path, unsigned int width, uns
 }
 
 bool
-sk_hdr_png::copy_to_clipboard (const wchar_t* image_path)
-{
-	std::error_code ec;
-	if (image_path == nullptr || !std::filesystem::exists (image_path, ec))
-	{
-		return false;
-	}
-
-	int clpSize = sizeof (DROPFILES);
-
-	clpSize += sizeof(wchar_t) * static_cast<int>(wcslen(image_path) + 1); // + 1 => '\0'
-	clpSize += sizeof(wchar_t);                                            // two \0 needed at the end
-
-	HDROP   hdrop = static_cast <HDROP>(GlobalAlloc(GHND, clpSize));
-	DROPFILES* df = static_cast <DROPFILES*>(GlobalLock(hdrop));
-
-	if (df != nullptr)
-	{
-		df->pFiles = sizeof(DROPFILES);
-		df->fWide  = TRUE;
-
-		wcscpy((wchar_t*)&df[1], image_path);
-
-		bool clipboard_open = false;
-
-		for (auto attempts = 0; attempts < 8; ++attempts)
-		{
-			if (attempts > 0)
-			{
-				Sleep(1 << (attempts-1));
-			}
-
-			if (OpenClipboard(GetForegroundWindow()))
-			{
-				clipboard_open = true;
-				break;
-			}
-		}
-
-		if (clipboard_open)
-		{
-			EmptyClipboard(                 );
-			SetClipboardData(CF_HDROP, hdrop);
-			CloseClipboard(                 );
-			GlobalUnlock(              hdrop);
-
-			return true;
-		}
-
-		GlobalUnlock(hdrop);
-	}
-
-	return false;
-}
-
-bool
-sk_hdr_png::write_image_to_disk (const wchar_t* image_path, unsigned int width, unsigned int height, const void* pixels, int quantization_bits, format fmt, bool use_clipboard)//, reshade::api::display* display)
+sk_hdr_png::write_image_to_disk (const wchar_t* image_path, unsigned int width, unsigned int height, const void* pixels, int quantization_bits, format fmt)//, reshade::api::display* display)
 {
 	using namespace DirectX;
 	using namespace DirectX::PackedVector;
@@ -842,36 +784,40 @@ sk_hdr_png::write_image_to_disk (const wchar_t* image_path, unsigned int width, 
 		return false;
 	}
 
+	HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+	if (FAILED(hr))
+	{
+		return false;
+	}
+
+	const bool unitialize_com = hr == S_OK; // S_FALSE if it was already initialized
+
 	com_ptr<IWICImagingFactory> factory;
 	com_ptr<IWICBitmapEncoder> encoder;
 	com_ptr<IWICBitmapFrameEncode> bitmap_frame;
 	com_ptr<IPropertyBag2> property_bag;
 	com_ptr<IWICStream> stream;
 
-	HRESULT hr = E_OUTOFMEMORY;
-
-	UINT row_stride  = (width * 48 + 7)/8;
-	UINT buffer_size = height * row_stride;
-
-	BYTE*     png_buffer      =     (BYTE *)_aligned_malloc(sizeof (    BYTE) * buffer_size,    16);
-	XMFLOAT4* rgba32_scanline = (XMFLOAT4 *)_aligned_malloc(sizeof (XMFLOAT4) * width,          16);
-	float*    luminance       =    (float *)_aligned_malloc(sizeof (   float) * width * height, 16);
-
-	if (png_buffer != nullptr && rgba32_scanline != nullptr && luminance != nullptr)
+	if (SUCCEEDED(hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_IWICImagingFactory, reinterpret_cast<LPVOID *>(&factory))) &&
+		SUCCEEDED(hr = factory->CreateStream(&stream)) &&
+		SUCCEEDED(hr = stream->InitializeFromFilename(image_path, GENERIC_WRITE)) &&
+		SUCCEEDED(hr = factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder)) &&
+		SUCCEEDED(hr = encoder->Initialize(stream.get(), WICBitmapEncoderNoCache)) &&
+		SUCCEEDED(hr = encoder->CreateNewFrame(&bitmap_frame, &property_bag)) &&
+		SUCCEEDED(hr = bitmap_frame->Initialize(property_bag.get())) &&
+		SUCCEEDED(hr = bitmap_frame->SetSize(width, height)) &&
+		SUCCEEDED(hr = bitmap_frame->SetPixelFormat(&wic_format)) &&
+		IsEqualGUID(wic_format, GUID_WICPixelFormat48bppRGB))
 	{
-		hr =
-			CoCreateInstance(CLSID_WICImagingFactory,NULL,CLSCTX_INPROC_SERVER,IID_IWICImagingFactory,(LPVOID*)&factory);
+		UINT row_stride = (width * 48 + 7) / 8;
+		UINT buffer_size = height * row_stride;
 
-		if (SUCCEEDED(hr)) hr = factory->CreateStream(&stream);
-		if (SUCCEEDED(hr)) hr = stream->InitializeFromFilename(image_path, GENERIC_WRITE);
-		if (SUCCEEDED(hr)) hr = factory->CreateEncoder(GUID_ContainerFormatPng, NULL, &encoder);
-		if (SUCCEEDED(hr)) hr = encoder->Initialize(stream.get(), WICBitmapEncoderNoCache);
-		if (SUCCEEDED(hr)) hr = encoder->CreateNewFrame(&bitmap_frame, &property_bag);
-		if (SUCCEEDED(hr)) hr = bitmap_frame->Initialize(property_bag.get());
-		if (SUCCEEDED(hr)) hr = bitmap_frame->SetSize(width, height);
-		if (SUCCEEDED(hr)) hr = bitmap_frame->SetPixelFormat(&wic_format);
-		if (SUCCEEDED(hr)) hr = IsEqualGUID(wic_format, GUID_WICPixelFormat48bppRGB) ? S_OK : E_FAIL;
-		if (SUCCEEDED(hr))
+		hr = E_OUTOFMEMORY;
+		const auto png_buffer = static_cast<BYTE *>(_aligned_malloc(sizeof(BYTE) * buffer_size, 16));
+		const auto rgba32_scanline = static_cast<XMFLOAT4 *>(_aligned_malloc(sizeof(XMFLOAT4) * width, 16));
+		const auto luminance = static_cast<float *>(_aligned_malloc(sizeof(float) * width * height, 16));
+
+		if (png_buffer != nullptr && rgba32_scanline != nullptr && luminance != nullptr)
 		{
 			auto QUANTIZE_FP32_TO_UNORM16 = [](XMVECTOR& rgb32,int bit_reduce,uint16_t*& output)
 			{
@@ -924,10 +870,7 @@ sk_hdr_png::write_image_to_disk (const wchar_t* image_path, unsigned int width, 
 						  )
 						);
 				}
-
-				hr = bitmap_frame->WritePixels(height, row_stride, buffer_size, png_buffer);
 			}
-
 			else if (fmt == format::r16g16b16a16_float)
 			{
 				uint16_t* png_pixels = (uint16_t *)png_buffer;
@@ -973,33 +916,25 @@ sk_hdr_png::write_image_to_disk (const wchar_t* image_path, unsigned int width, 
 						src_pixels += 4;
 					}
 				}
+			}
 
-				hr = bitmap_frame->WritePixels(height, row_stride, buffer_size, png_buffer);
+			if (SUCCEEDED(hr = bitmap_frame->WritePixels(height, row_stride, buffer_size, png_buffer)) &&
+				SUCCEEDED(hr = bitmap_frame->Commit()) &&
+				SUCCEEDED(hr = encoder->Commit()))
+			{
+				hr = write_hdr_chunks(image_path, width, height, luminance, quantization_bits) ? S_OK : E_FAIL;
 			}
 		}
 
-		else
-		{
-			hr = E_OUTOFMEMORY;
-		}
+		_aligned_free(png_buffer);
+		_aligned_free(rgba32_scanline);
+		_aligned_free(luminance);
 	}
 
-	if (SUCCEEDED(hr)) hr = bitmap_frame->Commit();
-	if (SUCCEEDED(hr)) hr = encoder->Commit();
-	if (SUCCEEDED(hr))
+	if (unitialize_com)
 	{
-		hr = write_hdr_chunks(image_path, width, height, luminance, quantization_bits/*, display*/) ? S_OK : E_FAIL;
-
-		if (SUCCEEDED(hr))
-		{
-			if (use_clipboard)
-				hr = copy_to_clipboard(image_path) ? S_OK : E_FAIL;
-		}
+		CoUninitialize();
 	}
-
-	_aligned_free(png_buffer);
-	_aligned_free(rgba32_scanline);
-	_aligned_free(luminance);
 
 	return SUCCEEDED(hr);
 }

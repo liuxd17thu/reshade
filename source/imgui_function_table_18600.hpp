@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: BSD-3-Clause OR MIT
  */
 
+#pragma once
+
 #include "imgui_function_table_18971.hpp"
 
 struct imgui_font_18600
@@ -15,7 +17,7 @@ struct imgui_font_18600
 	ImVector<ImFontGlyph> Glyphs;
 	const ImFontGlyph *FallbackGlyph;
 	ImFontAtlas *ContainerAtlas;
-	const ImFontConfig *ConfigData;
+	const void *ConfigData;
 	short ConfigDataCount;
 	ImWchar FallbackChar;
 	ImWchar EllipsisChar;

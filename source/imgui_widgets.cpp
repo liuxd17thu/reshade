@@ -13,6 +13,11 @@
 
 extern std::filesystem::path g_reshade_base_path;
 
+static bool is_activate_key_pressed()
+{
+	return ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) || ImGui::IsKeyPressed(ImGui::GetIO().ConfigNavSwapGamepadButtons ? ImGuiKey_GamepadFaceRight : ImGuiKey_GamepadFaceDown); // See 'ImGuiKey_NavGamepadActivate'
+}
+
 bool reshade::imgui::path_list(const char *label, std::vector<std::filesystem::path> &paths, std::filesystem::path &dialog_path, const std::filesystem::path &default_path)
 {
 	bool res = false;
@@ -125,11 +130,11 @@ bool reshade::imgui::file_dialog(const char *name, std::filesystem::path &path, 
 			ImGui::SetKeyboardFocusHere(1);
 	}
 
-	ImGui::BeginChild("##files", ImVec2(width, 200), ImGuiChildFlags_Border, ImGuiWindowFlags_NavFlattened);
+	ImGui::BeginChild("##files", ImVec2(width, 200), ImGuiChildFlags_Borders | ImGuiChildFlags_NavFlattened);
 
 	if (parent_path.has_parent_path() && parent_path != parent_path.root_path())
 	{
-		if (ImGui::Selectable(ICON_FK_FOLDER " ..", false, ImGuiSelectableFlags_AllowDoubleClick) && (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) || ImGui::IsKeyPressed(ImGuiKey_NavGamepadActivate)))
+		if (ImGui::Selectable(ICON_FK_FOLDER " ..", false, ImGuiSelectableFlags_AllowDoubleClick) && is_activate_key_pressed())
 		{
 			path = parent_path.parent_path();
 			if (path.has_stem())
@@ -153,7 +158,7 @@ bool reshade::imgui::file_dialog(const char *name, std::filesystem::path &path, 
 				path = entry;
 
 				// Navigate into directory when double clicking one
-				if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) || ImGui::IsKeyPressed(ImGuiKey_NavGamepadActivate))
+				if (is_activate_key_pressed())
 					path += std::filesystem::path::preferred_separator;
 			}
 
@@ -192,7 +197,7 @@ bool reshade::imgui::file_dialog(const char *name, std::filesystem::path &path, 
 			path = std::move(file_path);
 
 			// Double clicking a file on the other hand acts as if pressing the ok button
-			if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) || ImGui::IsKeyPressed(ImGuiKey_NavGamepadActivate))
+			if (is_activate_key_pressed())
 				has_double_clicked_file = true;
 		}
 
@@ -773,8 +778,9 @@ static bool drag_with_buttons(const char *label, T *v, int components, T v_speed
 
 		if (with_buttons)
 		{
+			ImGui::PushItemFlag(ImGuiItemFlags_ButtonRepeat, true);
 			ImGui::SameLine(0, button_spacing);
-			if (ImGui::ButtonEx("<", ImVec2(button_size, 0), ImGuiButtonFlags_PressedOnClick | ImGuiButtonFlags_Repeat) && (ignore_limits || v[c] > v_min))
+			if (ImGui::ButtonEx("<", ImVec2(button_size, 0), ImGuiButtonFlags_PressedOnClick) && (ignore_limits || v[c] > v_min))
 			{
 				v[c] -= v_speed;
 				if (!ignore_limits)
@@ -782,13 +788,14 @@ static bool drag_with_buttons(const char *label, T *v, int components, T v_speed
 				res = true;
 			}
 			ImGui::SameLine(0, button_spacing);
-			if (ImGui::ButtonEx(">", ImVec2(button_size, 0), ImGuiButtonFlags_PressedOnClick | ImGuiButtonFlags_Repeat) && (ignore_limits || v[c] < v_max))
+			if (ImGui::ButtonEx(">", ImVec2(button_size, 0), ImGuiButtonFlags_PressedOnClick) && (ignore_limits || v[c] < v_max))
 			{
 				v[c] += v_speed;
 				if (!ignore_limits)
 					v[c] = std::min(v[c], v_max);
 				res = true;
 			}
+			ImGui::PopItemFlag();
 		}
 
 		ImGui::PopID();
@@ -796,8 +803,9 @@ static bool drag_with_buttons(const char *label, T *v, int components, T v_speed
 
 	if (!with_buttons)
 	{
+		ImGui::PushItemFlag(ImGuiItemFlags_ButtonRepeat, true);
 		ImGui::SameLine(0, button_spacing);
-		if (ImGui::ButtonEx("<", ImVec2(button_size, 0), ImGuiButtonFlags_PressedOnClick | ImGuiButtonFlags_Repeat) && (ignore_limits || v[0] > v_min))
+		if (ImGui::ButtonEx("<", ImVec2(button_size, 0), ImGuiButtonFlags_PressedOnClick) && (ignore_limits || v[0] > v_min))
 		{
 			for (int c = 0; c < components; ++c)
 			{
@@ -808,7 +816,7 @@ static bool drag_with_buttons(const char *label, T *v, int components, T v_speed
 			res = true;
 		}
 		ImGui::SameLine(0, button_spacing);
-		if (ImGui::ButtonEx(">", ImVec2(button_size, 0), ImGuiButtonFlags_PressedOnClick | ImGuiButtonFlags_Repeat) && (ignore_limits || v[0] < v_max))
+		if (ImGui::ButtonEx(">", ImVec2(button_size, 0), ImGuiButtonFlags_PressedOnClick) && (ignore_limits || v[0] < v_max))
 		{
 			for (int c = 0; c < components; ++c)
 			{
@@ -818,6 +826,7 @@ static bool drag_with_buttons(const char *label, T *v, int components, T v_speed
 			}
 			res = true;
 		}
+		ImGui::PopItemFlag();
 	}
 
 	ImGui::PopID();
@@ -883,18 +892,20 @@ static bool slider_with_buttons(const char *label, T *v, int components, T v_spe
 
 		if (with_buttons)
 		{
+			ImGui::PushItemFlag(ImGuiItemFlags_ButtonRepeat, true);
 			ImGui::SameLine(0, button_spacing);
-			if (ImGui::ButtonEx("<", ImVec2(button_size, 0), ImGuiButtonFlags_PressedOnClick | ImGuiButtonFlags_Repeat) && v[c] > v_min)
+			if (ImGui::ButtonEx("<", ImVec2(button_size, 0), ImGuiButtonFlags_PressedOnClick) && v[c] > v_min)
 			{
 				v[c] = std::max(v[c] - v_speed, v_min);
 				res = true;
 			}
 			ImGui::SameLine(0, button_spacing);
-			if (ImGui::ButtonEx(">", ImVec2(button_size, 0), ImGuiButtonFlags_PressedOnClick | ImGuiButtonFlags_Repeat) && v[c] < v_max)
+			if (ImGui::ButtonEx(">", ImVec2(button_size, 0), ImGuiButtonFlags_PressedOnClick) && v[c] < v_max)
 			{
 				v[c] = std::min(v[c] + v_speed, v_max);
 				res = true;
 			}
+			ImGui::PopItemFlag();
 		}
 
 		ImGui::PopID();
@@ -902,20 +913,22 @@ static bool slider_with_buttons(const char *label, T *v, int components, T v_spe
 
 	if (!with_buttons)
 	{
+		ImGui::PushItemFlag(ImGuiItemFlags_ButtonRepeat, true);
 		ImGui::SameLine(0, button_spacing);
-		if (ImGui::ButtonEx("<", ImVec2(button_size, 0), ImGuiButtonFlags_PressedOnClick | ImGuiButtonFlags_Repeat) && v[0] > v_min)
+		if (ImGui::ButtonEx("<", ImVec2(button_size, 0), ImGuiButtonFlags_PressedOnClick) && v[0] > v_min)
 		{
 			for (int c = 0; c < components; ++c)
 				v[c] = std::max(v[c] - v_speed, v_min);
 			res = true;
 		}
 		ImGui::SameLine(0, button_spacing);
-		if (ImGui::ButtonEx(">", ImVec2(button_size, 0), ImGuiButtonFlags_PressedOnClick | ImGuiButtonFlags_Repeat) && v[0] < v_max)
+		if (ImGui::ButtonEx(">", ImVec2(button_size, 0), ImGuiButtonFlags_PressedOnClick) && v[0] < v_max)
 		{
 			for (int c = 0; c < components; ++c)
 				v[c] = std::min(v[c] + v_speed, v_max);
 			res = true;
 		}
+		ImGui::PopItemFlag();
 	}
 
 	ImGui::PopID();
@@ -964,7 +977,7 @@ bool reshade::imgui::slider_for_alpha_value(const char *label, float *v)
 	const bool res = ImGui::SliderFloat("", v, 0.0f, 1.0f);
 
 	ImGui::SameLine(0, button_spacing);
-	ImGui::ColorButton("##preview", ImVec4(1.0f, 1.0f, 1.0f, *v), ImGuiColorEditFlags_NoOptions | ImGuiColorEditFlags_AlphaPreview | ImGuiColorEditFlags_NoPicker);
+	ImGui::ColorButton("##preview", ImVec4(1.0f, 1.0f, 1.0f, *v), ImGuiColorEditFlags_NoOptions | ImGuiColorEditFlags_NoPicker);
 
 	ImGui::PopID();
 

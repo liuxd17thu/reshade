@@ -48,6 +48,7 @@ namespace ReShade.Setup
 			if (productVersion.Contains(" "))
 			{
 				NavigationPanel.Background = Brushes.Crimson;
+				productVersion = productVersion.Remove(productVersion.IndexOf(" "));
 			}
 
 			// Add support for TLS 1.2 and 1.3, so that HTTPS connection to GitHub succeeds
@@ -94,6 +95,9 @@ namespace ReShade.Setup
 								break;
 							case "dxgi":
 								currentInfo.targetApi = Api.DXGI;
+								break;
+							case "ddraw":
+								currentInfo.targetApi = Api.DDraw;
 								break;
 							case "opengl":
 								currentInfo.targetApi = Api.OpenGL;
@@ -569,10 +573,13 @@ namespace ReShade.Setup
 			currentInfo.targetOpenXR = false;
 
 			string basePath = Path.GetDirectoryName(currentInfo.targetPath);
+			if (basePath.StartsWith(Environment.GetFolderPath(Environment.SpecialFolder.Windows)))
+			{
+				UpdateStatusAndFinish(false, "Installation to the Windows directory is prohibited.");
+				return;
+			}
 
 			// Check whether the API is specified in the compatibility list, in which case setup can continue right away
-			DownloadCompatibilityIni();
-
 			string executableName = Path.GetFileName(currentInfo.targetPath);
 			if (compatibilityIni?.GetString(executableName, "Banned") == "1")
 			{
@@ -690,12 +697,12 @@ namespace ReShade.Setup
 		}
 		void InstallStep_CheckExistingInstallation()
 		{
+			DownloadCompatibilityIni();
+
 			UpdateStatus("检查安装状态...");
 
 			string basePath = Path.GetDirectoryName(currentInfo.targetPath);
 			string executableName = Path.GetFileName(currentInfo.targetPath);
-
-			DownloadCompatibilityIni();
 
 			if (currentInfo.targetApi != Api.Vulkan && compatibilityIni != null)
 			{
@@ -1133,8 +1140,6 @@ namespace ReShade.Setup
 					return;
 				}
 			}
-
-			DownloadCompatibilityIni();
 
 			// Add default configuration
 			var config = new IniFile(currentInfo.configPath);

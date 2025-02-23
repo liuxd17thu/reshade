@@ -154,6 +154,9 @@ VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo *pCreateInfo, co
 	INIT_DISPATCH_PTR(GetPhysicalDeviceExternalBufferProperties);
 	INIT_DISPATCH_PTR(GetPhysicalDeviceExternalSemaphoreProperties);
 
+	// Core 1_3
+	INIT_DISPATCH_PTR(GetPhysicalDeviceToolProperties);
+
 	// VK_KHR_surface
 	INIT_DISPATCH_PTR(DestroySurfaceKHR);
 
@@ -161,9 +164,7 @@ VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo *pCreateInfo, co
 	INIT_DISPATCH_PTR(CreateWin32SurfaceKHR);
 
 	// VK_EXT_tooling_info
-#ifdef VK_EXT_tooling_info
 	INIT_DISPATCH_PTR(GetPhysicalDeviceToolPropertiesEXT);
-#endif
 
 	g_vulkan_instances.emplace(dispatch_key_from_handle(instance), instance_dispatch_table { dispatch_table, instance, app_info.apiVersion });
 
@@ -213,20 +214,18 @@ void     VKAPI_CALL vkDestroySurfaceKHR(VkInstance instance, VkSurfaceKHR surfac
 	trampoline(instance, surface, pAllocator);
 }
 
-#ifdef VK_EXT_tooling_info
 #include "version.h"
 
-VkResult VKAPI_CALL vkGetPhysicalDeviceToolPropertiesEXT(VkPhysicalDevice physicalDevice, uint32_t *pToolCount, VkPhysicalDeviceToolPropertiesEXT *pToolProperties)
+static VkResult get_physical_device_tool_properties(VkPhysicalDevice physicalDevice, uint32_t *pToolCount, VkPhysicalDeviceToolProperties *pToolProperties, VkResult(VKAPI_CALL *trampoline)(VkPhysicalDevice, uint32_t *, VkPhysicalDeviceToolProperties *))
 {
-	GET_DISPATCH_PTR(GetPhysicalDeviceToolPropertiesEXT, physicalDevice);
-
 	assert(pToolCount != nullptr);
 
+	VkResult result = VK_SUCCESS;
 	const uint32_t available_tool_count = *pToolCount;
 
 	// First get any tools that are downstream (provided this extension is supported downstream as well)
 	if (trampoline != nullptr)
-		trampoline(physicalDevice, pToolCount, pToolProperties); // Sets the number written in "pToolCount"
+		result = trampoline(physicalDevice, pToolCount, pToolProperties); // Sets the number written in "pToolCount"
 	else
 		*pToolCount = 0;
 
@@ -234,15 +233,13 @@ VkResult VKAPI_CALL vkGetPhysicalDeviceToolPropertiesEXT(VkPhysicalDevice physic
 	if (pToolProperties == nullptr)
 	{
 		*pToolCount += 1;
-		return VK_SUCCESS;
+		return result;
 	}
 
-	// Workaround bug in validation layers that causes them to not update "pToolCount" after writing their properties
-	if (*pToolCount == available_tool_count && available_tool_count > 1)
-		*pToolCount -= 1;
-
-	if (available_tool_count < *pToolCount + 1)
-		return VK_INCOMPLETE;
+	if (available_tool_count < *pToolCount + 1 && result >= VK_SUCCESS)
+		result = VK_INCOMPLETE;
+	if (VK_SUCCESS != result)
+		return result;
 
 	VkPhysicalDeviceToolPropertiesEXT &tool_props = pToolProperties[(*pToolCount)++];
 	std::strncpy(tool_props.name, "ReShade", VK_MAX_EXTENSION_NAME_SIZE);
@@ -253,4 +250,16 @@ VkResult VKAPI_CALL vkGetPhysicalDeviceToolPropertiesEXT(VkPhysicalDevice physic
 
 	return VK_SUCCESS;
 }
-#endif
+
+VkResult VKAPI_CALL vkGetPhysicalDeviceToolProperties(VkPhysicalDevice physicalDevice, uint32_t *pToolCount, VkPhysicalDeviceToolProperties *pToolProperties)
+{
+	GET_DISPATCH_PTR(GetPhysicalDeviceToolProperties, physicalDevice);
+
+	return get_physical_device_tool_properties(physicalDevice, pToolCount, pToolProperties, trampoline);
+}
+VkResult VKAPI_CALL vkGetPhysicalDeviceToolPropertiesEXT(VkPhysicalDevice physicalDevice, uint32_t *pToolCount, VkPhysicalDeviceToolPropertiesEXT *pToolProperties)
+{
+	GET_DISPATCH_PTR(GetPhysicalDeviceToolPropertiesEXT, physicalDevice);
+
+	return get_physical_device_tool_properties(physicalDevice, pToolCount, pToolProperties, trampoline);
+}

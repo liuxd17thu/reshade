@@ -802,12 +802,12 @@ void reshade::runtime::update_texture_bindings([[maybe_unused]] const char *sema
 		if (!effect_data.compiled)
 			continue;
 
-		for (size_t permnutation_index = 0; permnutation_index < _effect_permutations.size(); ++permnutation_index)
+		for (size_t permutation_index = 0; permutation_index < _effect_permutations.size(); ++permutation_index)
 		{
-			if (permnutation_index >= effect_data.permutations.size())
+			if (permutation_index >= effect_data.permutations.size())
 				break;
 
-			for (const effect::binding &binding : effect_data.permutations[permnutation_index].texture_semantic_to_binding)
+			for (const effect::binding &binding : effect_data.permutations[permutation_index].texture_semantic_to_binding)
 			{
 				if (binding.semantic != semantic)
 					continue;
@@ -1431,7 +1431,7 @@ void reshade::runtime::render_technique(api::effect_technique handle, api::comma
 
 		// Ensure dimensions and format of the effect color resource matches that of the input back buffer resource (so that the copy to the effect color resource succeeds)
 		// Never perform an immediate reload here, as the list of techniques must not be modified in case this was called from within 'enumerate_techniques'!
-		permutation_index = add_effect_permutation(back_buffer_desc.texture.width, back_buffer_desc.texture.height, color_format, _effect_permutations[0].stencil_format, _is_in_present_call ? _back_buffer_color_space : api::color_space::unknown);
+		permutation_index = add_effect_permutation(back_buffer_desc.texture.width, back_buffer_desc.texture.height, color_format, _effect_permutations[0].stencil_format, _is_in_present_call || back_buffer_resource == get_current_back_buffer() ? _back_buffer_color_space : api::color_space::unknown);
 		if (permutation_index == std::numeric_limits<size_t>::max())
 			return;
 	}
@@ -1492,6 +1492,32 @@ void reshade::runtime::set_effects_state([[maybe_unused]] bool enabled)
 {
 #if RESHADE_FX
 	_effects_enabled = enabled;
+#endif
+}
+
+void reshade::runtime::save_current_preset() const
+{
+#if RESHADE_FX
+	save_current_preset(ini_file::load_cache(_current_preset_path));
+#endif
+}
+void reshade::runtime::export_current_preset([[maybe_unused]] const char *path) const
+{
+#if RESHADE_FX
+	if (path == nullptr)
+		return;
+
+	const std::filesystem::path preset_path = std::filesystem::u8path(path);
+
+	if (ini_file *const cached_preset = ini_file::find_cache(preset_path))
+	{
+		save_current_preset(*cached_preset);
+		return;
+	}
+
+	ini_file preset(preset_path);
+	save_current_preset(preset);
+	preset.save();
 #endif
 }
 

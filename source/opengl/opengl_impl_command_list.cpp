@@ -218,12 +218,19 @@ void reshade::opengl::device_context_impl::bind_render_targets_and_depth_stencil
 		temp_mem<GLenum, 8> draw_buffers(count);
 		for (uint32_t i = 0; i < count; ++i)
 		{
-			draw_buffers[i] = GL_COLOR_ATTACHMENT0 + i;
+			if (rtvs[i].handle == 0)
+			{
+				draw_buffers[i] = GL_NONE;
+			}
+			else
+			{
+				draw_buffers[i] = GL_COLOR_ATTACHMENT0 + i;
 
-			const api::format format = _device_impl->get_resource_format(rtvs[i].handle >> 40, rtvs[i].handle & 0xFFFFFFFF);
-			if (format != api::format_to_default_typed(format, 0) &&
-				format == api::format_to_default_typed(format, 1))
-				has_srgb_attachment = true;
+				const api::format format = _device_impl->get_resource_format(rtvs[i].handle >> 40, rtvs[i].handle & 0xFFFFFFFF);
+				if (format != api::format_to_default_typed(format, 0) &&
+					format == api::format_to_default_typed(format, 1))
+					has_srgb_attachment = true;
+			}
 		}
 
 		gl.DrawBuffers(count, draw_buffers.p);
@@ -299,7 +306,8 @@ void reshade::opengl::device_context_impl::bind_framebuffer_with_resource(GLenum
 }
 void reshade::opengl::device_context_impl::bind_framebuffer_with_resource_views(GLenum target, uint32_t count, const api::resource_view *rtvs, api::resource_view dsv)
 {
-	if ((count == 1 && (rtvs[0].handle >> 40) == GL_FRAMEBUFFER_DEFAULT) || (count == 0 && (dsv == 0 || (dsv.handle >> 40) == GL_FRAMEBUFFER_DEFAULT)))
+	if ((count == 1 && (rtvs[0].handle >> 40) == GL_FRAMEBUFFER_DEFAULT) ||
+		(count == 0 && (dsv == 0 || (dsv.handle >> 40) == GL_FRAMEBUFFER_DEFAULT)))
 	{
 		assert(dsv == 0 || (dsv.handle >> 40) == GL_FRAMEBUFFER_DEFAULT);
 
@@ -335,6 +343,9 @@ void reshade::opengl::device_context_impl::bind_framebuffer_with_resource_views(
 
 	for (uint32_t i = 0; i < count; ++i)
 	{
+		if (rtvs[i].handle == 0)
+			continue;
+
 		switch (rtvs[i].handle >> 40)
 		{
 		case GL_TEXTURE_BUFFER:
@@ -479,7 +490,13 @@ void reshade::opengl::device_context_impl::update_current_window_height(api::res
 void reshade::opengl::device_context_impl::bind_pipeline(api::pipeline_stage stages, api::pipeline pipeline)
 {
 	if (pipeline == 0)
+	{
+		if ((stages & api::pipeline_stage::all_shader_stages) != 0)
+			gl.UseProgram(0);
+		if ((stages & api::pipeline_stage::input_assembler) != 0)
+			gl.BindVertexArray(0);
 		return;
+	}
 
 	// Special case for application handles
 	if ((pipeline.handle >> 40) == GL_PROGRAM)
@@ -1914,39 +1931,81 @@ void reshade::opengl::device_context_impl::generate_mipmaps(api::resource_view s
 	gl.ActiveTexture(GL_TEXTURE0); // src
 	gl.BindTexture(target, object);
 
-	GLenum internal_format = GL_NONE;
-	gl.GetTexLevelParameteriv(target, 0, GL_TEXTURE_INTERNAL_FORMAT, reinterpret_cast<GLint *>(&internal_format));
-
-	if (target == GL_TEXTURE_2D && internal_format != GL_SRGB8 && internal_format != GL_SRGB8_ALPHA8)
+	if (target == GL_TEXTURE_2D)
 	{
-		GLuint level_count = 0;
-		gl.GetTexParameteriv(target, GL_TEXTURE_IMMUTABLE_LEVELS, reinterpret_cast<GLint *>(&level_count));
-		GLuint base_level_width = 0;
-		gl.GetTexLevelParameteriv(target, 0, GL_TEXTURE_WIDTH, reinterpret_cast<GLint *>(&base_level_width));
-		GLuint base_level_height = 0;
-		gl.GetTexLevelParameteriv(target, 0, GL_TEXTURE_HEIGHT, reinterpret_cast<GLint *>(&base_level_height));
+		// Do not have to handle different level target for cubemap textures here, since this branch can only be reached by normal textures
+		GLenum internal_format = GL_NONE;
+		gl.GetTexLevelParameteriv(target, 0, GL_TEXTURE_INTERNAL_FORMAT, reinterpret_cast<GLint *>(&internal_format));
 
-		// Use custom mipmap generation implementation because 'glGenerateMipmap' generates shifted results
-		gl.UseProgram(_device_impl->_mipmap_program);
-
-		for (GLuint level = 1; level < level_count; ++level)
+		// See supported internal image formats at https://registry.khronos.org/OpenGL-Refpages/gl4/html/glBindImageTexture.xhtml
+		if (internal_format == GL_RGBA16 ||
+			internal_format == GL_RGB10_A2 ||
+			internal_format == GL_RGBA8 ||
+			internal_format == GL_RG16 ||
+			internal_format == GL_RG8 ||
+			internal_format == GL_R16 ||
+			internal_format == GL_R8 ||
+			internal_format == GL_RGBA32F ||
+			internal_format == GL_RGBA16F ||
+			internal_format == GL_RG32F ||
+			internal_format == GL_RG16F ||
+			internal_format == GL_R11F_G11F_B10F ||
+			internal_format == GL_R32F ||
+			internal_format == GL_R16F ||
+			internal_format == GL_RGBA32UI ||
+			internal_format == GL_RGBA16UI ||
+			internal_format == GL_RGB10_A2UI ||
+			internal_format == GL_RGBA8UI ||
+			internal_format == GL_RG32UI ||
+			internal_format == GL_RG16UI ||
+			internal_format == GL_RG8UI ||
+			internal_format == GL_R32UI ||
+			internal_format == GL_R16UI ||
+			internal_format == GL_R8UI ||
+			internal_format == GL_RGBA32I ||
+			internal_format == GL_RGBA16I ||
+			internal_format == GL_RGBA8I ||
+			internal_format == GL_RG32I ||
+			internal_format == GL_RG16I ||
+			internal_format == GL_RG8I ||
+			internal_format == GL_R32I ||
+			internal_format == GL_R16I ||
+			internal_format == GL_R8I ||
+			internal_format == GL_RGBA16_SNORM ||
+			internal_format == GL_RGBA8_SNORM ||
+			internal_format == GL_RG16_SNORM ||
+			internal_format == GL_RG8_SNORM ||
+			internal_format == GL_R16_SNORM ||
+			internal_format == GL_R8_SNORM)
 		{
-			const GLuint width = std::max(1u, base_level_width >> level);
-			const GLuint height = std::max(1u, base_level_height >> level);
+			GLuint level_count = 0;
+			gl.GetTexParameteriv(target, GL_TEXTURE_IMMUTABLE_LEVELS, reinterpret_cast<GLint *>(&level_count));
+			GLuint base_level_width = 0;
+			gl.GetTexLevelParameteriv(target, 0, GL_TEXTURE_WIDTH, reinterpret_cast<GLint *>(&base_level_width));
+			GLuint base_level_height = 0;
+			gl.GetTexLevelParameteriv(target, 0, GL_TEXTURE_HEIGHT, reinterpret_cast<GLint *>(&base_level_height));
 
-			gl.Uniform1i(0 /* src_level */, static_cast<GLint>(level - 1));
-			gl.BindImageTexture(1 /* dest */, object, level, GL_FALSE, 0, GL_WRITE_ONLY, internal_format);
+			// Use custom mipmap generation implementation because 'glGenerateMipmap' generates shifted results
+			gl.UseProgram(_device_impl->_mipmap_program);
 
-			gl.DispatchCompute((width + 7) / 8, (height + 7) / 8, 1);
+			for (GLuint level = 1; level < level_count; ++level)
+			{
+				const GLuint width = std::max(1u, base_level_width >> level);
+				const GLuint height = std::max(1u, base_level_height >> level);
 
-			// Ensure next iteration reads the data written by this iteration
-			gl.MemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
+				gl.Uniform1i(0 /* src_level */, static_cast<GLint>(level - 1));
+				gl.BindImageTexture(1 /* dest */, object, level, GL_FALSE, 0, GL_WRITE_ONLY, internal_format);
+
+				gl.DispatchCompute((width + 7) / 8, (height + 7) / 8, 1);
+
+				// Ensure next iteration reads the data written by this iteration
+				gl.MemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT);
+			}
+			return;
 		}
 	}
-	else
-	{
-		gl.GenerateMipmap(target);
-	}
+
+	gl.GenerateMipmap(target);
 }
 
 void reshade::opengl::device_context_impl::begin_query(api::query_heap heap, api::query_type type, uint32_t index)

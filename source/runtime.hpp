@@ -159,6 +159,9 @@ namespace reshade
 		bool get_effects_state() const final;
 		void set_effects_state(bool enabled) final;
 
+		void save_current_preset() const final;
+		void export_current_preset(const char *path) const final;
+
 		void get_current_preset_path(char *path, size_t *path_size) const final;
 		void set_current_preset_path(const char *path) final;
 
@@ -180,7 +183,7 @@ namespace reshade
 		std::string build_postfix(const effect &effect, int feature) const;
 		bool check_preset_feature(int feature) const;
 		void load_current_preset();
-		void save_current_preset() const final;
+		void save_current_preset(ini_file &preset) const;
 		void aurora4_clean_preset(ini_file &preset);
 		void detach_current_flair() const;
 
@@ -238,8 +241,6 @@ namespace reshade
 		}
 
 		bool get_preprocessor_definition(const std::string &effect_name, const std::string &name, int scope_mask, std::vector<std::pair<std::string, std::string>> *&scope, std::vector<std::pair<std::string, std::string>>::iterator &value) const;
-#else
-		void save_current_preset() const final {}
 #endif
 
 		bool get_texture_data(api::resource resource, api::resource_usage state, uint8_t *pixels);
@@ -378,7 +379,6 @@ namespace reshade
 		bool _screenshot_save_gui = false;
 #endif
 		bool _screenshot_clear_alpha = true;
-		bool _screenshot_clipboard_copy = false;
 		unsigned int _screenshot_count = 0;
 		unsigned int _screenshot_format = 1;
 		unsigned int _screenshot_hdr_bits = 11;
