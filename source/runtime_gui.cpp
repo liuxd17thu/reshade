@@ -606,10 +606,10 @@ void reshade::runtime::load_custom_style()
 		colors[ImGuiCol_ResizeGripHovered] = ImColor(0xcccc6699);
 		colors[ImGuiCol_ResizeGripActive] = ImColor(0xffcc6699);
 		colors[ImGuiCol_Tab] = ImColor(0x77cc9966);
-		colors[ImGuiCol_TabActive] = ImColor(0xffcc9966);
+		colors[ImGuiCol_TabSelected] = ImColor(0xffcc9966);
 		colors[ImGuiCol_TabHovered] = colors[ImGuiCol_ButtonHovered];
-		colors[ImGuiCol_TabUnfocused] = ImColor(0x88cc9966);
-		colors[ImGuiCol_TabUnfocusedActive] = ImColor(0xcccc9966);
+		colors[ImGuiCol_TabDimmed] = ImColor(0x88cc9966);
+		colors[ImGuiCol_TabDimmedSelected] = ImColor(0xcccc9966);
 		colors[ImGuiCol_DockingPreview] = colors[ImGuiCol_Header] * ImVec4(1.0f, 1.0f, 1.0f, 0.7f);
 		colors[ImGuiCol_DockingEmptyBg] = ImColor(0xff333333);
 		colors[ImGuiCol_PlotLines] = ImColor(0xffffffee);
