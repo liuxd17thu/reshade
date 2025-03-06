@@ -5,8 +5,6 @@
 
 #pragma once
 
-#if RESHADE_FX
-
 #include "effect_module.hpp"
 #include "moving_average.hpp"
 
@@ -249,5 +247,3 @@ namespace reshade
 		bool flair_touched = false;
 	};
 }
-
-#endif

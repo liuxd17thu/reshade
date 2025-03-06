@@ -100,6 +100,7 @@ static std::string_view get_localized_annotation(T &object, const std::string_vi
 		}
 	}
 #endif
+
 	return object.annotation_as_string(ann_name);
 }
 
@@ -399,14 +400,11 @@ void reshade::runtime::load_config_gui(const ini_file &config)
 	config.get("OVERLAY", "FPSPosition", _fps_pos);
 	config.get("OVERLAY", "NoFontScaling", _no_font_scaling);
 	config.get("OVERLAY", "ShowClock", _show_clock);
-#if RESHADE_FX
 	config.get("OVERLAY", "ShowForceLoadEffectsButton", _show_force_load_effects_button);
-#endif
 	config.get("OVERLAY", "ShowFPS", _show_fps);
 	config.get("OVERLAY", "ShowFrameTime", _show_frametime);
 	config.get("OVERLAY", "ShowPresetName", _show_preset_name);
 	config.get("OVERLAY", "ShowScreenshotMessage", _show_screenshot_message);
-#if RESHADE_FX
 	if (!global_config().get("OVERLAY", "TutorialProgress", _tutorial_index))
 		config.get("OVERLAY", "TutorialProgress", _tutorial_index);
 	config.get("OVERLAY", "VariableListHeight", _variable_editor_height);
@@ -414,7 +412,6 @@ void reshade::runtime::load_config_gui(const ini_file &config)
 	config.get("OVERLAY", "AutoSavePreset", _auto_save_preset);
 	config.get("OVERLAY", "ShowPresetTransitionMessage", _show_preset_transition_message);
 	config.get("OVERLAY", "ShowPresetDescription", _show_preset_description);
-#endif
 	config.get("OVERLAY", "ShowImGuiCursor", _show_imgui_cursor);
 
 	ImGuiStyle &imgui_style = _imgui_context->Style;
@@ -505,14 +502,11 @@ void reshade::runtime::save_config_gui(ini_file &config) const
 	config.set("OVERLAY", "ClockFormat", _clock_format);
 	config.set("OVERLAY", "FPSPosition", _fps_pos);
 	config.set("OVERLAY", "ShowClock", _show_clock);
-#if RESHADE_FX
 	config.set("OVERLAY", "ShowForceLoadEffectsButton", _show_force_load_effects_button);
-#endif
 	config.set("OVERLAY", "ShowFPS", _show_fps);
 	config.set("OVERLAY", "ShowFrameTime", _show_frametime);
 	config.set("OVERLAY", "ShowPresetName", _show_preset_name);
 	config.set("OVERLAY", "ShowScreenshotMessage", _show_screenshot_message);
-#if RESHADE_FX
 	global_config().set("OVERLAY", "TutorialProgress", _tutorial_index);
 	config.set("OVERLAY", "TutorialProgress", _tutorial_index);
 	config.set("OVERLAY", "VariableListHeight", _variable_editor_height);
@@ -520,7 +514,6 @@ void reshade::runtime::save_config_gui(ini_file &config) const
 	config.set("OVERLAY", "AutoSavePreset", _auto_save_preset);
 	config.set("OVERLAY", "ShowPresetTransitionMessage", _show_preset_transition_message);
 	config.set("OVERLAY", "ShowPresetDescription", _show_preset_description);
-#endif
 	config.set("OVERLAY", "ShowImGuiCursor", _show_imgui_cursor);
 
 	const ImGuiStyle &imgui_style = _imgui_context->Style;
@@ -1060,9 +1053,9 @@ void reshade::runtime::draw_gui()
 
 	if (_input != nullptr)
 	{
-		if (_show_overlay && !_ignore_shortcuts && !_imgui_context->IO.NavVisible && _input->is_key_pressed(0x1B /* VK_ESCAPE */) &&
-			((_input_processing_mode == 2 || (_input_processing_mode == 1 && (_input->is_blocking_any_mouse_input() || _input->is_blocking_any_keyboard_input())))))
-			show_overlay = false; // Close when pressing the escape button and not currently navigating with the keyboard
+		if (_show_overlay && !_ignore_shortcuts && _input->is_key_pressed(0x1B /* VK_ESCAPE */) &&
+			(_input_processing_mode == 2 || (_input_processing_mode == 1 && (_imgui_context->IO.WantCaptureMouse || _imgui_context->IO.WantCaptureKeyboard))) && !_imgui_context->IO.NavVisible)
+			show_overlay = false; // Close when pressing the escape button, input focus is on the overlay and not currently navigating with the keyboard
 		else if (!_ignore_shortcuts && _input->is_key_pressed(_overlay_key_data, _force_shortcut_modifiers) && _imgui_context->ActiveId == 0)
 			show_overlay = !_show_overlay;
 
@@ -1089,19 +1082,11 @@ void reshade::runtime::draw_gui()
 	if (show_overlay != _show_overlay)
 		open_overlay(show_overlay, show_overlay_source);
 
-#if RESHADE_FX
 	const bool show_splash_window = _show_splash && (is_loading() || (_reload_count <= 1 && (_last_present_time - _last_reload_time) < std::chrono::seconds(5)) || (!_show_overlay && _tutorial_index == 0 && _input != nullptr));
-#else
-	const bool show_splash_window = _show_splash && (_last_present_time - _last_reload_time) < std::chrono::seconds(5);
-#endif
 
 	// Do not show this message in the same frame the screenshot is taken (so that it won't show up on the GUI screenshot)
 	const bool show_screenshot_message = (_show_screenshot_message || !_last_screenshot_save_successful) && !_should_save_screenshot && (_last_present_time - _last_screenshot_time) < std::chrono::seconds(_last_screenshot_save_successful ? 3 : 5);
-#if RESHADE_FX
 	const bool show_preset_transition_message = _show_preset_transition_message && _is_in_preset_transition;
-#else
-	const bool show_preset_transition_message = false;
-#endif
 	const bool show_message_window = show_screenshot_message || show_preset_transition_message || !_preset_save_successful;
 
 	const bool show_clock = _show_clock == 1 || (_show_overlay && _show_clock > 1);
@@ -1125,15 +1110,10 @@ void reshade::runtime::draw_gui()
 
 	_ignore_shortcuts = false;
 	_block_input_next_frame = false;
-#if RESHADE_FX
 	_gather_gpu_statistics = false;
 	_effects_expanded_state &= 2;
-#endif
 
-	if (!show_splash_window && !show_message_window && !show_statistics_window && !_show_overlay
-#if RESHADE_FX
-		&& _preview_texture == 0
-#endif
+	if (!show_splash_window && !show_message_window && !show_statistics_window && !_show_overlay && _preview_texture == 0
 #if RESHADE_ADDON
 		&& !has_addon_event<addon_event::reshade_overlay>()
 #endif
@@ -1341,11 +1321,7 @@ void reshade::runtime::draw_gui()
 #endif
 
 	ImVec2 viewport_offset = ImVec2(0, 0);
-#if RESHADE_FX
 	const bool show_spinner = _reload_count > 1 && _tutorial_index != 0;
-#else
-	const bool show_spinner = false;
-#endif
 
 	// Create ImGui widgets and windows
 	if (show_splash_window && !(show_spinner && show_overlay))
@@ -1364,7 +1340,6 @@ void reshade::runtime::draw_gui()
 			ImGuiWindowFlags_NoDocking |
 			ImGuiWindowFlags_NoFocusOnAppearing);
 
-#if RESHADE_FX
 		if (show_spinner)
 		{
 			const auto remaining_effects = (_reload_remaining_effects.load() == std::numeric_limits<size_t>::max()) ? 0 : _reload_remaining_effects.load();
@@ -1377,7 +1352,6 @@ void reshade::runtime::draw_gui()
 			ImGui::PopStyleColor();
 		}
 		else
-#endif
 		{
 			ImGui::Text("AuroraShade %s (Based on ReShade %s)", VERSION_STRING_CN2, VERSION_STRING_PRODUCT);
 
@@ -1398,7 +1372,6 @@ void reshade::runtime::draw_gui()
 
 			ImGui::Spacing();
 
-#if RESHADE_FX
 			if (_reload_remaining_effects != 0 && _reload_remaining_effects != std::numeric_limits<size_t>::max())
 			{
 				ImGui::ProgressBar((_effects.size() - _reload_remaining_effects) / float(_effects.size()), ImVec2(ImGui::GetContentRegionAvail().x, 0), "");
@@ -1409,7 +1382,6 @@ void reshade::runtime::draw_gui()
 					_reload_remaining_effects.load());
 			}
 			else
-#endif
 			{
 				ImGui::ProgressBar(0.0f, ImVec2(ImGui::GetContentRegionAvail().x, 0), "");
 				ImGui::SameLine(15);
@@ -1423,7 +1395,6 @@ void reshade::runtime::draw_gui()
 						ImGui::TextColored(COLOR_YELLOW, _("Use gamepad instead: Press 'left + right shoulder + start button' to open the configuration overlay."));
 					}
 				}
-#if RESHADE_FX
 				else if (_tutorial_index == 0)
 				{
 					const std::string label = _("AuroraShade is now installed successfully! Press '%s' to start the tutorial.");
@@ -1435,7 +1406,6 @@ void reshade::runtime::draw_gui()
 					ImGui::SameLine(0.0f, 0.0f);
 					ImGui::TextUnformatted(label.c_str() + key_offset + 2, label.c_str() + label.size());
 				}
-#endif
 				else
 				{
 					const std::string label = _("Press '%s' to open the configuration overlay.");
@@ -1455,11 +1425,10 @@ void reshade::runtime::draw_gui()
 				error_message += _("There were errors loading some add-ons."),
 				error_message += ' ';
 #endif
-#if RESHADE_FX
 			if (!_last_reload_successful)
 				error_message += _("There were errors loading some effects."),
 				error_message += ' ';
-#endif
+
 			if (!error_message.empty())
 			{
 				error_message += _("Check the log for more details.");
@@ -1490,11 +1459,7 @@ void reshade::runtime::draw_gui()
 
 		if (!_preset_save_successful)
 		{
-#if RESHADE_FX
 			ImGui::TextColored(COLOR_RED, _("Unable to save configuration and/or current preset. Make sure file permissions are set up to allow writing to these paths and their parent directories:\n%s\n%s"), _config_path.u8string().c_str(), _current_preset_path.u8string().c_str());
-#else
-			ImGui::TextColored(COLOR_RED, _("Unable to save configuration. Make sure file permissions are set up to allow writing to %s."), _config_path.u8string().c_str());
-#endif
 		}
 		else if (show_screenshot_message)
 		{
@@ -1506,13 +1471,11 @@ void reshade::runtime::draw_gui()
 			else
 				ImGui::Text(_("Screenshot successfully saved to %s"), _last_screenshot_file.u8string().c_str());
 		}
-#if RESHADE_FX
 		else if (show_preset_transition_message)
 		{
 			const std::string postfix = (_current_flair == "" || _current_flair == ":") ? "" : (" - " + _current_flair);
 			ImGui::Text(_("Switching preset to %s ..."), (_current_preset_path.stem().u8string() + postfix).c_str());
 		}
-#endif
 
 		viewport_offset.y += ImGui::GetWindowHeight() + _imgui_context->Style.WindowPadding.x; // Add small space between windows
 
@@ -1592,7 +1555,6 @@ void reshade::runtime::draw_gui()
 				ImGui::SetCursorPosX(content_width - ImGui::CalcTextSize(temp, temp + temp_size).x + _imgui_context->Style.ItemSpacing.x);
 			ImGui::TextUnformatted(temp, temp + temp_size);
 		}
-#if RESHADE_FX
 		if (show_preset_name)
 		{
 			const std::string preset_name = _current_preset_path.stem().u8string();
@@ -1600,7 +1562,6 @@ void reshade::runtime::draw_gui()
 				ImGui::SetCursorPosX(content_width - ImGui::CalcTextSize(preset_name.c_str(), preset_name.c_str() + preset_name.size()).x + _imgui_context->Style.ItemSpacing.x);
 			ImGui::TextUnformatted(preset_name.c_str(), preset_name.c_str() + preset_name.size());
 		}
-#endif
 
 		ImGui::Dummy(ImVec2(200, 0)); // Force a minimum window width
 
@@ -1637,9 +1598,7 @@ void reshade::runtime::draw_gui()
 		}
 
 		const std::pair<std::string, void(runtime::*)()> overlay_callbacks[] = {
-#if RESHADE_FX
 			{ _("Home###home"), &runtime::draw_gui_home },
-#endif
 #if RESHADE_ADDON
 			{ _("Add-ons###addons"), &runtime::draw_gui_addons },
 #endif
@@ -1706,7 +1665,6 @@ void reshade::runtime::draw_gui()
 			ImGui::End();
 		}
 
-#if RESHADE_FX
 		if (!_editors.empty())
 		{
 			if (ImGui::Begin(_("Edit###editor"), nullptr, ImGuiWindowFlags_NoFocusOnAppearing) &&
@@ -1742,7 +1700,6 @@ void reshade::runtime::draw_gui()
 			}
 			ImGui::End();
 		}
-#endif
 	}
 
 #if RESHADE_ADDON == 1
@@ -1767,7 +1724,6 @@ void reshade::runtime::draw_gui()
 	}
 #endif
 
-#if RESHADE_FX
 	if (_preview_texture != 0 && _effects_enabled)
 	{
 		if (!_show_overlay)
@@ -1804,7 +1760,6 @@ void reshade::runtime::draw_gui()
 
 		ImGui::FindWindowByName("Viewport")->DrawList->AddImage(_preview_texture.handle, preview_min, preview_max, ImVec2(0, 0), ImVec2(1, 1), _preview_size[2]);
 	}
-#endif
 
 #if RESHADE_LOCALIZATION
 	resources::set_current_language(prev_language);
@@ -1850,7 +1805,6 @@ void reshade::runtime::draw_gui()
 	ImGui::SetCurrentContext(backup_context);
 }
 
-#if RESHADE_FX
 void reshade::runtime::draw_gui_home()
 {
 	std::string tutorial_text;
@@ -2086,8 +2040,7 @@ void reshade::runtime::draw_gui_home()
 		if (imgui::file_dialog("##browse", _file_selection_path, std::max(browse_button_width, 24.0f * _font_size), { L".ini", L".txt" }, { _config_path, g_reshade_base_path / L"ReShade.ini" }))
 		{
 			std::error_code ec;
-			if (std::filesystem::path resolved_path = std::filesystem::canonical(_file_selection_path, ec); !ec)
-				_file_selection_path = std::move(resolved_path);
+			resolve_path(_file_selection_path, ec);
 
 			// Check that this is actually a valid preset file
 			if (ini_file::load_cache(_file_selection_path).has({}, "Techniques"))
@@ -2601,7 +2554,6 @@ void reshade::runtime::draw_gui_home()
 		}
 	}
 }
-#endif
 void reshade::runtime::draw_gui_settings()
 {
 	if (ImGui::Button((ICON_FK_FOLDER " " + std::string(_("Open base folder in explorer"))).c_str(), ImVec2(ImGui::GetContentRegionAvail().x, 0)))
@@ -2625,7 +2577,6 @@ void reshade::runtime::draw_gui_settings()
 
 			modified |= imgui::key_input_box(_("Overlay key"), _overlay_key_data, *_input);
 
-#if RESHADE_FX
 			modified |= imgui::key_input_box(_("Effect toggle key"), _effects_key_data, *_input);
 			modified |= imgui::key_input_box(_("Effect reload key"), _reload_key_data, *_input);
 
@@ -2644,12 +2595,10 @@ void reshade::runtime::draw_gui_settings()
 				"Make a smooth transition when switching presets, but only for floating point values.\n"
 				"Recommended for multiple presets that contain the same effects, otherwise set this to zero.\n"
 				"Values are in milliseconds."));
-#endif
 
 			ImGui::Spacing();
 		}
 
-#if RESHADE_FX
 		modified |= imgui::file_input_box(_("Start-up preset"), nullptr, _startup_preset_path, _file_selection_path, { L".ini", L".txt" });
 		ImGui::SetItemTooltip(_("When not empty, reset the current preset to this file during reloads."));
 
@@ -2681,7 +2630,6 @@ void reshade::runtime::draw_gui_settings()
 		if (ImGui::Button(_("Clear effect cache"), ImVec2(ImGui::CalcItemWidth(), 0)))
 			clear_effect_cache();
 		ImGui::SetItemTooltip(_("Clear effect cache located in \"%s\"."), _effect_cache_path.u8string().c_str());
-#endif
 	}
 
 	if (ImGui::CollapsingHeader(_("Screenshots"), ImGuiTreeNodeFlags_DefaultOpen))
@@ -2722,11 +2670,7 @@ void reshade::runtime::draw_gui_settings()
 				"  %%TimeMS%%          Milliseconds fraction of current time\n"
 				"  %%Count%%           Number of screenshots taken this session\n"),
 				g_target_executable_path.stem().u8string().c_str(),
-#if RESHADE_FX
 				_current_preset_path.stem().u8string().c_str(),
-#else
-				"..."
-#endif
 				"yyyy-MM-dd",
 				"HH-mm-ss");
 		}
@@ -2747,10 +2691,8 @@ void reshade::runtime::draw_gui_settings()
 				modified |= ImGui::Checkbox(_("Clear alpha channel"), &_screenshot_clear_alpha);
 		}
 
-#if RESHADE_FX
 		modified |= ImGui::Checkbox(_("Save current preset file"), &_screenshot_include_preset);
 		modified |= ImGui::Checkbox(_("Save before and after images"), &_screenshot_save_before);
-#endif
 		modified |= ImGui::Checkbox(_("Save separate image with the overlay visible"), &_screenshot_save_gui);
 
 		modified |= imgui::file_input_box(_("Screenshot sound"), "sound.wav", _screenshot_sound_path, _file_selection_path, { L".wav" });
@@ -2794,11 +2736,7 @@ void reshade::runtime::draw_gui_settings()
 				"  %%TargetName%%      File name without extension of the screenshot file (%s)\n"
 				"  %%Count%%           Number of screenshots taken this session\n"),
 				g_target_executable_path.stem().u8string().c_str(),
-#if RESHADE_FX
 				_current_preset_path.stem().u8string().c_str(),
-#else
-				"..."
-#endif
 				"yyyy-MM-dd",
 				"HH-mm-ss",
 				(_screenshot_path / (_screenshot_name + extension)).u8string().c_str(),
@@ -2838,14 +2776,11 @@ void reshade::runtime::draw_gui_settings()
 		}
 #endif
 
-#if RESHADE_FX
 		if (ImGui::Button(_("Restart tutorial"), ImVec2(ImGui::CalcItemWidth(), 0)))
 			_tutorial_index = 0;
-#endif
 
 		modified |= ImGui::Checkbox(_("Show screenshot message"), &_show_screenshot_message);
 
-#if RESHADE_FX
 		ImGui::BeginDisabled(_preset_transition_duration == 0);
 		modified |= ImGui::Checkbox(_("Show preset transition message"), &_show_preset_transition_message);
 		ImGui::EndDisabled();
@@ -2854,15 +2789,9 @@ void reshade::runtime::draw_gui_settings()
 
 		if (_effect_load_skipping)
 			modified |= ImGui::Checkbox(_("Show \"Force load all effects\" button"), &_show_force_load_effects_button);
-#endif
 
-#if RESHADE_FX
 		modified |= ImGui::Checkbox(_("Show preset description"), &_show_preset_description);
-#endif
-
-#if RESHADE_FX
 		modified |= ImGui::Checkbox(_("Group effect files with tabs instead of a tree"), &_variable_editor_tabs);
-#endif
 		modified |= ImGui::Checkbox(_("Show mouse cursor"), &_show_imgui_cursor);
 
 		#pragma region Style
@@ -3046,9 +2975,7 @@ void reshade::runtime::draw_gui_settings()
 			modified |= imgui::checkbox_tristate(_("Show FPS"), &_show_fps);
 			ImGui::SameLine(0, 10);
 			modified |= imgui::checkbox_tristate(_("Show frame time"), &_show_frametime);
-#if RESHADE_FX
 			modified |= imgui::checkbox_tristate(_("Show preset name"), &_show_preset_name);
-#endif
 			ImGui::EndGroup();
 			ImGui::SetItemTooltip(_("Check to always show, fill out to only show while overlay is open."));
 
@@ -3078,7 +3005,6 @@ void reshade::runtime::draw_gui_settings()
 void reshade::runtime::draw_gui_statistics()
 {
 	unsigned int gpu_digits = 1;
-#if RESHADE_FX
 	unsigned int cpu_digits = 1;
 	uint64_t post_processing_time_cpu = 0;
 	uint64_t post_processing_time_gpu = 0;
@@ -3093,13 +3019,10 @@ void reshade::runtime::draw_gui_statistics()
 			post_processing_time_gpu += tech.average_gpu_duration;
 		}
 	}
-#endif
 
 	if (ImGui::CollapsingHeader(_("General"), ImGuiTreeNodeFlags_DefaultOpen))
 	{
-#if RESHADE_FX
 		_gather_gpu_statistics = true;
-#endif
 
 		ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
 		ImGui::PlotLines("##framerate",
@@ -3119,13 +3042,9 @@ void reshade::runtime::draw_gui_statistics()
 		ImGui::TextUnformatted(_("Hardware:"));
 		ImGui::TextUnformatted(_("Application:"));
 		ImGui::TextUnformatted(_("Time:"));
-#if RESHADE_FX
 		ImGui::TextUnformatted(_("Resolution:"));
-#endif
 		ImGui::Text(_("Frame %llu:"), _frame_count + 1);
-#if RESHADE_FX
 		ImGui::TextUnformatted(_("Post-Processing:"));
-#endif
 
 		ImGui::EndGroup();
 		ImGui::SameLine(ImGui::GetWindowWidth() * 0.33333333f);
@@ -3161,13 +3080,9 @@ void reshade::runtime::draw_gui_statistics()
 			ImGui::TextUnformatted("Unknown");
 		ImGui::TextUnformatted(g_target_executable_path.filename().u8string().c_str());
 		ImGui::Text("%.4d-%.2d-%.2d %d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour * 3600 + tm.tm_min * 60 + tm.tm_sec);
-#if RESHADE_FX
 		ImGui::Text("%ux%u", _effect_permutations[0].width, _effect_permutations[0].height);
-#endif
 		ImGui::Text("%.2f fps", _imgui_context->IO.Framerate);
-#if RESHADE_FX
 		ImGui::Text("%*.3f ms CPU", cpu_digits + 4, post_processing_time_cpu * 1e-6f);
-#endif
 
 		ImGui::EndGroup();
 		ImGui::SameLine(ImGui::GetWindowWidth() * 0.66666666f);
@@ -3180,19 +3095,14 @@ void reshade::runtime::draw_gui_statistics()
 			ImGui::TextUnformatted("Unknown");
 		ImGui::Text("0x%X", static_cast<unsigned int>(std::hash<std::string>()(g_target_executable_path.stem().u8string()) & 0xFFFFFFFF));
 		ImGui::Text("%.0f ms", std::chrono::duration_cast<std::chrono::nanoseconds>(_last_present_time - _start_time).count() * 1e-6f);
-#if RESHADE_FX
 		ImGui::Text("Format %u (%u bpc)", static_cast<unsigned int>(_effect_permutations[0].color_format), api::format_bit_depth(_effect_permutations[0].color_format));
-#endif
 		ImGui::Text("%*.3f ms", gpu_digits + 4, _last_frame_duration.count() * 1e-6f);
-#if RESHADE_FX
 		if (_gather_gpu_statistics && post_processing_time_gpu != 0)
 			ImGui::Text("%*.3f ms GPU", gpu_digits + 4, (post_processing_time_gpu * 1e-6f));
-#endif
 
 		ImGui::EndGroup();
 	}
 
-#if RESHADE_FX
 	if (ImGui::CollapsingHeader(_("Techniques"), ImGuiTreeNodeFlags_DefaultOpen) && !is_loading() && _effects_enabled)
 	{
 		// Only need to gather GPU statistics if the statistics are actually visible
@@ -3516,7 +3426,6 @@ void reshade::runtime::draw_gui_statistics()
 
 		ImGui::Text(_("Total memory usage: %lld.%03lld %s"), memory_view.quot, memory_view.rem, memory_size_unit);
 	}
-#endif
 }
 void reshade::runtime::draw_gui_log()
 {
@@ -3909,7 +3818,6 @@ void reshade::runtime::draw_gui_addons()
 }
 #endif
 
-#if RESHADE_FX
 void reshade::runtime::draw_variable_editor()
 {
 	static std::string preset_section_text = "\0";
@@ -5663,7 +5571,6 @@ void reshade::runtime::draw_code_editor(editor_instance &instance)
 	else // Enable navigation again if focus is lost
 		_imgui_context->IO.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 }
-#endif
 
 bool reshade::runtime::init_imgui_resources()
 {

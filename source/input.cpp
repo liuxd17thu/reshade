@@ -21,15 +21,13 @@ static std::unordered_map<HWND, unsigned int> s_raw_input_windows;
 static std::unordered_map<HWND, std::weak_ptr<reshade::input>> s_windows;
 static RECT s_last_clip_cursor = {};
 static POINT s_last_cursor_position = {};
-static std::chrono::high_resolution_clock::time_point s_last_cursor_warp = {};
 static std::atomic<bool> s_block_mouse = false;
 static std::atomic<bool> s_block_keyboard = false;
 static std::atomic<bool> s_block_cursor_warping = false;
 
+extern "C" BOOL WINAPI HookClipCursor(const RECT *lpRect);
 extern "C" auto WINAPI HookGetKeyState(int vKey) -> SHORT;
 extern "C" auto WINAPI HookGetAsyncKeyState(int vKey) -> SHORT;
-extern "C" BOOL WINAPI HookClipCursor(const RECT *lpRect);
-extern "C" BOOL WINAPI HookGetCursorPosition(LPPOINT lpPoint);
 
 reshade::input::input(window_handle window)
 	: _window(window)
@@ -486,6 +484,14 @@ std::string reshade::input::key_name(const unsigned int key[4])
 
 void reshade::input::block_mouse_input(bool enable)
 {
+	_block_mouse = enable;
+}
+void reshade::input::block_keyboard_input(bool enable)
+{
+	_block_keyboard = enable;
+}
+void reshade::input::block_mouse_cursor_warping(bool enable)
+{
 	static const auto ClipCursor_trampoline = reshade::hooks::call(HookClipCursor);
 
 	// Some games setup ClipCursor with a tiny area which could make the cursor stay in that area instead of the whole window
@@ -497,25 +503,6 @@ void reshade::input::block_mouse_input(bool enable)
 	{
 		// Restore previous clipping rectangle when not blocking mouse input
 		ClipCursor_trampoline(&s_last_clip_cursor);
-	}
-
-	_block_mouse = enable;
-}
-void reshade::input::block_keyboard_input(bool enable)
-{
-	if (enable)
-		_block_keyboard_time = std::chrono::high_resolution_clock::now();
-
-	_block_keyboard = enable;
-}
-void reshade::input::block_mouse_cursor_warping(bool enable)
-{
-	static const auto GetCursorPos_trampoline = reshade::hooks::call(HookGetCursorPosition);
-
-	if (enable && !_block_cursor_warping)
-	{
-		// Update the initial cursor position as soon as blocking starts
-		GetCursorPos_trampoline(&s_last_cursor_position);
 	}
 
 	_block_cursor_warping = enable;
@@ -761,11 +748,9 @@ extern "C" BOOL WINAPI HookClipCursor(const RECT *lpRect)
 {
 	s_last_clip_cursor = (lpRect != nullptr) ? *lpRect : RECT {};
 
-	// Some applications clip the mouse cursor, so disable that while we want full control over mouse input
 	if (reshade::input::is_blocking_any_mouse_input() || reshade::input::is_blocking_any_mouse_cursor_warping())
-	{
+		// Some applications clip the mouse cursor, so disable that while we want full control over mouse input
 		lpRect = nullptr;
-	}
 
 	static const auto trampoline = reshade::hooks::call(HookClipCursor);
 	return trampoline(lpRect);
@@ -776,8 +761,6 @@ extern "C" BOOL WINAPI HookSetCursorPosition(int X, int Y)
 	s_last_cursor_position.x = X;
 	s_last_cursor_position.y = Y;
 
-	s_last_cursor_warp = std::chrono::high_resolution_clock::now();
-
 	if (reshade::input::is_blocking_any_mouse_cursor_warping())
 		return TRUE;
 
@@ -786,19 +769,26 @@ extern "C" BOOL WINAPI HookSetCursorPosition(int X, int Y)
 }
 extern "C" BOOL WINAPI HookGetCursorPosition(LPPOINT lpPoint)
 {
-	// Allow the game to see the real cursor position if it is not busy using the wrong API for mouselook... (i.e. no calls to 'SetCursorPosition' in a certain period of time)
-	if (reshade::input::is_blocking_any_mouse_cursor_warping() && std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - s_last_cursor_warp) < reshade::input::block_grace_period)
+	if (reshade::input::is_blocking_any_mouse_input())
 	{
 		assert(lpPoint != nullptr);
 
-		// Return the last cursor position before we started immobilizing the mouse cursor
 		*lpPoint = s_last_cursor_position;
 
 		return TRUE;
 	}
 
 	static const auto trampoline = reshade::hooks::call(HookGetCursorPosition);
-	return trampoline(lpPoint);
+	const BOOL result = trampoline(lpPoint);
+	if (result)
+	{
+		assert(lpPoint != nullptr);
+
+		// Update position in case it is not overriden via 'SetCursorPos'
+		s_last_cursor_position = *lpPoint;
+	}
+
+	return result;
 }
 
 extern "C" auto WINAPI HookGetKeyState(int vKey) -> SHORT
@@ -841,19 +831,18 @@ extern "C" BOOL WINAPI HookGetKeyboardState(PBYTE lpKeyState)
 {
 	static const auto trampoline = reshade::hooks::call(HookGetKeyboardState);
 	const BOOL result = trampoline(lpKeyState);
-
 	if (result)
 	{
 		if (reshade::input::is_blocking_any_mouse_input())
 			std::memset(lpKeyState, 0, 7);
 		if (reshade::input::is_blocking_any_keyboard_input())
-			std::memset(lpKeyState + 7, 0, 247);
+			std::memset(lpKeyState + 7, 0, 256 - 7);
 	}
 
 	return result;
 }
 
-// This variety of raw input does not use 'WM_INPUT' messages, so a hook is necessary to block these inputs
+// This variant of raw input does not use 'WM_INPUT' messages, so a hook is necessary to block these inputs
 extern "C" UINT WINAPI HookGetRawInputBuffer(PRAWINPUT pData, PUINT pcbSize, UINT cbSizeHeader)
 {
 	static const auto trampoline = reshade::hooks::call(HookGetRawInputBuffer);
