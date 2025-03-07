@@ -1228,7 +1228,7 @@ void reshade::runtime::load_current_preset()
 			dup_effect.included_files = base_effect_it->included_files;
 			_effects.emplace_back(dup_effect);
 			aurora3_reload = true;
-			load_effect(dup_effect.source_file, ini_file::load_cache(_current_preset_path), _effects.size() - 1, true, true);
+			load_effect(dup_effect.source_file, ini_file::load_cache(_current_preset_path), _effects.size() - 1, 0, true, true);
 		}
 
 	}
