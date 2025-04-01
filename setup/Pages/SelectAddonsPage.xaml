@@ -11,6 +11,12 @@
   <DockPanel LastChildFill="True">
     <DockPanel DockPanel.Dock="Top">
       <TextBlock x:Uid="PageTitle" Style="{StaticResource TitleStyle}" Text="选择要安装的插件：" />
+      <ComboBox x:Name="SortBy" x:FieldModifier="private" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalContentAlignment="Center" Margin="10" Width="100" SelectedIndex="0" SelectionChanged="OnSortByChanged">
+        <ComboBoxItem x:Uid="SortByDefault">默认</ComboBoxItem>
+        <ComboBoxItem x:Uid="SortByAZ">从A至Z</ComboBoxItem>
+        <ComboBoxItem x:Uid="SortByZA">从Z至A</ComboBoxItem>
+      </ComboBox>
+      <TextBlock x:Uid="SortByBoxLabel" DockPanel.Dock="Right" HorizontalAlignment="Right" VerticalAlignment="Center" Style="{StaticResource TextStyle}" Text="Sort by:" />
     </DockPanel>
     <TextBlock x:Uid="PageDescription" DockPanel.Dock="Top" Margin="10,5" TextWrapping="Wrap" Style="{StaticResource TextStyle}">
       勾选你想要安装或更新的插件。<LineBreak />请注意只勾选你需要的，否则可能会因为插件不兼容导致崩溃或性能损失。

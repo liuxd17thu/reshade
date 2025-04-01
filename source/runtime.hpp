@@ -189,7 +189,7 @@ namespace reshade
 		bool load_effect(const std::filesystem::path &source_file, const ini_file &preset, size_t effect_index, size_t permutation_index, bool force_load = false, bool preprocess_required = false);
 		bool create_effect(size_t effect_index, size_t permutation_index);
 		bool create_effect_sampler_state(const reshadefx::sampler_desc &desc, api::sampler &sampler);
-		void destroy_effect(size_t effect_index);
+		void destroy_effect(size_t effect_index, bool unload = true);
 
 		void load_textures(size_t effect_index);
 		bool create_texture(texture &texture);
@@ -277,6 +277,8 @@ namespace reshade
 		bool _effects_rendered_this_frame = false;
 		unsigned int _effects_key_data[4] = {};
 
+		std::chrono::system_clock::time_point _current_time;
+		uint64_t _frame_count = 0;
 		std::chrono::high_resolution_clock::duration _last_frame_duration;
 		std::chrono::high_resolution_clock::time_point _start_time, _last_present_time;
 		uint64_t _frame_count = 0;
