@@ -1912,7 +1912,6 @@ void reshade::runtime::draw_gui_home()
 
 		ImGui::SetItemTooltip(_("Add a new preset."));
 
-		if (was_loading)
 			ImGui::EndDisabled();
 
 		ImGui::SameLine(0, button_spacing);
