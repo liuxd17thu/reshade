@@ -1912,7 +1912,7 @@ void reshade::runtime::draw_gui_home()
 
 		ImGui::SetItemTooltip(_("Add a new preset."));
 
-			ImGui::EndDisabled();
+		ImGui::EndDisabled();
 
 		ImGui::SameLine(0, button_spacing);
 
@@ -4139,7 +4139,14 @@ void reshade::runtime::draw_variable_editor()
 				origin_preset.get(effect_name, section);
 
 				preset.remove_section(effect_name);
+				effect.definition_bindings.clear();
 				preset.set(effect_name, section);
+				if (const auto preset_it = _preset_preprocessor_definitions.find(effect_name);
+					preset_it != _preset_preprocessor_definitions.end())
+				{
+					preset_it->second.clear();
+					origin_preset.get(effect_name, "PreprocessorDefinitions", preset_it->second);
+				}
 				reload_effect(effect_index);
 			}
 		}
