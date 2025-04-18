@@ -1802,7 +1802,8 @@ bool reshade::runtime::switch_to_next_preset(std::filesystem::path filter_path, 
 		else
 			_current_preset_path = (it == std::prev(preset_paths.end())) ? preset_paths.front() : *(++it);
 	}
-
+	if (ini_file::find_cache(_current_preset_path) != nullptr)
+		ini_file::clear_cache(_current_preset_path);
 	_last_preset_switching_time = _last_present_time;
 	_is_in_preset_transition = true;
 
