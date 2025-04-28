@@ -101,6 +101,9 @@ static const ImVec4 COLOR_RED = ImColor(240, 100, 100);
 static const ImVec4 COLOR_YELLOW = ImColor(180, 150, 0);
 static const ImVec4 COLOR_GREEN = ImColor(20, 180, 50);
 
+static constexpr float button_hue[8] = { 0, 0.5f / 6.0f, 1.0f / 6.0f, 2.0f / 6.0f, 3.0f / 6.0f, 3.5f / 6.0f, 4.5f / 6.0f, 5.0f / 6.0f };
+static constexpr ImColor group_button_color[8]{0xff0000cc, 0xff0066cc, 0xff00cccc, 0xff00cc00, 0xffcccc00, 0xffcc6600, 0xffcc0066, 0xffcc00cc};
+
 void reshade::runtime::init_gui()
 {
 	// Default shortcut: Home
@@ -2469,6 +2472,43 @@ void reshade::runtime::draw_gui_home()
 
 		if (_tutorial_index == 2)
 			ImGui::PopStyleColor();
+
+		const float group_button_spacing = ImGui::GetStyle().ItemSpacing.y;
+
+		for (int i = 0; i < 8; ++i)
+		{
+			const std::string button_label = std::string("##group_") + std::to_string(i);
+			ImGui::PushStyleColor(ImGuiCol_FrameBg, group_button_color[i].Value);
+			ImGui::PushStyleColor(ImGuiCol_FrameBgActive, group_button_color[i].Value * ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
+			ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, group_button_color[i].Value);
+
+			if (ImGui::RadioButton(button_label.c_str(), false))
+			{
+				bool modified = false;
+				for (auto &tech : _techniques)
+				{
+					if (tech.group_id != i + 1 || tech.hidden)
+						continue;
+					if (tech.enabled)
+					{
+						disable_technique(tech);
+						modified = true;
+					}
+					else
+					{
+						enable_technique(tech);
+						modified = true;
+					}
+				}
+				if (_auto_save_preset)
+					save_current_preset();
+				else
+					_preset_is_modified |= modified;
+			}
+			ImGui::PopStyleColor(3);
+			if (i != 7)
+				ImGui::SameLine(0, group_button_spacing);
+		}
 	}
 
 	if (_tutorial_index > 2 && !_performance_mode)
@@ -4871,6 +4911,11 @@ void reshade::runtime::draw_technique_editor()
 			if (effect.compiled || effect.skipped)
 				continue;
 
+			ImGui::BeginDisabled();
+			ImGui::ButtonEx("##dummy_side_bar", ImVec2(ImGui::GetFrameHeight() * 0.35f, 0.0f), ImGuiButtonFlags_NoHoveredOnFocus);
+			ImGui::SameLine(0.0f, _imgui_context->Style.ItemInnerSpacing.x);
+			ImGui::EndDisabled();
+
 			ImGui::PushID(static_cast<int>(_technique_sorting.size() + effect_index));
 
 			ImGui::PushStyleColor(ImGuiCol_Text, COLOR_RED);
@@ -5058,6 +5103,24 @@ void reshade::runtime::draw_technique_editor()
 					label += build_postfix(_effects[tech.effect_index], _aurora_feature);
 				label += " [" + effect.source_file.filename().u8string() + ']';
 
+				ImVec4 side_bar_color = ImGui::GetStyleColorVec4(ImGuiCol_Button);
+				if (tech.group_id > 0 && tech.group_id < 9)
+					side_bar_color = group_button_color[tech.group_id - 1].Value;
+
+				ImGui::PushStyleColor(ImGuiCol_Button, side_bar_color);
+				ImGui::PushStyleColor(ImGuiCol_ButtonActive, side_bar_color * ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
+				ImGui::PushStyleColor(ImGuiCol_ButtonHovered, side_bar_color);
+
+				ImGui::BeginDisabled(!effect.rendering || (effect.uniforms.empty() && effect.definitions.empty()));
+				if (ImGui::ButtonEx(("##" + label).c_str(), ImVec2(ImGui::GetFrameHeight() * 0.35f, 0.0f), ImGuiButtonFlags_NoHoveredOnFocus))
+				{
+					if (tech.effect_index)
+						_focused_effect = tech.effect_index;
+				}
+				ImGui::EndDisabled();
+				ImGui::PopStyleColor(3);
+				ImGui::SameLine(0.0f, _imgui_context->Style.ItemInnerSpacing.x);
+
 				if (bool status = tech.enabled;
 					ImGui::Checkbox(label.c_str(), &status) && !force_enabled)
 				{
@@ -5128,6 +5191,25 @@ void reshade::runtime::draw_technique_editor()
 					}
 					if (effect.dup_id.empty())
 						ImGui::PopItemFlag();
+				}
+				for (int i = 0; i < 8; ++i)
+				{
+					if (i != 0)
+						ImGui::SameLine(0.0f, ImGui::GetStyle().ItemSpacing.y);
+					const std::string label = "##group_" + std::to_string(i);
+					ImGui::PushStyleColor(ImGuiCol_CheckMark, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+					ImGui::PushStyleColor(ImGuiCol_FrameBg, group_button_color[i].Value);
+					ImGui::PushStyleColor(ImGuiCol_FrameBgActive, group_button_color[i].Value * ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
+					ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, group_button_color[i].Value);
+					if(ImGui::RadioButton(label.c_str(), i + 1 == tech.group_id))
+					{
+						modified = true;
+						if (i + 1 == tech.group_id)
+							tech.group_id = 0;
+						else
+							tech.group_id = i + 1;
+					}
+					ImGui::PopStyleColor(4);
 				}
 				ImGui::Separator();
 
