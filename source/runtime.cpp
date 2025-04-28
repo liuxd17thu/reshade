@@ -19,6 +19,7 @@
 #include "platform_utils.hpp"
 #include "reshade_api_object_impl.hpp"
 #include <set>
+#include <unordered_map>
 #include <thread>
 #include <cmath> // std::abs, std::fmod
 #include <cctype> // std::toupper
@@ -1495,6 +1496,15 @@ void reshade::runtime::load_current_preset()
 		}
 	}
 
+	std::unordered_map<std::string, uint8_t> technique_group_reverse;
+	for (int i = 0; i < 8; ++i)
+	{
+		std::vector<std::string> group;
+		preset.get({}, "TechniqueGroup" + std::to_string(i + 1), group);
+		for (const std::string &item : group)
+			technique_group_reverse[item] = i + 1;
+	}
+
 	for (technique &tech : _techniques)
 	{
 		const std::string unique_name = tech.name + '@' + _effects[tech.effect_index].source_file.filename().u8string()
@@ -1511,6 +1521,8 @@ void reshade::runtime::load_current_preset()
 		if (!preset.get({}, "Key" + unique_name, tech.toggle_key_data) &&
 			!preset.get({}, "Key" + tech.name + build_postfix(_effects[tech.effect_index], _aurora_feature), tech.toggle_key_data))
 			std::memset(tech.toggle_key_data, 0, sizeof(tech.toggle_key_data));
+		if (technique_group_reverse.count(unique_name))
+			tech.group_id = technique_group_reverse.at(unique_name);
 	}
 
 	// Reverse queue so that effects are enabled in the order they are defined in the preset (since the queue is worked from back to front)
@@ -1526,6 +1538,8 @@ void reshade::runtime::save_current_preset() const
 	technique_list.reserve(_techniques.size());
 	std::vector<std::string> sorted_technique_list;
 	sorted_technique_list.reserve(_technique_sorting.size());
+
+	std::array<std::vector<std::string>, 8> aurora_technique_groups;
 
 	if (_aurora_feature == 4)
 	{
@@ -1547,7 +1561,7 @@ void reshade::runtime::save_current_preset() const
 
 		if (tech.enabled)
 			technique_list.push_back(unique_name);
-		if (tech.enabled || tech.toggle_key_data[0] != 0)
+		if (tech.enabled || tech.toggle_key_data[0] != 0 || (tech.group_id > 0 && tech.group_id <= 8))
 			effect_list.insert(tech.effect_index);
 
 		// Keep track of the order of all techniques and not just the enabled ones
@@ -1557,6 +1571,8 @@ void reshade::runtime::save_current_preset() const
 			preset.set({}, "Key" + unique_name, tech.toggle_key_data);
 		else
 			preset.remove_key({}, "Key" + unique_name);
+		if (tech.group_id > 0 && tech.group_id <= 8)
+			aurora_technique_groups[tech.group_id - 1].push_back(unique_name);
 	}
 
 	if (preset.has({}, "TechniqueSorting") || !std::equal(technique_list.cbegin(), technique_list.cend(), sorted_technique_list.cbegin())
@@ -1564,6 +1580,14 @@ void reshade::runtime::save_current_preset() const
 		preset.set({}, "TechniqueSorting", std::move(sorted_technique_list));
 
 	preset.set({}, "Techniques", std::move(technique_list));
+
+	for (int i = 0; i < 8; ++i)
+	{
+		if (aurora_technique_groups[i].empty())
+			continue;
+		const std::string label = "TechniqueGroup" + std::to_string(i + 1);
+		preset.set({}, label, std::move(aurora_technique_groups[i]));
+	}
 
 	// Save preset description
 	if (preset.has({}, "Description") || !_description.empty())
@@ -1699,9 +1723,9 @@ void reshade::runtime::aurora4_clean_preset(ini_file &preset)
 
 		const std::string unique_name = tech.name + '@' + _effects[tech.effect_index].source_file.filename().u8string();
 
-		if (tech.enabled)
+		if (tech.enabled || (tech.group_id > 0 && tech.group_id <= 8))
 			technique_list.push_back(unique_name);
-		if (tech.enabled || tech.toggle_key_data[0] != 0)
+		if (tech.enabled || tech.toggle_key_data[0] != 0 || (tech.group_id > 0 && tech.group_id <= 8))
 			effect_name_list.insert(_effects[tech.effect_index].source_file.filename().u8string());
 
 		// Keep track of the order of all techniques and not just the enabled ones
