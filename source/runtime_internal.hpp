@@ -202,6 +202,8 @@ namespace reshade
 		uint32_t query_base_index = 0;
 		moving_average<uint64_t, 60> average_cpu_duration;
 		moving_average<uint64_t, 60> average_gpu_duration;
+
+		uint8_t group_id = 0;
 	};
 
 	struct effect

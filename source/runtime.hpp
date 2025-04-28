@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <atomic>
 #include <shared_mutex>
+#include <array>
 
 class ini_file;
 namespace reshadefx { struct sampler_desc; }
