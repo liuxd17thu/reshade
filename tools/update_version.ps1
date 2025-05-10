@@ -19,8 +19,8 @@ $version = 6,3,3,0
 # }
 
 $build = $(git rev-parse --short HEAD)
-$cn2 = "Release 8.1"
-$cn2_pro = "Pro 8.1"
+$cn2 = "Alpha 8.4"
+$cn2_pro = "Delta 8.4"
 
 # Increment build version for release builds
 if (($config -eq "Release") -or
