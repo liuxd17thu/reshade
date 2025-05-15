@@ -1864,6 +1864,7 @@ bool reshade::runtime::switch_to_next_preset(std::filesystem::path filter_path, 
 	if (preset_paths.empty())
 		return false; // No valid preset files were found, so nothing more to do
 
+	const auto old_preset_path = _current_preset_path;
 	if (current_preset_index == std::numeric_limits<size_t>::max())
 	{
 		// Current preset was not in the filter path, so just use the first or last file
@@ -1880,6 +1881,10 @@ bool reshade::runtime::switch_to_next_preset(std::filesystem::path filter_path, 
 		else
 			_current_preset_path = (it == std::prev(preset_paths.end())) ? preset_paths.front() : *(++it);
 	}
+	if (std::filesystem::equivalent(old_preset_path, _current_preset_path, ec))
+		return false;
+	else
+		ini_file::clear_cache(old_preset_path);
 
 	_last_preset_switching_time = _last_present_time;
 	_is_in_preset_transition = true;
