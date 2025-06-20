@@ -11,7 +11,7 @@
 #include <Windows.h>
 
 // Current version of the ReShade API
-#define RESHADE_API_VERSION 16
+#define RESHADE_API_VERSION 17
 
 // Optionally import ReShade API functions when 'RESHADE_API_LIBRARY' is defined instead of using header-only mode
 #if defined(RESHADE_API_LIBRARY) || defined(RESHADE_API_LIBRARY_EXPORT)
@@ -177,7 +177,7 @@ namespace reshade
 		return func(internal::get_current_module_handle(), runtime, section, key, value, value_size);
 #endif
 	}
-#if _HAS_CXX17
+#if _HAS_CXX17 || __cplusplus >= 201703L
 	template <typename T>
 	inline bool get_config_value(api::effect_runtime *runtime, const char *section, const char *key, T &value)
 	{
@@ -215,7 +215,7 @@ namespace reshade
 		func(internal::get_current_module_handle(), runtime, section, key, value);
 #endif
 	}
-#if _HAS_CXX17
+#if _HAS_CXX17 || __cplusplus >= 201703L
 	template <typename T>
 	inline void set_config_value(api::effect_runtime *runtime, const char *section, const char *key, const T &value)
 	{
@@ -313,7 +313,7 @@ namespace reshade
 		static const auto func = reinterpret_cast<void(*)(addon_event, void *)>(
 			GetProcAddress(internal::get_reshade_module_handle(), "ReShadeRegisterEvent"));
 		if (func != nullptr)
-			func(ev, static_cast<void *>(callback));
+			func(ev, reinterpret_cast<void *>(callback));
 #endif
 	}
 	/// <summary>
@@ -330,7 +330,7 @@ namespace reshade
 		static const auto func = reinterpret_cast<void(*)(addon_event, void *)>(
 			GetProcAddress(internal::get_reshade_module_handle(), "ReShadeUnregisterEvent"));
 		if (func != nullptr)
-			func(ev, static_cast<void *>(callback));
+			func(ev, reinterpret_cast<void *>(callback));
 #endif
 	}
 

@@ -54,6 +54,10 @@ private:
 	bool _debug_info = false;
 	bool _uniforms_to_spec_constants = false;
 
+	// Only write compatibility intrinsics to result if they are actually in use
+	bool _uses_bitwise_cast = false;
+	bool _uses_bitwise_intrinsics = false;
+
 	std::unordered_map<id, std::string> _names;
 	std::unordered_map<id, std::string> _blocks;
 	std::string _cbuffer_block;
@@ -63,10 +67,6 @@ private:
 	std::string _remapped_semantics[15];
 	std::vector<std::tuple<type, constant, id>> _constant_lookup;
 	std::vector<sampler_binding> _sampler_lookup;
-
-	// Only write compatibility intrinsics to result if they are actually in use
-	bool _uses_bitwise_cast = false;
-	bool _uses_bitwise_intrinsics = false;
 
 	void optimize_bindings() override
 	{
@@ -570,16 +570,18 @@ private:
 					s += std::signbit(data.as_float[i]) ? "1.#INF" : "-1.#INF";
 					break;
 				}
-				char temp[64];
-				const std::to_chars_result res = std::to_chars(temp, temp + sizeof(temp), data.as_float[i]
+				{
+					char temp[64];
+					const std::to_chars_result res = std::to_chars(temp, temp + sizeof(temp), data.as_float[i]
 #if !defined(_HAS_COMPLETE_CHARCONV) || _HAS_COMPLETE_CHARCONV
-					, std::chars_format::scientific, 8
+						, std::chars_format::scientific, 8
 #endif
-					);
-				if (res.ec == std::errc())
-					s.append(temp, res.ptr);
-				else
-					assert(false);
+						);
+					if (res.ec == std::errc())
+						s.append(temp, res.ptr);
+					else
+						assert(false);
+				}
 				break;
 			default:
 				assert(false);
@@ -807,7 +809,7 @@ private:
 				code += '[' + std::to_string(member.type.array_length) + ']';
 
 			if (!member.semantic.empty())
-				code += " : " + convert_semantic(member.semantic, std::max(1u, member.type.components() / 4) * std::max(1u, member.type.array_length));
+				code += " : " + convert_semantic(member.semantic, std::max(1u, member.type.components() / 4u) * std::max(1u, member.type.array_length));
 
 			code += ";\n";
 		}
@@ -947,7 +949,7 @@ private:
 	id   define_uniform(const location &loc, uniform &info) override
 	{
 		const id res = make_id();
-		define_name<naming::unique>(res, info.name);
+		define_name<naming::unique>(res, info.unique_name);
 
 		if (_uniforms_to_spec_constants && info.has_initializer_value)
 		{
@@ -966,7 +968,7 @@ private:
 			code += ' ' + id_to_name(res) + " = ";
 			if (!info.type.is_scalar())
 				write_type<false, false>(code, info.type);
-			code += "(SPEC_CONSTANT_" + info.name + ");\n";
+			code += "(SPEC_CONSTANT_" + info.unique_name + ");\n";
 
 			_module.spec_constants.push_back(info);
 		}
@@ -1094,7 +1096,7 @@ private:
 				code += '[' + std::to_string(param.type.array_length) + ']';
 
 			if (!param.semantic.empty())
-				code += " : " + convert_semantic(param.semantic, std::max(1u, param.type.cols / 4) * std::max(1u, param.type.array_length));
+				code += " : " + convert_semantic(param.semantic, std::max(1u, param.type.cols / 4u) * std::max(1u, param.type.array_length));
 
 			code += ',';
 		}

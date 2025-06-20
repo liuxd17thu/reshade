@@ -611,6 +611,7 @@
     <ClCompile Include="source\imgui_function_table_19000.cpp" />
     <ClCompile Include="source\imgui_function_table_19040.cpp" />
     <ClCompile Include="source\imgui_function_table_19180.cpp" />
+    <ClCompile Include="source\imgui_function_table_19191.cpp" />
     <ClCompile Include="source\imgui_widgets.cpp" />
     <ClCompile Include="source\ini_file.cpp" />
     <ClCompile Include="source\input.cpp" />
@@ -670,7 +671,6 @@
     <ClInclude Include="res\fonts\forkawesome.h" />
     <ClInclude Include="res\fonts\glyph_ranges.hpp" />
     <ClInclude Include="res\resource.h" />
-    <ClInclude Include="res\shaders\imgui_hdr.h" />
     <ClInclude Include="res\version.h" />
     <ClInclude Include="source\addon.hpp" />
     <ClInclude Include="source\addon_manager.hpp" />
@@ -731,6 +731,7 @@
     <ClInclude Include="source\imgui_function_table_19000.hpp" />
     <ClInclude Include="source\imgui_function_table_19040.hpp" />
     <ClInclude Include="source\imgui_function_table_19180.hpp" />
+    <ClInclude Include="source\imgui_function_table_19191.hpp" />
     <ClInclude Include="source\imgui_widgets.hpp" />
     <ClInclude Include="source\ini_file.hpp" />
     <ClInclude Include="source\input.hpp" />
@@ -768,6 +769,7 @@
     <None Include="res\exports.def" />
     <None Include="res\fonts\aurora.inl" />
     <None Include="res\fonts\forkawesome.inl" />
+    <None Include="res\shaders\imgui_hdr.hlsl" />
     <None Include="res\shaders\imgui_ps_430.glsl" />
     <None Include="res\shaders\imgui_vs_430.glsl" />
     <None Include="res\shaders\mipmap_cs_430.glsl" />

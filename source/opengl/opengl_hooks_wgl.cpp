@@ -215,6 +215,7 @@ public:
 class wgl_swapchain : public reshade::opengl::swapchain_impl
 {
 public:
+	static constexpr reshade::api::resource default_rt = reshade::opengl::make_resource_handle(GL_FRAMEBUFFER_DEFAULT, GL_BACK);
 	static constexpr reshade::api::resource_view default_rtv = reshade::opengl::make_resource_view_handle(GL_FRAMEBUFFER_DEFAULT, GL_BACK);
 	static constexpr reshade::api::resource default_ds = reshade::opengl::make_resource_handle(GL_FRAMEBUFFER_DEFAULT, GL_DEPTH_STENCIL_ATTACHMENT);
 	static constexpr reshade::api::resource_view default_dsv = reshade::opengl::make_resource_view_handle(GL_FRAMEBUFFER_DEFAULT, GL_DEPTH_STENCIL_ATTACHMENT);
@@ -252,6 +253,16 @@ public:
 
 		reshade::invoke_addon_event<reshade::addon_event::init_swapchain>(this, resize);
 
+		// Communicate implicit back buffer render target view and depth-stencil view to add-ons
+		assert(default_rt == get_back_buffer());
+
+		reshade::invoke_addon_event<reshade::addon_event::init_resource_view>(
+			device,
+			default_rt,
+			reshade::api::resource_usage::render_target,
+			reshade::api::resource_view_desc(device->_default_fbo_desc.texture.samples > 1 ? reshade::api::resource_view_type::texture_2d_multisample : reshade::api::resource_view_type::texture_2d, device->_default_fbo_desc.texture.format, 0, 1, 0, 1),
+			default_rtv);
+
 		if (device->_default_depth_format != reshade::api::format::unknown)
 		{
 			reshade::invoke_addon_event<reshade::addon_event::init_resource>(
@@ -264,7 +275,7 @@ public:
 				device,
 				default_ds,
 				reshade::api::resource_usage::depth_stencil,
-				reshade::api::resource_view_desc(device->_default_depth_format),
+				reshade::api::resource_view_desc(device->_default_fbo_desc.texture.samples > 1 ? reshade::api::resource_view_type::texture_2d_multisample : reshade::api::resource_view_type::texture_2d, device->_default_depth_format, 0, 1, 0, 1),
 				default_dsv);
 		}
 
@@ -293,6 +304,8 @@ public:
 			reshade::invoke_addon_event<reshade::addon_event::destroy_resource_view>(device, default_dsv);
 			reshade::invoke_addon_event<reshade::addon_event::destroy_resource>(device, default_ds);
 		}
+
+		reshade::invoke_addon_event<reshade::addon_event::destroy_resource_view>(device, default_rtv);
 
 		reshade::invoke_addon_event<reshade::addon_event::destroy_swapchain>(this, resize);
 #else
@@ -337,7 +350,7 @@ public:
 #endif
 
 		// Assume that the correct OpenGL context is still current here
-		reshade::present_effect_runtime(this, context);
+		reshade::present_effect_runtime(this);
 
 #ifndef NDEBUG
 		GLenum type = GL_NONE; char message[512] = "";
@@ -608,7 +621,7 @@ extern "C" BOOL  WINAPI wglSetPixelFormat(HDC hdc, int iPixelFormat, const PIXEL
 		desc.sync_interval = wglGetSwapIntervalEXT();
 	}
 
-	if (reshade::invoke_addon_event<reshade::addon_event::create_swapchain>(desc, hwnd))
+	if (reshade::invoke_addon_event<reshade::addon_event::create_swapchain>(reshade::api::device_api::opengl, desc, hwnd))
 	{
 		reshade::opengl::convert_pixel_format(desc.back_buffer.texture.format, pfd);
 
@@ -808,6 +821,19 @@ extern "C" HGLRC WINAPI wglCreateContext(HDC hdc)
 		}
 	}
 
+#if RESHADE_ADDON >= 2
+	reshade::load_addons();
+
+	uint32_t api_version = (major << 12) | (minor << 8);
+	if (reshade::invoke_addon_event<reshade::addon_event::create_device>(reshade::api::device_api::opengl, api_version))
+	{
+		major = (api_version >> 12) & 0xF;
+		minor = (api_version >>  8) & 0xF;
+	}
+
+	reshade::unload_addons();
+#endif
+
 	if (major < 3 || (major == 3 && minor < 2))
 		compatibility = true;
 
@@ -821,7 +847,7 @@ extern "C" HGLRC WINAPI wglCreateContext(HDC hdc)
 	attribs[i].name = wgl_attribute::WGL_CONTEXT_PROFILE_MASK_ARB;
 	attribs[i++].value = compatibility ? wgl_attribute::WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB : wgl_attribute::WGL_CONTEXT_CORE_PROFILE_BIT_ARB;
 
-	reshade::log::message(reshade::log::level::info, "> Requesting %s OpenGL context for version %d.%d.", compatibility ? "compatibility" : "core", major, minor);
+	reshade::log::message(reshade::log::level::info, "Requesting %s OpenGL context for version %d.%d.", compatibility ? "compatibility" : "core", major, minor);
 
 	if (major < 4 || (major == 4 && minor < 3))
 	{
@@ -1112,14 +1138,28 @@ extern "C" BOOL  WINAPI wglMakeCurrent(HDC hdc, HGLRC hglrc)
 
 		assert(s_hooks_installed);
 
+		const bool legacy_context = s_legacy_contexts.find(shared_hglrc) != s_legacy_contexts.end();
+
 		const auto device = new wgl_device(
 			hdc, shared_hglrc,
 			// Always set compatibility context flag on contexts that were created with 'wglCreateContext' instead of 'wglCreateContextAttribsARB'
 			// This is necessary because with some pixel formats the 'GL_ARB_compatibility' extension is not exposed even though the context was not created with the core profile
-			s_legacy_contexts.find(shared_hglrc) != s_legacy_contexts.end());
+			legacy_context);
 
 		s_opengl_contexts.emplace(shared_hglrc, device);
 		g_opengl_context = device;
+
+		if (device->get_compatibility_context() && !legacy_context)
+		{
+			// In the OpenGL core profile, all generic vertex attributes have the initial values { 0.0, 0.0, 0.0, 1.0 }
+			// In the OpenGL compatibility profile, some generic vertex attributes have different values, because they can be vertex coordinates, normals, colors (which have the initial value { 1.0, 1.0, 1.0, 1.0 }), secondary colors, texture coordinates, ...
+			// Since ReShade can change the context to use the compatibility profile, need to adjust the initial values if the application is expecting a core profile, or vertex shading can break (e.g. in Vintage Story)
+			GLint max_elements = 0;
+			gl.GetIntegerv(GL_MAX_VERTEX_ATTRIBS, &max_elements);
+
+			for (GLsizei i = 0; i < max_elements; ++i)
+				gl.VertexAttrib4f(i, 0.0f, 0.0f, 0.0f, 1.0f);
+		}
 	}
 
 	assert(g_opengl_context != nullptr);

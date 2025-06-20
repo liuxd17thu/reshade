@@ -6,6 +6,7 @@
 #include "vulkan_hooks.hpp"
 #include "dll_log.hpp"
 #include "hook_manager.hpp"
+#include "addon_manager.hpp"
 #include "lockfree_linear_map.hpp"
 #include <cstring> // std::strncmp, std::strncpy
 #include <algorithm> // std::find_if
@@ -65,7 +66,19 @@ VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo *pCreateInfo, co
 	if (pCreateInfo->pApplicationInfo != nullptr)
 		app_info = *pCreateInfo->pApplicationInfo;
 
-	reshade::log::message(reshade::log::level::info, "> Requesting new Vulkan instance for API version %u.%u.", VK_VERSION_MAJOR(app_info.apiVersion), VK_VERSION_MINOR(app_info.apiVersion));
+#if RESHADE_ADDON >= 2
+	reshade::load_addons();
+
+	uint32_t api_version =
+		VK_API_VERSION_MAJOR(app_info.apiVersion) << 12 |
+		VK_API_VERSION_MINOR(app_info.apiVersion) <<  8;
+	if (reshade::invoke_addon_event<reshade::addon_event::create_device>(reshade::api::device_api::vulkan, api_version))
+	{
+		app_info.apiVersion = VK_MAKE_API_VERSION(0, (api_version >> 12) & 0xF, (api_version >> 8) & 0xF, api_version & 0xFF);
+	}
+#endif
+
+	reshade::log::message(reshade::log::level::info, "Requesting new Vulkan instance for API version %u.%u.", VK_API_VERSION_MAJOR(app_info.apiVersion), VK_API_VERSION_MINOR(app_info.apiVersion));
 
 	// ReShade requires at least Vulkan 1.1 (for SPIR-V 1.3 compatibility)
 	if (app_info.apiVersion < VK_API_VERSION_1_1)
@@ -128,6 +141,9 @@ VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo *pCreateInfo, co
 	const VkResult result = trampoline(&create_info, pAllocator, pInstance);
 	if (result != VK_SUCCESS)
 	{
+#if RESHADE_ADDON >= 2
+		reshade::unload_addons();
+#endif
 		reshade::log::message(reshade::log::level::warning, "vkCreateInstance failed with error code %d.", static_cast<int>(result));
 		return result;
 	}
@@ -183,6 +199,10 @@ void     VKAPI_CALL vkDestroyInstance(VkInstance instance, const VkAllocationCal
 
 	// Remove instance dispatch table since this instance is being destroyed
 	g_vulkan_instances.erase(dispatch_key_from_handle(instance));
+
+#if RESHADE_ADDON >= 2
+	reshade::unload_addons();
+#endif
 
 	trampoline(instance, pAllocator);
 }

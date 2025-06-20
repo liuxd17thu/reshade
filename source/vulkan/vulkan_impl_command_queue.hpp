@@ -6,6 +6,7 @@
 #pragma once
 
 #include "vulkan_impl_command_list_immediate.hpp"
+#include <mutex>
 
 namespace reshade::vulkan
 {
@@ -35,6 +36,8 @@ namespace reshade::vulkan
 
 		uint64_t get_timestamp_frequency() const final;
 
+		mutable std::recursive_mutex _mutex;
+
 	private:
 		device_impl *const _device_impl;
 		command_list_immediate_impl *_immediate_cmd_list = nullptr;
@@ -46,6 +49,7 @@ namespace reshade::vulkan
 	{
 		using Handle = VkQueue;
 
-		object_data(device_impl *device, uint32_t queue_family_index, const VkQueueFamilyProperties &queue_family, VkQueue queue) : command_queue_impl(device, queue_family_index, queue_family, queue) {}
+		object_data(device_impl *device, uint32_t queue_family_index, const VkQueueFamilyProperties &queue_family, VkQueue queue) :
+			command_queue_impl(device, queue_family_index, queue_family, queue) {}
 	};
 }

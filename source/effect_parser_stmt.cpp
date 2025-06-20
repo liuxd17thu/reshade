@@ -6,6 +6,7 @@
 #include "effect_lexer.hpp"
 #include "effect_parser.hpp"
 #include "effect_codegen.hpp"
+#include <limits>
 #include <cctype> // std::toupper
 #include <cassert>
 #include <iterator> // std::back_inserter
@@ -1716,6 +1717,7 @@ bool reshadefx::parser::parse_variable(type type, std::string name, bool global)
 						{ "RGBA32U", uint32_t(texture_format::rgba32u) }, { "R32G32B32A32U", uint32_t(texture_format::rgba32u) },
 						{ "RGBA32F", uint32_t(texture_format::rgba32f) }, { "R32G32B32A32F", uint32_t(texture_format::rgba32f) },
 						{ "RGB10A2", uint32_t(texture_format::rgb10a2) }, { "R10G10B10A2", uint32_t(texture_format::rgb10a2) },
+						{ "RG11B10F", uint32_t(texture_format::rg11b10f) }, { "R11G11B10F", uint32_t(texture_format::rg11b10f) },
 					};
 
 					// Look up identifier in list of possible enumeration names
@@ -2012,6 +2014,10 @@ bool reshadefx::parser::parse_variable(type type, std::string name, bool global)
 		uniform uniform_info;
 		uniform_info.name = name;
 		uniform_info.type = type;
+
+		// Add namespace scope to avoid name clashes
+		uniform_info.unique_name = 'V' + current_scope().name + name;
+		std::replace(uniform_info.unique_name.begin(), uniform_info.unique_name.end(), ':', '_');
 
 		uniform_info.annotations = std::move(sampler_info.annotations);
 

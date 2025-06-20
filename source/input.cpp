@@ -387,8 +387,8 @@ void reshade::input::max_mouse_position(unsigned int position[2]) const
 
 void reshade::input::next_frame()
 {
-	static const auto GetKeyState_trampoline = reshade::hooks::call(HookGetKeyState);
-	static const auto GetAsyncKeyState_trampoline = reshade::hooks::call(HookGetAsyncKeyState);
+	static const auto GetKeyState_trampoline = reshade::hooks::is_hooked(GetKeyState) ? reshade::hooks::call(HookGetKeyState, GetKeyState) : GetKeyState;
+	static const auto GetAsyncKeyState_trampoline = reshade::hooks::is_hooked(GetAsyncKeyState) ? reshade::hooks::call(HookGetAsyncKeyState, GetAsyncKeyState) : GetAsyncKeyState;
 
 	_frame_count++;
 
@@ -492,7 +492,7 @@ void reshade::input::block_keyboard_input(bool enable)
 }
 void reshade::input::block_mouse_cursor_warping(bool enable)
 {
-	static const auto ClipCursor_trampoline = reshade::hooks::call(HookClipCursor);
+	static const auto ClipCursor_trampoline = reshade::hooks::is_hooked(ClipCursor) ? reshade::hooks::call(HookClipCursor, ClipCursor) : ClipCursor;
 
 	// Some games setup ClipCursor with a tiny area which could make the cursor stay in that area instead of the whole window
 	if (enable)
@@ -572,8 +572,10 @@ extern "C" BOOL WINAPI HookGetMessageA(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMi
 
 		if (MsgWaitForMultipleObjects(1, &g_exit_event, FALSE, INFINITE, mask) != (WAIT_OBJECT_0 + 1))
 		{
-			std::memset(lpMsg, 0, sizeof(MSG)); // Clear message structure, so application does not process it
-			return -1;
+			// Clear message structure, so application does not process it
+			std::memset(lpMsg, 0, sizeof(MSG));
+			// Do not return an error (-1), since this causes WPF to throw an exception
+			return 1;
 		}
 	}
 #else
@@ -627,7 +629,7 @@ extern "C" BOOL WINAPI HookGetMessageW(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMi
 		if (MsgWaitForMultipleObjects(1, &g_exit_event, FALSE, INFINITE, mask) != (WAIT_OBJECT_0 + 1))
 		{
 			std::memset(lpMsg, 0, sizeof(MSG));
-			return -1;
+			return 1;
 		}
 	}
 #else

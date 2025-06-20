@@ -60,6 +60,14 @@ private:
 	bool _enable_16bit_types = false;
 	bool _flip_vert_y = false;
 
+	// Only write compatibility intrinsics to result if they are actually in use
+	bool _uses_fmod = false;
+	bool _uses_componentwise_or = false;
+	bool _uses_componentwise_and = false;
+	bool _uses_componentwise_cond = false;
+	bool _uses_control_flow_attributes = false;
+	bool _uses_derivative_control = false;
+
 	std::unordered_map<id, std::string> _names;
 	std::unordered_map<id, std::string> _blocks;
 	std::string _ubo_block;
@@ -69,14 +77,6 @@ private:
 	std::unordered_map<id, id> _remapped_sampler_variables;
 	std::unordered_map<std::string, uint32_t> _semantic_to_location;
 	std::vector<std::tuple<type, constant, id>> _constant_lookup;
-
-	// Only write compatibility intrinsics to result if they are actually in use
-	bool _uses_fmod = false;
-	bool _uses_componentwise_or = false;
-	bool _uses_componentwise_and = false;
-	bool _uses_componentwise_cond = false;
-	bool _uses_control_flow_attributes = false;
-	bool _uses_derivative_control = false;
 
 	std::string finalize_preamble() const
 	{
@@ -487,16 +487,18 @@ private:
 					s += std::signbit(data.as_float[i]) ? "1.0/0.0/*inf*/" : "-1.0/0.0/*-inf*/";
 					break;
 				}
-				char temp[64];
-				const std::to_chars_result res = std::to_chars(temp, temp + sizeof(temp), data.as_float[i]
+				{
+					char temp[64];
+					const std::to_chars_result res = std::to_chars(temp, temp + sizeof(temp), data.as_float[i]
 #if !defined(_HAS_COMPLETE_CHARCONV) || _HAS_COMPLETE_CHARCONV
-					, std::chars_format::scientific, 8
+						, std::chars_format::scientific, 8
 #endif
-					);
-				if (res.ec == std::errc())
-					s.append(temp, res.ptr);
-				else
-					assert(false);
+						);
+					if (res.ec == std::errc())
+						s.append(temp, res.ptr);
+					else
+						assert(false);
+				}
 				break;
 			default:
 				assert(false);
@@ -805,7 +807,7 @@ private:
 	id   define_uniform(const location &loc, uniform &info) override
 	{
 		const id res = make_id();
-		define_name<naming::unique>(res, info.name);
+		define_name<naming::unique>(res, info.unique_name);
 
 		if (_uniforms_to_spec_constants && info.has_initializer_value)
 		{
@@ -824,7 +826,7 @@ private:
 			code += ' ' + id_to_name(res) + " = ";
 			if (!info.type.is_scalar())
 				write_type<false, false>(code, info.type);
-			code += "(SPEC_CONSTANT_" + info.name + ");\n";
+			code += "(SPEC_CONSTANT_" + info.unique_name + ");\n";
 
 			_module.spec_constants.push_back(info);
 		}

@@ -6,14 +6,14 @@
 
 #if defined(IMGUI_VERSION_NUM)
 
-#if IMGUI_VERSION_NUM != 19180
-#error Unexpected ImGui version, please update the "imgui.h" header to version 19180!
+#if IMGUI_VERSION_NUM != 19191
+#error Unexpected ImGui version, please update the "imgui.h" header to version 19191!
 #endif
 
 // Check that the 'ImTextureID' type has the same size as 'reshade::api::resource_view'
 static_assert(sizeof(ImTextureID) == 8, "missing \"#define ImTextureID ImU64\" before \"#include <imgui.h>\"");
 
-struct imgui_function_table_19180
+struct imgui_function_table_19191
 {
 	ImGuiIO&(*GetIO)();
 	ImGuiStyle&(*GetStyle)();
@@ -139,7 +139,8 @@ struct imgui_function_table_19180
 	void(*Bullet)();
 	bool(*TextLink)(const char* label);
 	void(*TextLinkOpenURL)(const char* label, const char* url);
-	void(*Image)(ImTextureID user_texture_id, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1, const ImVec4& tint_col, const ImVec4& border_col);
+	void(*Image)(ImTextureID user_texture_id, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1);
+	void(*ImageWithBg)(ImTextureID user_texture_id, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1, const ImVec4& bg_col, const ImVec4& tint_col);
 	bool(*ImageButton)(const char* str_id, ImTextureID user_texture_id, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1, const ImVec4& bg_col, const ImVec4& tint_col);
 	bool(*BeginCombo)(const char* label, const char* preview_value, ImGuiComboFlags flags);
 	void(*EndCombo)();
@@ -434,8 +435,8 @@ struct imgui_function_table_19180
 	void(*ImDrawList_PrimQuadUV)(ImDrawList *_this, const ImVec2& a, const ImVec2& b, const ImVec2& c, const ImVec2& d, const ImVec2& uv_a, const ImVec2& uv_b, const ImVec2& uv_c, const ImVec2& uv_d, ImU32 col);
 	void(*ConstructImFont)(ImFont *_this);
 	void(*DestructImFont)(ImFont *_this);
-	const ImFontGlyph*(*ImFont_FindGlyph)(ImFont *_this, ImWchar c);
-	const ImFontGlyph*(*ImFont_FindGlyphNoFallback)(ImFont *_this, ImWchar c);
+	ImFontGlyph*(*ImFont_FindGlyph)(ImFont *_this, ImWchar c);
+	ImFontGlyph*(*ImFont_FindGlyphNoFallback)(ImFont *_this, ImWchar c);
 	ImVec2(*ImFont_CalcTextSizeA)(ImFont *_this, float size, float max_width, float wrap_width, const char* text_begin, const char* text_end, const char** remaining);
 	const char*(*ImFont_CalcWordWrapPositionA)(ImFont *_this, float scale, const char* text, const char* text_end, float wrap_width);
 	void(*ImFont_RenderChar)(ImFont *_this, ImDrawList* draw_list, float size, const ImVec2& pos, ImU32 col, ImWchar c);
@@ -443,7 +444,7 @@ struct imgui_function_table_19180
 
 };
 
-using imgui_function_table = imgui_function_table_19180;
+using imgui_function_table = imgui_function_table_19191;
 
 inline const imgui_function_table *&imgui_function_table_instance()
 {
@@ -585,7 +586,8 @@ namespace ImGui
 	inline void Bullet() { imgui_function_table_instance()->Bullet(); }
 	inline bool TextLink(const char* label) { return imgui_function_table_instance()->TextLink(label); }
 	inline void TextLinkOpenURL(const char* label, const char* url) { imgui_function_table_instance()->TextLinkOpenURL(label, url); }
-	inline void Image(ImTextureID user_texture_id, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1, const ImVec4& tint_col, const ImVec4& border_col) { imgui_function_table_instance()->Image(user_texture_id, image_size, uv0, uv1, tint_col, border_col); }
+	inline void Image(ImTextureID user_texture_id, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1) { imgui_function_table_instance()->Image(user_texture_id, image_size, uv0, uv1); }
+	inline void ImageWithBg(ImTextureID user_texture_id, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1, const ImVec4& bg_col, const ImVec4& tint_col) { imgui_function_table_instance()->ImageWithBg(user_texture_id, image_size, uv0, uv1, bg_col, tint_col); }
 	inline bool ImageButton(const char* str_id, ImTextureID user_texture_id, const ImVec2& image_size, const ImVec2& uv0, const ImVec2& uv1, const ImVec4& bg_col, const ImVec4& tint_col) { return imgui_function_table_instance()->ImageButton(str_id, user_texture_id, image_size, uv0, uv1, bg_col, tint_col); }
 	inline bool BeginCombo(const char* label, const char* preview_value, ImGuiComboFlags flags) { return imgui_function_table_instance()->BeginCombo(label, preview_value, flags); }
 	inline void EndCombo() { imgui_function_table_instance()->EndCombo(); }
@@ -889,8 +891,8 @@ inline void ImDrawList::PrimRectUV(const ImVec2& a, const ImVec2& b, const ImVec
 inline void ImDrawList::PrimQuadUV(const ImVec2& a, const ImVec2& b, const ImVec2& c, const ImVec2& d, const ImVec2& uv_a, const ImVec2& uv_b, const ImVec2& uv_c, const ImVec2& uv_d, ImU32 col) { imgui_function_table_instance()->ImDrawList_PrimQuadUV(this, a, b, c, d, uv_a, uv_b, uv_c, uv_d, col); }
 inline ImFont::ImFont() { imgui_function_table_instance()->ConstructImFont(this); }
 inline ImFont::~ImFont() { imgui_function_table_instance()->DestructImFont(this); }
-inline const ImFontGlyph* ImFont::FindGlyph(ImWchar c) { return imgui_function_table_instance()->ImFont_FindGlyph(this, c); }
-inline const ImFontGlyph* ImFont::FindGlyphNoFallback(ImWchar c) { return imgui_function_table_instance()->ImFont_FindGlyphNoFallback(this, c); }
+inline ImFontGlyph* ImFont::FindGlyph(ImWchar c) { return imgui_function_table_instance()->ImFont_FindGlyph(this, c); }
+inline ImFontGlyph* ImFont::FindGlyphNoFallback(ImWchar c) { return imgui_function_table_instance()->ImFont_FindGlyphNoFallback(this, c); }
 inline ImVec2 ImFont::CalcTextSizeA(float size, float max_width, float wrap_width, const char* text_begin, const char* text_end, const char** remaining) { return imgui_function_table_instance()->ImFont_CalcTextSizeA(this, size, max_width, wrap_width, text_begin, text_end, remaining); }
 inline const char* ImFont::CalcWordWrapPositionA(float scale, const char* text, const char* text_end, float wrap_width) { return imgui_function_table_instance()->ImFont_CalcWordWrapPositionA(this, scale, text, text_end, wrap_width); }
 inline void ImFont::RenderChar(ImDrawList* draw_list, float size, const ImVec2& pos, ImU32 col, ImWchar c) { imgui_function_table_instance()->ImFont_RenderChar(this, draw_list, size, pos, col, c); }

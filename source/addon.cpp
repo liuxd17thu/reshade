@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-#if defined(RESHADE_API_LIBRARY_EXPORT)
+#if defined(RESHADE_API_LIBRARY_EXPORT) && RESHADE_ADDON
 
 #include "reshade.hpp"
 #include "addon_manager.hpp"
@@ -14,17 +14,12 @@
 
 void ReShadeLogMessage([[maybe_unused]] HMODULE module, int level, const char *message)
 {
-	std::string prefix;
 #if RESHADE_ADDON
-	if (module != nullptr)
-	{
-		reshade::addon_info *const info = reshade::find_addon(module);
-		if (info != nullptr)
-			prefix = "[" + info->name + "] ";
-	}
+	if (reshade::addon_info *const info = reshade::find_addon(module))
+		reshade::log::message(static_cast<reshade::log::level>(level), "[%.*s] %s", static_cast<int>(info->name.size()), info->name.c_str(), message);
+	else
 #endif
-
-	reshade::log::message(static_cast<reshade::log::level>(level), "%.*s%s", static_cast<int>(prefix.size()), prefix.c_str(), message);
+		reshade::log::message(static_cast<reshade::log::level>(level), "%s", message);
 }
 
 void ReShadeGetBasePath(char *path, size_t *size)
@@ -96,7 +91,7 @@ void ReShadeSetConfigArray(HMODULE, reshade::api::effect_runtime *runtime, const
 	const std::string section_string = section != nullptr ? section : std::string();
 	const std::string key_string = key != nullptr ? key : std::string();
 
-	if (size == 0)
+	if (value == nullptr)
 	{
 		config.remove_key(section_string, key_string);
 		return;
@@ -302,38 +297,9 @@ void ReShadeUpdateAndPresentEffectRuntime(reshade::api::effect_runtime *runtime)
 	if (runtime == nullptr)
 		return;
 
-	reshade::api::command_queue *const present_queue = runtime->get_command_queue();
+	static_cast<reshade::runtime *>(runtime)->on_present();
 
-	static_cast<reshade::runtime *>(runtime)->on_present(present_queue);
-
-	present_queue->flush_immediate_command_list();
+	runtime->get_command_queue()->flush_immediate_command_list();
 }
-
-#if RESHADE_GUI
-
-#include "imgui_function_table_19180.hpp"
-#include "imgui_function_table_19040.hpp"
-#include "imgui_function_table_19000.hpp"
-#include "imgui_function_table_18971.hpp"
-#include "imgui_function_table_18600.hpp"
-
-extern "C" __declspec(dllexport) const void *ReShadeGetImGuiFunctionTable(uint32_t version)
-{
-	if (version == 19180)
-		return &g_imgui_function_table_19180;
-	if (version == 19040)
-		return &g_imgui_function_table_19040;
-	if (version >= 19000 && version < 19040)
-		return &g_imgui_function_table_19000;
-	if (version == 18971)
-		return &g_imgui_function_table_18971;
-	if (version == 18600)
-		return &g_imgui_function_table_18600;
-
-	reshade::log::message(reshade::log::level::error, "Failed to retrieve ImGui function table, because the requested ImGui version (%u) is not supported.", version);
-	return nullptr;
-}
-
-#endif
 
 #endif

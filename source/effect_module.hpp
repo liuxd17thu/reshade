@@ -77,7 +77,8 @@ namespace reshadefx
 		rgba32i = 4,
 		rgba32u = 3,
 		rgba32f = 2,
-		rgb10a2 = 24
+		rgb10a2 = 24,
+		rg11b10f = 26
 	};
 
 	/// <summary>
@@ -238,6 +239,7 @@ namespace reshadefx
 	{
 		reshadefx::type type = {};
 		std::string name;
+		std::string unique_name;
 		uint32_t size = 0;
 		uint32_t offset = 0;
 		std::vector<annotation> annotations;

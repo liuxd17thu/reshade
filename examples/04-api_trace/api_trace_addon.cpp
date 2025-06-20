@@ -343,30 +343,22 @@ static void on_init_swapchain(swapchain *swapchain, bool)
 {
 	const std::unique_lock<std::shared_mutex> lock(s_mutex);
 
-	const device_api api = swapchain->get_device()->get_api();
-
 	for (uint32_t i = 0; i < swapchain->get_back_buffer_count(); ++i)
 	{
 		const resource buffer = swapchain->get_back_buffer(i);
 
 		s_resources.emplace(buffer.handle);
-		if (api == device_api::d3d9 || api == device_api::opengl)
-			s_resource_views.emplace(buffer.handle);
 	}
 }
 static void on_destroy_swapchain(swapchain *swapchain, bool)
 {
 	const std::unique_lock<std::shared_mutex> lock(s_mutex);
 
-	const device_api api = swapchain->get_device()->get_api();
-
 	for (uint32_t i = 0; i < swapchain->get_back_buffer_count(); ++i)
 	{
 		const resource buffer = swapchain->get_back_buffer(i);
 
 		s_resources.erase(buffer.handle);
-		if (api == device_api::d3d9 || api == device_api::opengl)
-			s_resource_views.erase(buffer.handle);
 	}
 }
 static void on_init_sampler(device *device, const sampler_desc &desc, sampler handle)
@@ -932,45 +924,6 @@ static bool on_clear_unordered_access_view_float(command_list *, resource_view u
 	return false;
 }
 
-static bool on_copy_acceleration_structure(command_list *, resource_view source, resource_view dest, acceleration_structure_copy_mode mode)
-{
-	if (!s_do_capture)
-		return false;
-
-#ifndef NDEBUG
-	{	const std::shared_lock<std::shared_mutex> lock(s_mutex);
-
-		assert(s_resource_views.find(source.handle) != s_resource_views.end() && s_resource_views.find(dest.handle) != s_resource_views.end());
-	}
-#endif
-
-	std::stringstream s;
-	s << "copy_acceleration_structure(" << (void *)source.handle << ", " << (void *)dest.handle << ", " << to_string(mode) << ")";
-
-	reshade::log::message(reshade::log::level::info, s.str().c_str());
-
-	return false;
-}
-static bool on_build_acceleration_structure(command_list *, acceleration_structure_type type, acceleration_structure_build_flags flags, uint32_t input_count, const acceleration_structure_build_input *inputs, resource scratch, uint64_t scratch_offset, resource_view source, resource_view dest, acceleration_structure_build_mode mode)
-{
-	if (!s_do_capture)
-		return false;
-
-#ifndef NDEBUG
-	{	const std::shared_lock<std::shared_mutex> lock(s_mutex);
-
-		assert((source.handle == 0 || s_resource_views.find(source.handle) != s_resource_views.end()) && s_resource_views.find(dest.handle) != s_resource_views.end());
-	}
-#endif
-
-	std::stringstream s;
-	s << "build_acceleration_structure(" << to_string(type) << ", " << std::hex << static_cast<uint32_t>(flags) << std::dec << ", " << input_count << ", { ... }, " << (void *)scratch.handle << ", " << scratch_offset << ", " << (void *)source.handle << ", " << (void *)dest.handle << ", " << to_string(mode) << ")";
-
-	reshade::log::message(reshade::log::level::info, s.str().c_str());
-
-	return false;
-}
-
 static bool on_generate_mipmaps(command_list *, resource_view srv)
 {
 	if (!s_do_capture)
@@ -1029,6 +982,66 @@ static bool on_copy_query_heap_results(command_list *cmd_list, query_heap heap, 
 
 	std::stringstream s;
 	s << "copy_query_heap_results(" << (void *)heap.handle << ", " << to_string(type) << ", " << first << ", " << count << (void *)dest.handle << ", " << dest_offset << ", " << stride << ")";
+
+	reshade::log::message(reshade::log::level::info, s.str().c_str());
+
+	return false;
+}
+
+static bool on_copy_acceleration_structure(command_list *, resource_view source, resource_view dest, acceleration_structure_copy_mode mode)
+{
+	if (!s_do_capture)
+		return false;
+
+#ifndef NDEBUG
+	{	const std::shared_lock<std::shared_mutex> lock(s_mutex);
+
+		assert(s_resource_views.find(source.handle) != s_resource_views.end() && s_resource_views.find(dest.handle) != s_resource_views.end());
+	}
+#endif
+
+	std::stringstream s;
+	s << "copy_acceleration_structure(" << (void *)source.handle << ", " << (void *)dest.handle << ", " << to_string(mode) << ")";
+
+	reshade::log::message(reshade::log::level::info, s.str().c_str());
+
+	return false;
+}
+static bool on_build_acceleration_structure(command_list *, acceleration_structure_type type, acceleration_structure_build_flags flags, uint32_t input_count, const acceleration_structure_build_input *inputs, resource scratch, uint64_t scratch_offset, resource_view source, resource_view dest, acceleration_structure_build_mode mode)
+{
+	if (!s_do_capture)
+		return false;
+
+#ifndef NDEBUG
+	{	const std::shared_lock<std::shared_mutex> lock(s_mutex);
+
+		assert((source.handle == 0 || s_resource_views.find(source.handle) != s_resource_views.end()) && s_resource_views.find(dest.handle) != s_resource_views.end());
+	}
+#endif
+
+	std::stringstream s;
+	s << "build_acceleration_structure(" << to_string(type) << ", " << std::hex << static_cast<uint32_t>(flags) << std::dec << ", " << input_count << ", { ... }, " << (void *)scratch.handle << ", " << scratch_offset << ", " << (void *)source.handle << ", " << (void *)dest.handle << ", " << to_string(mode) << ")";
+
+	reshade::log::message(reshade::log::level::info, s.str().c_str());
+
+	return false;
+}
+static bool on_query_acceleration_structures(command_list *, uint32_t count, const resource_view *acceleration_structures, query_heap heap, query_type type, uint32_t first)
+{
+	if (!s_do_capture)
+		return false;
+
+#ifndef NDEBUG
+	{
+		const std::shared_lock<std::shared_mutex> lock(s_mutex);
+
+		for (uint32_t i = 0; i < count; ++i)
+			assert(s_resource_views.find(acceleration_structures[i].handle) != s_resource_views.end());
+	}
+#endif
+
+	std::stringstream s;
+	s << "query_acceleration_structures(" << count << ", " << count << ", { ... }, " << (void *)heap.handle << ", " << to_string(type) << ", " << first << ")";
 
 	reshade::log::message(reshade::log::level::info, s.str().c_str());
 
@@ -1105,12 +1118,13 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 		reshade::register_event<reshade::addon_event::clear_render_target_view>(on_clear_render_target_view);
 		reshade::register_event<reshade::addon_event::clear_unordered_access_view_uint>(on_clear_unordered_access_view_uint);
 		reshade::register_event<reshade::addon_event::clear_unordered_access_view_float>(on_clear_unordered_access_view_float);
-		reshade::register_event<reshade::addon_event::copy_acceleration_structure>(on_copy_acceleration_structure);
-		reshade::register_event<reshade::addon_event::build_acceleration_structure>(on_build_acceleration_structure);
 		reshade::register_event<reshade::addon_event::generate_mipmaps>(on_generate_mipmaps);
 		reshade::register_event<reshade::addon_event::begin_query>(on_begin_query);
 		reshade::register_event<reshade::addon_event::end_query>(on_end_query);
 		reshade::register_event<reshade::addon_event::copy_query_heap_results>(on_copy_query_heap_results);
+		reshade::register_event<reshade::addon_event::copy_acceleration_structure>(on_copy_acceleration_structure);
+		reshade::register_event<reshade::addon_event::build_acceleration_structure>(on_build_acceleration_structure);
+		reshade::register_event<reshade::addon_event::query_acceleration_structures>(on_query_acceleration_structures);
 
 		reshade::register_event<reshade::addon_event::reshade_present>(on_present);
 		break;

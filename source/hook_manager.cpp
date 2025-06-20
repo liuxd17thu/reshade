@@ -305,35 +305,70 @@ static T call_unchecked(T replacement)
 	return reinterpret_cast<T>(find_internal(nullptr, reinterpret_cast<reshade::hook::address>(replacement)).call());
 }
 
-static void install_delayed_hooks(const std::filesystem::path &loaded_path)
+static void install_delayed_hooks(const std::filesystem::path &loaded_path, bool check_all = false)
 {
 	if (s_is_loading_export_module)
 		return;
 
 	// Ignore this call if unable to acquire the mutex to avoid possible deadlock
-	if (std::unique_lock<std::shared_mutex> lock(s_delayed_hook_paths_mutex, std::try_to_lock); lock.owns_lock())
-	{
-		const auto remove = std::remove_if(s_delayed_hook_paths.begin(), s_delayed_hook_paths.end(),
-			[&loaded_path](const std::filesystem::path &path) {
-				// Skip export module if it was loaded somehow before/outside of 'ensure_export_module_loaded' below
-				if (path == s_export_hook_path)
-					return false;
-
-				// Pin the module so it cannot be unloaded by the application and cause problems when ReShade tries to call into it afterwards
-				HMODULE delayed_handle = nullptr;
-				if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_PIN, path.c_str(), &delayed_handle))
-					return false;
-
-				reshade::log::message(reshade::log::level::info, "Installing delayed hooks for '%s' (Just loaded via LoadLibrary('%s')) ...", path.u8string().c_str(), loaded_path.u8string().c_str());
-
-				return install_internal(delayed_handle, g_module_handle, hook_method::function_hook) && reshade::hook::apply_queued_actions();
-			});
-
-		s_delayed_hook_paths.erase(remove, s_delayed_hook_paths.end());
-	}
-	else
+	std::unique_lock<std::shared_mutex> lock(s_delayed_hook_paths_mutex, std::try_to_lock);
+	if (!lock.owns_lock())
 	{
 		reshade::log::message(reshade::log::level::warning, "Ignoring LoadLibrary('%s') call to avoid possible deadlock.", loaded_path.u8string().c_str());
+		return;
+	}
+
+	const auto check_delayed_hook_path = [](const std::filesystem::path &path) -> HMODULE {
+		// Skip export module if it was loaded somehow before/outside of 'ensure_export_module_loaded' below
+		if (path == s_export_hook_path)
+			return nullptr;
+
+		// Pin the module so it cannot be unloaded by the application and cause problems when ReShade tries to call into it afterwards
+		HMODULE delayed_handle = nullptr;
+		if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_PIN, path.c_str(), &delayed_handle))
+			return nullptr;
+
+		return delayed_handle;
+	};
+	const auto install_delayed_hook_path = [&loaded_path](const std::filesystem::path &path, HMODULE delayed_handle) {
+		reshade::log::message(reshade::log::level::info, "Installing delayed hooks for '%s' (Just loaded via LoadLibrary('%s')) ...", path.u8string().c_str(), loaded_path.u8string().c_str());
+
+		install_internal(delayed_handle, g_module_handle, hook_method::function_hook) && reshade::hook::apply_queued_actions();
+	};
+
+	if (const auto it = std::find_if(s_delayed_hook_paths.begin(), s_delayed_hook_paths.end(),
+			[loaded_target_name = loaded_path.has_extension() ? loaded_path.filename() : loaded_path.filename().replace_extension(L".dll")](const std::filesystem::path &path) {
+				const std::filesystem::path target_name = path.filename();
+				return _wcsicmp(target_name.c_str(), loaded_target_name.c_str()) == 0;
+			});
+		it != s_delayed_hook_paths.end())
+	{
+		const std::filesystem::path path = *it;
+
+		if (const HMODULE delayed_handle = check_delayed_hook_path(path))
+		{
+			s_delayed_hook_paths.erase(it);
+
+			lock.unlock();
+
+			install_delayed_hook_path(path, delayed_handle);
+		}
+	}
+	else if (check_all)
+	{
+		const auto remove = std::remove_if(s_delayed_hook_paths.begin(), s_delayed_hook_paths.end(), [&](const std::filesystem::path &path) {
+			if (const HMODULE delayed_handle = check_delayed_hook_path(path))
+			{
+				install_delayed_hook_path(path, delayed_handle);
+				return true;
+			}
+			else
+			{
+				return false;
+			}
+		});
+
+		s_delayed_hook_paths.erase(remove, s_delayed_hook_paths.end());
 	}
 }
 
@@ -364,7 +399,7 @@ HMODULE WINAPI HookLoadLibraryA(LPCSTR lpFileName)
 
 	const HMODULE handle = trampoline(lpFileName);
 	if (handle != nullptr && handle != g_module_handle)
-		install_delayed_hooks(lpFileName);
+		install_delayed_hooks(lpFileName, true); // Need to check all modules, since this 'LoadLibrary' call may have loaded other linked dependencies
 
 	return handle;
 }
@@ -374,7 +409,7 @@ HMODULE WINAPI HookLoadLibraryExA(LPCSTR lpFileName, HANDLE hFile, DWORD dwFlags
 
 	const HMODULE handle = trampoline(lpFileName, hFile, dwFlags);
 	if (handle != nullptr && handle != g_module_handle && (dwFlags & (LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE | LOAD_LIBRARY_AS_IMAGE_RESOURCE)) == 0)
-		install_delayed_hooks(lpFileName);
+		install_delayed_hooks(lpFileName, true);
 
 	return handle;
 }
@@ -384,7 +419,7 @@ HMODULE WINAPI HookLoadLibraryW(LPCWSTR lpFileName)
 
 	const HMODULE handle = trampoline(lpFileName);
 	if (handle != nullptr && handle != g_module_handle)
-		install_delayed_hooks(lpFileName);
+		install_delayed_hooks(lpFileName, true);
 
 	return handle;
 }
@@ -394,7 +429,7 @@ HMODULE WINAPI HookLoadLibraryExW(LPCWSTR lpFileName, HANDLE hFile, DWORD dwFlag
 
 	const HMODULE handle = trampoline(lpFileName, hFile, dwFlags);
 	if (handle != nullptr && handle != g_module_handle && (dwFlags & (LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_DATAFILE_EXCLUSIVE | LOAD_LIBRARY_AS_IMAGE_RESOURCE)) == 0)
-		install_delayed_hooks(lpFileName);
+		install_delayed_hooks(lpFileName, true);
 
 	return handle;
 }
@@ -514,8 +549,9 @@ void reshade::hooks::register_module(const std::filesystem::path &target_path)
 
 	// Compare module names and delay export hooks for later installation since we cannot call 'LoadLibrary' from this function (it is called from 'DLLMain', which does not allow this)
 	// Do a case insensitive comparison here to catch cases like "OPENGL32" refering to the same module as "opengl32.dll"
-	const std::filesystem::path target_name = target_path.stem();
-	const std::filesystem::path replacement_name = g_reshade_dll_path.stem();
+	assert(target_path.extension() == L".dll");
+	const std::filesystem::path target_name = target_path.filename();
+	const std::filesystem::path replacement_name = g_reshade_dll_path.filename();
 	if (_wcsicmp(target_name.c_str(), replacement_name.c_str()) == 0)
 	{
 		assert(target_path != g_reshade_dll_path);

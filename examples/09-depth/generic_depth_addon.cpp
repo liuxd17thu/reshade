@@ -360,7 +360,7 @@ static bool check_aspect_ratio(float width_to_check, float height_to_check, floa
 	if (s_aspect_ratio_heuristic == aspect_ratio_heuristic::match_resolution_exactly || (s_aspect_ratio_heuristic == aspect_ratio_heuristic::match_custom_resolution_exactly && s_custom_resolution_filtering[0] == 0 && s_custom_resolution_filtering[1] == 0))
 		return width_to_check == width && height_to_check == height;
 	if (s_aspect_ratio_heuristic == aspect_ratio_heuristic::match_custom_resolution_exactly)
-		return width_to_check == s_custom_resolution_filtering[0] && width_to_check == s_custom_resolution_filtering[1];
+		return width_to_check == s_custom_resolution_filtering[0] && height_to_check == s_custom_resolution_filtering[1];
 
 	float w_ratio = width / width_to_check;
 	float h_ratio = height / height_to_check;
@@ -1387,7 +1387,7 @@ static void draw_settings_overlay(effect_runtime *runtime)
 
 		ImGui::PushTextWrapPos();
 		if (has_msaa_depth_stencil)
-			ImGui::TextUnformatted(_("Not all depth buffers are available.\nYou may have to disable MSAA in the game settings for depth buffer detection to work!"));
+			ImGui::TextUnformatted(_("Not all depth buffers are available.\nYou may have to disable MSAA (Multisample Anti-Aliasing) in the game settings for depth buffer detection to work!"));
 		if (has_no_clear_operations)
 			ImGui::Text(_("No clear operations were found for the selected depth buffer.\n%s"),
 				s_preserve_depth_buffers != 2 ? _("Try enabling \"Copy depth buffer before fullscreen draw calls\" or disable \"Copy depth buffer before clear operations\"!") : _("Disable \"Copy depth buffer before clear operations\" or select a different depth buffer!"));

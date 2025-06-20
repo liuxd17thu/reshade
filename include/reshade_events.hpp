@@ -33,6 +33,28 @@ namespace reshade
 		init_device,
 
 		/// <summary>
+		/// Called on device creation, before:
+		/// <list type="bullet">
+		/// <item><description>IDirect3D9::CreateDevice</description></item>
+		/// <item><description>IDirect3D9Ex::CreateDeviceEx</description></item>
+		/// <item><description>D3D10CreateDevice</description></item>
+		/// <item><description>D3D10CreateDevice1</description></item>
+		/// <item><description>D3D10CreateDeviceAndSwapChain</description></item>
+		/// <item><description>D3D10CreateDeviceAndSwapChain1</description></item>
+		/// <item><description>D3D11CreateDevice</description></item>
+		/// <item><description>D3D11CreateDeviceAndSwapChain</description></item>
+		/// <item><description>D3D12CreateDevice</description></item>
+		/// <item><description>wglCreateContextAttribsARB</description></item>
+		/// <item><description>vkCreateInstance</description></item>
+		/// </list>
+		/// <para>Callback function signature: <c>bool (api::device_api api, uint32_t &amp;api_version)</c></para>
+		/// </summary>
+		/// <remarks>
+		/// To overwrite the API version, modify <c>api_version</c> in the callback and return <see langword="true"/>, otherwise return <see langword="false"/>.
+		/// </remarks>
+		create_device = 96,
+
+		/// <summary>
 		/// Called on device destruction, before:
 		/// <list type="bullet">
 		/// <item><description>IDirect3DDevice9::Reset</description></item>
@@ -46,7 +68,7 @@ namespace reshade
 		/// </list>
 		/// <para>Callback function signature: <c>void (api::device *device)</c></para>
 		/// </summary>
-		destroy_device,
+		destroy_device = 1,
 
 		/// <summary>
 		/// Called after successful command list creation, from:
@@ -139,12 +161,12 @@ namespace reshade
 		/// <item><description>wglSetPixelFormat</description></item>
 		/// <item><description>vkCreateSwapchainKHR</description></item>
 		/// </list>
-		/// <para>Callback function signature: <c>bool (api::swapchain_desc &amp;desc, void *hwnd)</c></para>
+		/// <para>Callback function signature: <c>bool (api::device_api api, api::swapchain_desc &amp;desc, void *hwnd)</c></para>
 		/// </summary>
 		/// <remarks>
 		/// To overwrite the swap chain description, modify <c>desc</c> in the callback and return <see langword="true"/>, otherwise return <see langword="false"/>.
 		/// </remarks>
-		create_swapchain,
+		create_swapchain = 97,
 
 		/// <summary>
 		/// Called on swap chain destruction (with the resize argument set to <see langword="false"/>), before:
@@ -166,7 +188,7 @@ namespace reshade
 		/// </list>
 		/// <para>Callback function signature: <c>void (api::swapchain *swapchain, bool resize)</c></para>
 		/// </summary>
-		destroy_swapchain,
+		destroy_swapchain = 8,
 
 		/// <summary>
 		/// Called after effect runtime initialization (which happens after swap chain creation or a swap chain buffer resize).
@@ -1716,7 +1738,7 @@ namespace reshade
 		reshade_overlay_technique,
 
 #if RESHADE_ADDON
-		max = 96 // Last value used internally by ReShade to determine number of events in this enum
+		max = 98 // Last value used internally by ReShade to determine number of events in this enum
 #endif
 	};
 
@@ -1731,6 +1753,7 @@ namespace reshade
 	}
 
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::init_device, void, api::device *device);
+	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::create_device, bool, api::device_api api, uint32_t &api_version);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::destroy_device, void, api::device *device);
 
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::init_command_list, void, api::command_list *cmd_list);
@@ -1740,7 +1763,7 @@ namespace reshade
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::destroy_command_queue, void, api::command_queue *queue);
 
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::init_swapchain, void, api::swapchain *swapchain, bool resize);
-	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::create_swapchain, bool, api::swapchain_desc &desc, void *hwnd);
+	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::create_swapchain, bool, api::device_api api, api::swapchain_desc &desc, void *hwnd);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::destroy_swapchain, void, api::swapchain *swapchain, bool resize);
 
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::init_effect_runtime, void, api::effect_runtime *runtime);

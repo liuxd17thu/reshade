@@ -161,11 +161,13 @@ ULONG   STDMETHODCALLTYPE D3D12Device::Release()
 #if RESHADE_VERBOSE_LOG
 	reshade::log::message(reshade::log::level::debug, "Destroying ID3D12Device%hu object %p (%p).", interface_version, this, orig);
 #endif
-	delete this;
+	this->~D3D12Device();
 
 	const ULONG ref_orig = orig->Release();
 	if (ref_orig != 0) // Verify internal reference count
 		reshade::log::message(reshade::log::level::warning, "Reference count for ID3D12Device%hu object %p (%p) is inconsistent (%lu).", interface_version, this, orig, ref_orig);
+	else
+		operator delete(this, sizeof(D3D12Device));
 	return 0;
 }
 
@@ -227,8 +229,9 @@ HRESULT STDMETHODCALLTYPE D3D12Device::CreateCommandQueue(const D3D12_COMMAND_QU
 		}
 		else // Do not hook object if we do not support the requested interface
 		{
+#if RESHADE_VERBOSE_LOG
 			reshade::log::message(reshade::log::level::warning, "Unknown interface %s in ID3D12Device::CreateCommandQueue.", reshade::log::iid_to_string(riid).c_str());
-
+#endif
 			delete command_queue_proxy; // Delete instead of release to keep reference count untouched
 		}
 	}
@@ -310,28 +313,32 @@ HRESULT STDMETHODCALLTYPE D3D12Device::CreateCommandList(UINT nodeMask, D3D12_CO
 	{
 		assert(ppCommandList != nullptr);
 
-		const auto command_list_proxy = new D3D12GraphicsCommandList(this, static_cast<ID3D12GraphicsCommandList *>(*ppCommandList));
-
-		// Upgrade to the actual interface version requested here (and only hook graphics command lists)
-		if (command_list_proxy->check_and_upgrade_interface(riid))
+		// Ignore video command lists ('ID3D12VideoProcessCommandList', 'ID3D12VideoProcessCommandList', ...) in case they are created with the base 'ID3D12CommandList' interface
+		if (type >= D3D12_COMMAND_LIST_TYPE_DIRECT && type <= D3D12_COMMAND_LIST_TYPE_COPY)
 		{
-			*ppCommandList = command_list_proxy;
+			const auto command_list_proxy = new D3D12GraphicsCommandList(this, static_cast<ID3D12GraphicsCommandList *>(*ppCommandList));
+
+			// Upgrade to the actual interface version requested here (and only hook graphics command lists)
+			if (command_list_proxy->check_and_upgrade_interface(riid))
+			{
+				*ppCommandList = command_list_proxy;
 
 #if RESHADE_ADDON
-			// Same implementation as in 'D3D12GraphicsCommandList::Reset'
-			reshade::invoke_addon_event<reshade::addon_event::reset_command_list>(command_list_proxy);
+				// Same implementation as in 'D3D12GraphicsCommandList::Reset'
+				reshade::invoke_addon_event<reshade::addon_event::reset_command_list>(command_list_proxy);
 #endif
 
 #if RESHADE_ADDON >= 2
-			if (pInitialState != nullptr)
-				reshade::invoke_addon_event<reshade::addon_event::bind_pipeline>(command_list_proxy, reshade::api::pipeline_stage::all, to_handle(pInitialState));
+				if (pInitialState != nullptr)
+					reshade::invoke_addon_event<reshade::addon_event::bind_pipeline>(command_list_proxy, reshade::api::pipeline_stage::all, to_handle(pInitialState));
 #endif
-		}
-		else // Do not hook object if we do not support the requested interface
-		{
-			reshade::log::message(reshade::log::level::warning, "Unknown interface %s in ID3D12Device::CreateCommandList.", reshade::log::iid_to_string(riid).c_str());
+			}
+			else // Do not hook object if we do not support the requested interface
+			{
+				reshade::log::message(reshade::log::level::warning, "Unknown interface %s in ID3D12Device::CreateCommandList.", reshade::log::iid_to_string(riid).c_str());
 
-			delete command_list_proxy; // Delete instead of release to keep reference count untouched
+				delete command_list_proxy; // Delete instead of release to keep reference count untouched
+			}
 		}
 	}
 #if RESHADE_VERBOSE_LOG
@@ -819,10 +826,12 @@ HRESULT STDMETHODCALLTYPE D3D12Device::CreateCommittedResource(const D3D12_HEAP_
 			invoke_init_resource_event(desc, initial_state, resource);
 #endif
 		}
+#if RESHADE_VERBOSE_LOG
 		else
 		{
 			reshade::log::message(reshade::log::level::warning, "Unknown interface %s in ID3D12Device::CreateCommittedResource.", reshade::log::iid_to_string(riid).c_str());
 		}
+#endif
 	}
 #if RESHADE_VERBOSE_LOG
 	else
@@ -875,10 +884,12 @@ HRESULT STDMETHODCALLTYPE D3D12Device::CreatePlacedResource(ID3D12Heap *pHeap, U
 			invoke_init_resource_event(desc, initial_state, resource);
 #endif
 		}
+#if RESHADE_VERBOSE_LOG
 		else
 		{
 			reshade::log::message(reshade::log::level::warning, "Unknown interface %s in ID3D12Device::CreatePlacedResource.", reshade::log::iid_to_string(riid).c_str());
 		}
+#endif
 	}
 #if RESHADE_VERBOSE_LOG
 	else
@@ -925,10 +936,12 @@ HRESULT STDMETHODCALLTYPE D3D12Device::CreateReservedResource(const D3D12_RESOUR
 			invoke_init_resource_event(desc, initial_state, resource);
 #endif
 		}
+#if RESHADE_VERBOSE_LOG
 		else
 		{
 			reshade::log::message(reshade::log::level::warning, "Unknown interface %s in ID3D12Device::CreateReservedResource.", reshade::log::iid_to_string(riid).c_str());
 		}
+#endif
 	}
 #if RESHADE_VERBOSE_LOG
 	else
@@ -1055,10 +1068,12 @@ HRESULT STDMETHODCALLTYPE D3D12Device::CreateQueryHeap(const D3D12_QUERY_HEAP_DE
 				});
 			}
 		}
+#if RESHADE_VERBOSE_LOG
 		else
 		{
 			reshade::log::message(reshade::log::level::warning, "Unknown interface %s in ID3D12Device::CreateQueryHeap.", reshade::log::iid_to_string(riid).c_str());
 		}
+#endif
 #endif
 	}
 #if RESHADE_VERBOSE_LOG
@@ -1207,30 +1222,34 @@ HRESULT STDMETHODCALLTYPE D3D12Device::EnqueueMakeResident(D3D12_RESIDENCY_FLAGS
 	return static_cast<ID3D12Device3 *>(_orig)->EnqueueMakeResident(Flags, NumObjects, ppObjects, pFenceToSignal, FenceValueToSignal);
 }
 
-HRESULT STDMETHODCALLTYPE D3D12Device::CreateCommandList1(UINT NodeMask, D3D12_COMMAND_LIST_TYPE Type, D3D12_COMMAND_LIST_FLAGS Flags, REFIID riid, void **ppCommandList)
+HRESULT STDMETHODCALLTYPE D3D12Device::CreateCommandList1(UINT nodeMask, D3D12_COMMAND_LIST_TYPE type, D3D12_COMMAND_LIST_FLAGS flags, REFIID riid, void **ppCommandList)
 {
 	assert(_interface_version >= 4);
-	const HRESULT hr = static_cast<ID3D12Device4 *>(_orig)->CreateCommandList1(NodeMask, Type, Flags, riid, ppCommandList);
+	const HRESULT hr = static_cast<ID3D12Device4 *>(_orig)->CreateCommandList1(nodeMask, type, flags, riid, ppCommandList);
 	if (SUCCEEDED(hr))
 	{
 		assert(ppCommandList != nullptr);
 
-		const auto command_list_proxy = new D3D12GraphicsCommandList(this, static_cast<ID3D12GraphicsCommandList *>(*ppCommandList));
-
-		// Upgrade to the actual interface version requested here (and only hook graphics command lists)
-		if (command_list_proxy->check_and_upgrade_interface(riid))
+		// Ignore video command lists ('ID3D12VideoProcessCommandList', 'ID3D12VideoProcessCommandList', ...) in case they are created with the base 'ID3D12CommandList' interface
+		if (type >= D3D12_COMMAND_LIST_TYPE_DIRECT && type <= D3D12_COMMAND_LIST_TYPE_COPY)
 		{
-			*ppCommandList = command_list_proxy;
+			const auto command_list_proxy = new D3D12GraphicsCommandList(this, static_cast<ID3D12GraphicsCommandList *>(*ppCommandList));
+
+			// Upgrade to the actual interface version requested here (and only hook graphics command lists)
+			if (command_list_proxy->check_and_upgrade_interface(riid))
+			{
+				*ppCommandList = command_list_proxy;
 
 #if RESHADE_ADDON
-			reshade::invoke_addon_event<reshade::addon_event::reset_command_list>(command_list_proxy);
+				reshade::invoke_addon_event<reshade::addon_event::reset_command_list>(command_list_proxy);
 #endif
-		}
-		else // Do not hook object if we do not support the requested interface or this is a compute command list
-		{
-			reshade::log::message(reshade::log::level::warning, "Unknown interface %s in ID3D12Device4::CreateCommandList1.", reshade::log::iid_to_string(riid).c_str());
+			}
+			else // Do not hook object if we do not support the requested interface or this is a compute command list
+			{
+				reshade::log::message(reshade::log::level::warning, "Unknown interface %s in ID3D12Device4::CreateCommandList1.", reshade::log::iid_to_string(riid).c_str());
 
-			delete command_list_proxy; // Delete instead of release to keep reference count untouched
+				delete command_list_proxy; // Delete instead of release to keep reference count untouched
+			}
 		}
 	}
 #if RESHADE_VERBOSE_LOG
@@ -1289,10 +1308,12 @@ HRESULT STDMETHODCALLTYPE D3D12Device::CreateCommittedResource1(const D3D12_HEAP
 			invoke_init_resource_event(desc, initial_state, resource);
 #endif
 		}
+#if RESHADE_VERBOSE_LOG
 		else
 		{
 			reshade::log::message(reshade::log::level::warning, "Unknown interface %s in ID3D12Device4::CreateCommittedResource1.", reshade::log::iid_to_string(riid).c_str());
 		}
+#endif
 	}
 #if RESHADE_VERBOSE_LOG
 	else
@@ -1347,10 +1368,12 @@ HRESULT STDMETHODCALLTYPE D3D12Device::CreateReservedResource1(const D3D12_RESOU
 			invoke_init_resource_event(desc, initial_state, resource);
 #endif
 		}
+#if RESHADE_VERBOSE_LOG
 		else
 		{
 			reshade::log::message(reshade::log::level::warning, "Unknown interface %s in ID3D12Device4::CreateReservedResource1.", reshade::log::iid_to_string(riid).c_str());
 		}
+#endif
 	}
 #if RESHADE_VERBOSE_LOG
 	else
@@ -1517,10 +1540,12 @@ HRESULT STDMETHODCALLTYPE D3D12Device::CreateCommittedResource2(const D3D12_HEAP
 			invoke_init_resource_event(desc, initial_state, resource);
 #endif
 		}
+#if RESHADE_VERBOSE_LOG
 		else
 		{
 			reshade::log::message(reshade::log::level::warning, "Unknown interface %s in ID3D12Device8::CreateCommittedResource2.", reshade::log::iid_to_string(riid).c_str());
 		}
+#endif
 	}
 #if RESHADE_VERBOSE_LOG
 	else
@@ -1571,10 +1596,12 @@ HRESULT STDMETHODCALLTYPE D3D12Device::CreatePlacedResource1(ID3D12Heap *pHeap, 
 			invoke_init_resource_event(desc, initial_state, resource);
 #endif
 		}
+#if RESHADE_VERBOSE_LOG
 		else
 		{
 			reshade::log::message(reshade::log::level::warning, "Unknown interface %s in ID3D12Device8::CreatePlacedResource1.", reshade::log::iid_to_string(riid).c_str());
 		}
+#endif
 	}
 #if RESHADE_VERBOSE_LOG
 	else
@@ -1649,8 +1676,9 @@ HRESULT STDMETHODCALLTYPE D3D12Device::CreateCommandQueue1(const D3D12_COMMAND_Q
 		}
 		else // Do not hook object if we do not support the requested interface
 		{
+#if RESHADE_VERBOSE_LOG
 			reshade::log::message(reshade::log::level::warning, "Unknown interface %s in ID3D12Device9::CreateCommandQueue1.", reshade::log::iid_to_string(riid).c_str());
-
+#endif
 			delete command_queue_proxy; // Delete instead of release to keep reference count untouched
 		}
 	}
@@ -1705,10 +1733,12 @@ HRESULT STDMETHODCALLTYPE D3D12Device::CreateCommittedResource3(const D3D12_HEAP
 			invoke_init_resource_event(desc, initial_state, resource);
 #endif
 		}
+#if RESHADE_VERBOSE_LOG
 		else
 		{
 			reshade::log::message(reshade::log::level::warning, "Unknown interface %s in ID3D12Device10::CreateCommittedResource3.", reshade::log::iid_to_string(riid).c_str());
 		}
+#endif
 	}
 #if RESHADE_VERBOSE_LOG
 	else
@@ -1760,10 +1790,12 @@ HRESULT STDMETHODCALLTYPE D3D12Device::CreatePlacedResource2(ID3D12Heap *pHeap, 
 			invoke_init_resource_event(desc, initial_state, resource);
 #endif
 		}
+#if RESHADE_VERBOSE_LOG
 		else
 		{
 			reshade::log::message(reshade::log::level::warning, "Unknown interface %s in ID3D12Device10::CreatePlacedResource2.", reshade::log::iid_to_string(riid).c_str());
 		}
+#endif
 	}
 #if RESHADE_VERBOSE_LOG
 	else
@@ -1812,10 +1844,12 @@ HRESULT STDMETHODCALLTYPE D3D12Device::CreateReservedResource2(const D3D12_RESOU
 			invoke_init_resource_event(desc, initial_state, resource);
 #endif
 		}
+#if RESHADE_VERBOSE_LOG
 		else
 		{
 			reshade::log::message(reshade::log::level::warning, "Unknown interface %s in ID3D12Device10::CreateReservedResource2.", reshade::log::iid_to_string(riid).c_str());
 		}
+#endif
 	}
 #if RESHADE_VERBOSE_LOG
 	else
@@ -2400,32 +2434,38 @@ bool D3D12Device::invoke_create_and_init_pipeline_event(const D3D12_PIPELINE_STA
 			continue;
 		case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_VS:
 			vs_desc = reshade::d3d12::convert_shader_desc(reinterpret_cast<const D3D12_PIPELINE_STATE_STREAM_VS *>(p)->data);
-			subobjects.push_back({ reshade::api::pipeline_subobject_type::vertex_shader, 1, &vs_desc });
+			if (vs_desc.code != nullptr)
+				subobjects.push_back({ reshade::api::pipeline_subobject_type::vertex_shader, 1, &vs_desc });
 			p += sizeof(D3D12_PIPELINE_STATE_STREAM_VS);
 			continue;
 		case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_PS:
 			ps_desc = reshade::d3d12::convert_shader_desc(reinterpret_cast<const D3D12_PIPELINE_STATE_STREAM_PS *>(p)->data);
-			subobjects.push_back({ reshade::api::pipeline_subobject_type::pixel_shader, 1, &ps_desc });
+			if (ps_desc.code != nullptr)
+				subobjects.push_back({ reshade::api::pipeline_subobject_type::pixel_shader, 1, &ps_desc });
 			p += sizeof(D3D12_PIPELINE_STATE_STREAM_PS);
 			continue;
 		case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DS:
 			ds_desc = reshade::d3d12::convert_shader_desc(reinterpret_cast<const D3D12_PIPELINE_STATE_STREAM_DS *>(p)->data);
-			subobjects.push_back({ reshade::api::pipeline_subobject_type::domain_shader, 1, &ds_desc });
+			if (ds_desc.code != nullptr)
+				subobjects.push_back({ reshade::api::pipeline_subobject_type::domain_shader, 1, &ds_desc });
 			p += sizeof(D3D12_PIPELINE_STATE_STREAM_DS);
 			continue;
 		case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_HS:
 			hs_desc = reshade::d3d12::convert_shader_desc(reinterpret_cast<const D3D12_PIPELINE_STATE_STREAM_HS *>(p)->data);
-			subobjects.push_back({ reshade::api::pipeline_subobject_type::hull_shader, 1, &hs_desc });
+			if (hs_desc.code != nullptr)
+				subobjects.push_back({ reshade::api::pipeline_subobject_type::hull_shader, 1, &hs_desc });
 			p += sizeof(D3D12_PIPELINE_STATE_STREAM_HS);
 			continue;
 		case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_GS:
 			gs_desc = reshade::d3d12::convert_shader_desc(reinterpret_cast<const D3D12_PIPELINE_STATE_STREAM_GS *>(p)->data);
-			subobjects.push_back({ reshade::api::pipeline_subobject_type::geometry_shader, 1, &gs_desc });
+			if (gs_desc.code != nullptr)
+				subobjects.push_back({ reshade::api::pipeline_subobject_type::geometry_shader, 1, &gs_desc });
 			p += sizeof(D3D12_PIPELINE_STATE_STREAM_GS);
 			continue;
 		case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_CS:
 			cs_desc = reshade::d3d12::convert_shader_desc(reinterpret_cast<const D3D12_PIPELINE_STATE_STREAM_CS *>(p)->data);
-			subobjects.push_back({ reshade::api::pipeline_subobject_type::compute_shader, 1, &cs_desc });
+			if (cs_desc.code != nullptr)
+				subobjects.push_back({ reshade::api::pipeline_subobject_type::compute_shader, 1, &cs_desc });
 			p += sizeof(D3D12_PIPELINE_STATE_STREAM_CS);
 			continue;
 		case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_STREAM_OUTPUT:
@@ -2512,12 +2552,14 @@ bool D3D12Device::invoke_create_and_init_pipeline_event(const D3D12_PIPELINE_STA
 			continue;
 		case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_AS:
 			as_desc = reshade::d3d12::convert_shader_desc(reinterpret_cast<const D3D12_PIPELINE_STATE_STREAM_AS *>(p)->data);
-			subobjects.push_back({ reshade::api::pipeline_subobject_type::amplification_shader, 1, &as_desc });
+			if (as_desc.code != nullptr)
+				subobjects.push_back({ reshade::api::pipeline_subobject_type::amplification_shader, 1, &as_desc });
 			p += sizeof(D3D12_PIPELINE_STATE_STREAM_AS);
 			continue;
 		case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_MS:
 			ms_desc = reshade::d3d12::convert_shader_desc(reinterpret_cast<const D3D12_PIPELINE_STATE_STREAM_MS *>(p)->data);
-			subobjects.push_back({ reshade::api::pipeline_subobject_type::mesh_shader, 1, &ms_desc });
+			if (ms_desc.code != nullptr)
+				subobjects.push_back({ reshade::api::pipeline_subobject_type::mesh_shader, 1, &ms_desc });
 			p += sizeof(D3D12_PIPELINE_STATE_STREAM_MS);
 			continue;
 		case D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DEPTH_STENCIL2:
