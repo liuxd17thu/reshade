@@ -158,7 +158,7 @@ void reshade::load_addons()
 #if 1
 	{	addon_info &info = addon_loaded_info.emplace_back();
 		info.name = "Generic Depth";
-		info.description = _("Automatic depth buffer detection that works in the majority of games.");
+		info.description = _("Automatic depth buffer detection that works in the majority of games.").data;
 		info.file = g_reshade_dll_path.filename().u8string();
 		info.author = "crosire";
 		info.external = false;
@@ -172,7 +172,7 @@ void reshade::load_addons()
 	}
 	{	addon_info &info = addon_loaded_info.emplace_back();
 		info.name = "Effect Runtime Sync";
-		info.description = _("Adds preset synchronization between different effect runtime instances, e.g. to have changes in a desktop window reflect in VR.");
+		info.description = _("Adds preset synchronization between different effect runtime instances, e.g. to have changes in a desktop window reflect in VR.").data;
 		info.file = g_reshade_dll_path.filename().u8string();
 		info.author = "crosire";
 		info.external = false;

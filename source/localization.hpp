@@ -27,7 +27,17 @@ namespace reshade::resources
 			string.data = prefix + string.data;
 			return string;
 		}
+		friend localized_string operator+(std::string &prefix, localized_string &&string)
+		{
+			string.data = prefix + string.data;
+			return string;
+		}
 		friend localized_string operator+(localized_string &&string, const char *postfix)
+		{
+			string.data += postfix;
+			return string;
+		}
+		friend localized_string operator+(localized_string &&string, std::string &postfix)
 		{
 			string.data += postfix;
 			return string;

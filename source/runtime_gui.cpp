@@ -2220,7 +2220,7 @@ void reshade::runtime::draw_gui_home()
 			ImGui::BeginDisabled(_current_flair == ":");
 
 			std::string detach_label = ICON_FK_DETACH;
-			detach_label += _(" Detach");
+			detach_label += _(" Detach").data;
 			if (ImGui::ButtonEx(detach_label.c_str(), ImVec2(12.5f * _font_size - 3 * (button_height + button_spacing), button_height), ImGuiButtonFlags_NoNavFocus | ImGuiButtonFlags_PressedOnClick))
 			{
 				detach_current_flair();
@@ -2397,6 +2397,13 @@ void reshade::runtime::draw_gui_home()
 			ImGui::PopTextWrapPos();
 			ImGui::Spacing();
 		}
+		if (_preset_is_incomplete)
+		{
+			ImGui::PushTextWrapPos();
+			ImGui::TextColored(COLOR_YELLOW, _("The selected preset uses unknown effects. Please install all required effect files!"));
+			ImGui::PopTextWrapPos();
+			ImGui::Spacing();
+		}
 
 		if (!_effects_enabled)
 		{
@@ -2520,7 +2527,7 @@ void reshade::runtime::draw_gui_home()
 	{
 		ImGui::Spacing();
 
-		if (ImGui::Button((ICON_FK_REFRESH " " + std::string(_("Reload"))).c_str(), ImVec2(-button_width, 0)))
+		if (ImGui::Button((ICON_FK_REFRESH " " + _("Reload").data).c_str(), ImVec2(-button_width, 0)))
 		{
 			std::filesystem::path backup_current_path = _current_preset_path;
 			load_config(); // Reload configuration too
@@ -2959,7 +2966,7 @@ void reshade::runtime::draw_gui_settings()
 			_imgui_context->IO.Fonts->TexReady = false;
 		}
 
-		if (_imgui_context->IO.Fonts->Fonts[0]->ConfigDataCount > 2 && // Latin font + main font + icon font
+		if (_imgui_context->IO.Fonts->Fonts[0]->SourcesCount > 2 && // Latin font + main font + icon font
 			imgui::font_input_box(_("Latin font"), _default_font_path.empty() ? "Iosevka-Basic.ttf" : "-", _latin_font_path, _file_selection_path, _font_size))
 		{
 			modified = true;
@@ -4099,14 +4106,14 @@ void reshade::runtime::draw_variable_editor()
 
 #ifdef AURORA_PRO
 		std::string reset_to_preset_button_label = ICON_FK_UNDO ICON_FK_FILE " ";
-		reset_to_preset_button_label += _("Revert all to preset");
+		reset_to_preset_button_label += _("Revert all to preset").data;
 		const auto edit_button_width = 2.0f * _font_size;
 		const auto reset_button_width = ImGui::GetContentRegionAvail().x - edit_button_width - _imgui_context->Style.ItemInnerSpacing.x;
 #else
 		const auto reset_button_width = ImGui::GetContentRegionAvail().x;
 #endif
 		std::string reset_all_button_label = ICON_FK_UNDO ICON_FK_FILE_CODE " ";
-		reset_all_button_label += _("Reset all to default");
+		reset_all_button_label += _("Reset all to default").data;
 #ifdef AURORA_PRO
 		if (_preset_section_editing == effect_index)
 		{
@@ -4248,9 +4255,9 @@ void reshade::runtime::draw_variable_editor()
 #endif
 
 		if (imgui::confirm_button(
-				(ICON_FK_UNDO " " + _("Reset all to default"),
+				ICON_FK_UNDO " " + _("Reset all to default"),
 				reset_button_width,
-				_("Do you really want to reset all values in '%s' to their defaults?"), effect_name.c_str()))
+				_("Do you really want to reset all values in '%s' to their defaults?").data.c_str(), effect_name.c_str()))
 		{
 			// Reset all uniform variables
 			for (uniform &variable_it : effect.uniforms)
