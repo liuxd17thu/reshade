@@ -2079,12 +2079,18 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 			}
 
 			if (_ui_bind_support)
+			{
 				for (const auto &bind_pair : effect.definition_bindings) {
 					//if (bind_pair.second.second == "")
 					//	continue;
+					if (auto it = std::find_if(effect.definitions.begin(), effect.definitions.end(),
+						[bind_pair](const std::pair<std::string, std::string> def) -> bool { return bind_pair.second.first == def.first; }); it != effect.definitions.end())
+						effect.definitions.erase(it);
+
 					effect.definitions.emplace_back(bind_pair.second.first, trim(bind_pair.second.second));
 					source = "// " + bind_pair.second.first + '=' + bind_pair.second.second + '\n' + source;
 				}
+			}
 
 			std::sort(preprocessor_definitions.begin(), preprocessor_definitions.end());
 
@@ -2095,10 +2101,7 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 
 		if (permutation_index == 0)
 		{
-			// use insert to avoid overwriting definition_binds added above
-			effect.definitions.insert(effect.definitions.end(),
-										std::make_move_iterator(preprocessor_definitions.begin()),
-										std::make_move_iterator(preprocessor_definitions.end()));
+			effect.definitions = std::move(preprocessor_definitions);
 
 			// Keep track of included files
 			effect.included_files = pp.included_files();
