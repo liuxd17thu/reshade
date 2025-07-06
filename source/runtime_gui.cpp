@@ -5523,9 +5523,11 @@ void reshade::runtime::draw_technique_editor()
 				reshade::effect dup_effect;
 				dup_effect.source_file = _effects[make_effect_dup].source_file;
 				dup_effect.included_files = _effects[make_effect_dup].included_files;
-				dup_effect.dup_id = std::move(make_dup_name);
+				// dup_effect.dup_id = std::move(make_dup_name);
 				_effects.emplace_back(dup_effect);
+				_reload_remaining_effects = 1;
 				load_effect(dup_effect.source_file, ini_file::load_cache(_current_preset_path), _effects.size() - 1, 0, true, true);
+				_effects.back().dup_id = make_dup_name;
 #if RESHADE_ADDON
 				invoke_addon_event<addon_event::reshade_reloaded_effects>(this);
 #endif

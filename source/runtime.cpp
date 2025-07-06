@@ -1197,12 +1197,14 @@ void reshade::runtime::load_current_preset()
 				});
 			if (base_effect_it == _effects.end() || dup_effect_it != _effects.end()) continue;
 			effect dup_effect;
-			dup_effect.dup_id = dup_id;
+			// dup_effect.dup_id = dup_id;
 			dup_effect.source_file = base_effect_it->source_file;
 			dup_effect.included_files = base_effect_it->included_files;
 			_effects.emplace_back(dup_effect);
 			aurora3_reload = true;
+			_reload_remaining_effects = 1;
 			load_effect(dup_effect.source_file, ini_file::load_cache(_current_preset_path), _effects.size() - 1, 0, true, true);
+			_effects.back().dup_id = dup_id;
 		}
 
 	}
