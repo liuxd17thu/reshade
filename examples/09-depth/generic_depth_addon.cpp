@@ -1389,8 +1389,8 @@ static void draw_settings_overlay(effect_runtime *runtime)
 		if (has_msaa_depth_stencil)
 			ImGui::TextUnformatted(_("Not all depth buffers are available.\nYou may have to disable MSAA (Multisample Anti-Aliasing) in the game settings for depth buffer detection to work!"));
 		if (has_no_clear_operations)
-			ImGui::Text(_("No clear operations were found for the selected depth buffer.\n%s"),
-				s_preserve_depth_buffers != 2 ? _("Try enabling \"Copy depth buffer before fullscreen draw calls\" or disable \"Copy depth buffer before clear operations\"!") : _("Disable \"Copy depth buffer before clear operations\" or select a different depth buffer!"));
+			ImGui::Text(_("No clear operations were found for the selected depth buffer.\n%s").data.c_str(),
+				s_preserve_depth_buffers != 2 ? _("Try enabling \"Copy depth buffer before fullscreen draw calls\" or disable \"Copy depth buffer before clear operations\"!").data.c_str() : _("Disable \"Copy depth buffer before clear operations\" or select a different depth buffer!").data.c_str());
 		ImGui::PopTextWrapPos();
 	}
 
