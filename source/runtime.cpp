@@ -1428,7 +1428,7 @@ void reshade::runtime::load_current_preset()
 		}
 	}
 
-	std::unordered_map<std::string, uint8_t> technique_group_reverse;
+	std::unordered_map<std::string, uint8_t> technique_group_reverse {};
 	for (int i = 0; i < 8; ++i)
 	{
 		std::vector<std::string> group;
@@ -1455,6 +1455,8 @@ void reshade::runtime::load_current_preset()
 			std::memset(tech.toggle_key_data, 0, sizeof(tech.toggle_key_data));
 		if (technique_group_reverse.count(unique_name))
 			tech.group_id = technique_group_reverse.at(unique_name);
+		else
+			tech.group_id = 0;
 	}
 
 	// Reverse queue so that effects are enabled in the order they are defined in the preset (since the queue is worked from back to front)
