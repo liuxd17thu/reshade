@@ -708,7 +708,7 @@ void reshade::runtime::load_custom_style()
 		colors[ImGuiCol_TabDimmedSelected] = ImColor(0x99cc6699);
 		colors[ImGuiCol_DockingPreview] = colors[ImGuiCol_Header] * ImVec4(1.0f, 1.0f, 1.0f, 0.7f);
 		colors[ImGuiCol_DockingEmptyBg] = ImColor(0xff333333);
-		colors[ImGuiCol_PlotLines] = ImColor(0x000000aa);
+		colors[ImGuiCol_PlotLines] = ImColor(0xaa000000);
 		colors[ImGuiCol_PlotLinesHovered] = ImColor(0xffcc9966);
 		colors[ImGuiCol_PlotHistogram] = ImColor(0xaacc66aa);
 		colors[ImGuiCol_PlotHistogramHovered] = ImColor(0xffcc66aa);
@@ -3647,7 +3647,7 @@ void reshade::runtime::draw_gui_about()
 
 	if (_current_language == "zh-CN")
 	{
-		ImGui::TextWrapped("联系方式：[微博同名] | 路障MKXX @FF14-宇宙和音 | wujingluren @NGA | liuxd17thu @github");
+		ImGui::TextWrapped("联系方式：[微博同名] | 路障MKXX @FF14-宇宙和音 | 路障MKXX @NGA | liuxd17thu @github");
 		ImGui::TextWrapped("感谢【粒粒梦想】【白玉为何物】等人提供的帮助，以及各位用户的支持！");
 	}
 	else
