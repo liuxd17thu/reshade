@@ -192,11 +192,21 @@ void reshade::runtime::build_font_atlas()
 	else
 	if (language.find("zh") == 0)
 	{
-		glyph_ranges = GetGlyphRangesChineseSimplifiedGB2312();
-
-		_default_font_path = L"C:\\Windows\\Fonts\\msyh.ttc"; // Microsoft YaHei
-		if (!std::filesystem::exists(_default_font_path, ec))
-			_default_font_path = L"C:\\Windows\\Fonts\\simsun.ttc"; // SimSun
+		// Traditional Chinese (zh-HK, zh-TW, zh-Hant, ...)
+		if (language.find("zh-HK") == 0 || language.find("zh-TW") == 0 || language.find("zh-Hant") == 0)
+		{
+			glyph_ranges = atlas->GetGlyphRangesChineseFull();
+			_default_font_path = L"C:\\Windows\\Fonts\\msjh.ttc"; // Microsoft JhengHei
+			if (!std::filesystem::exists(_default_font_path, ec))
+				_default_font_path = L"C:\\Windows\\Fonts\\mingliu.ttc"; 
+		}
+		else // Simplified Chinese (zh-CN, zh-SG, ...)
+		{
+			glyph_ranges = GetGlyphRangesChineseSimplifiedGB2312();
+			_default_font_path = L"C:\\Windows\\Fonts\\msyh.ttc"; // Microsoft YaHei
+			if (!std::filesystem::exists(_default_font_path, ec))
+				_default_font_path = L"C:\\Windows\\Fonts\\simsun.ttc"; 
+		}
 	}
 	else
 #endif
@@ -3182,9 +3192,9 @@ void reshade::runtime::draw_gui_statistics()
 				const reshade::technique::pass &pass = tech.permutations[0].passes[pass_index];
 
 				if (pass.name.empty())
-					ImGui::Text("  pass %zu", pass_index);
+					ImGui::Text("  pass %-2zu", pass_index);
 				else
-					ImGui::Text("  pass %zu %s", pass_index, pass.name.c_str());
+					ImGui::Text("  pass %-2zu %s", pass_index, pass.name.c_str());
 
 				long_technique_name[total_pass_count] = (ImGui::GetItemRectSize().x + 10.0f) > (ImGui::GetWindowWidth() * 0.66666666f);
 				if (long_technique_name[total_pass_count])
@@ -3263,51 +3273,116 @@ void reshade::runtime::draw_gui_statistics()
 
 	if (ImGui::CollapsingHeader(_("Render Targets & Textures"), ImGuiTreeNodeFlags_DefaultOpen) && !is_loading())
 	{
-		const auto texture_format_info = [](reshadefx::texture_format format) -> std::pair<const char *, int> {
-			switch (format)
+		struct texture_format_info
+		{
+			explicit texture_format_info(reshadefx::texture_format format)
 			{
-			default:
-				assert(false);
-				[[fallthrough]];
-			case reshadefx::texture_format::unknown:
-				return { "unknown", 0 };
-			case reshadefx::texture_format::r8:
-				return { "R8", 1 };
-			case reshadefx::texture_format::r16:
-				return { "R16", 2 };
-			case reshadefx::texture_format::r16f:
-				return { "R16F", 2 };
-			case reshadefx::texture_format::r32i:
-				return { "R32I", 4 };
-			case reshadefx::texture_format::r32u:
-				return { "R32U", 4 };
-			case reshadefx::texture_format::r32f:
-				return { "R32F", 4 };
-			case reshadefx::texture_format::rg8:
-				return { "RG8", 2 };
-			case reshadefx::texture_format::rg16:
-				return { "RG16", 4 };
-			case reshadefx::texture_format::rg16f:
-				return { "RG16F", 4 };
-			case reshadefx::texture_format::rg32f:
-				return { "RG32F", 8 };
-			case reshadefx::texture_format::rgba8:
-				return { "RGBA8", 4 };
-			case reshadefx::texture_format::rgba16:
-				return { "RGBA16", 8 };
-			case reshadefx::texture_format::rgba16f:
-				return { "RGBA16F", 8 };
-			case reshadefx::texture_format::rgba32i:
-				return { "RGBA32I", 16 };
-			case reshadefx::texture_format::rgba32u:
-				return { "RGBA32U", 16 };
-			case reshadefx::texture_format::rgba32f:
-				return { "RGBA32F", 16 };
-			case reshadefx::texture_format::rgb10a2:
-				return { "RGB10A2", 4 };
-			case reshadefx::texture_format::rg11b10f:
-				return { "RG11B10F", 4 };
+				switch (format)
+				{
+				default:
+					assert(false);
+					[[fallthrough]];
+				case reshadefx::texture_format::unknown:
+					name = "unknown";
+					bytes_per_pixel = 0;
+					components = 0;
+					break;
+				case reshadefx::texture_format::r8:
+					name = "R8";
+					bytes_per_pixel = 1;
+					components = 1;
+					break;
+				case reshadefx::texture_format::r16f:
+					name = "R16F";
+					bytes_per_pixel = 2;
+					components = 1;
+					break;
+				case reshadefx::texture_format::r16:
+					name = "R16";
+					bytes_per_pixel = 2;
+					components = 1;
+					break;
+				case reshadefx::texture_format::r32f:
+					name = "R32F";
+					bytes_per_pixel = 4;
+					components = 1;
+					break;
+				case reshadefx::texture_format::r32u:
+					name = "R32U";
+					bytes_per_pixel = 4;
+					components = 1;
+					break;
+				case reshadefx::texture_format::r32i:
+					name = "R32I";
+					bytes_per_pixel = 4;
+					components = 1;
+					break;
+				case reshadefx::texture_format::rg8:
+					name = "RG8";
+					bytes_per_pixel = 2;
+					components = 2;
+					break;
+				case reshadefx::texture_format::rg16f:
+					name = "RG16F";
+					bytes_per_pixel = 4;
+					components = 2;
+					break;
+				case reshadefx::texture_format::rg16:
+					name = "RG16";
+					bytes_per_pixel = 4;
+					components = 2;
+					break;
+				case reshadefx::texture_format::rg32f:
+					name = "RG32F";
+					bytes_per_pixel = 8;
+					components = 2;
+					break;
+				case reshadefx::texture_format::rgba8:
+					name = "RGBA8";
+					bytes_per_pixel = 4;
+					components = 4;
+					break;
+				case reshadefx::texture_format::rgba16f:
+					name = "RGBA16F";
+					bytes_per_pixel = 8;
+					components = 4;
+					break;
+				case reshadefx::texture_format::rgba16:
+					name = "RGBA16";
+					bytes_per_pixel = 8;
+					components = 4;
+					break;
+				case reshadefx::texture_format::rgba32f:
+					name = "RGBA32F";
+					bytes_per_pixel = 16;
+					components = 4;
+					break;
+				case reshadefx::texture_format::rgba32u:
+					name = "RGBA32U";
+					bytes_per_pixel = 16;
+					components = 4;
+					break;
+				case reshadefx::texture_format::rgba32i:
+					name = "RGBA32I";
+					bytes_per_pixel = 16;
+					components = 4;
+					break;
+				case reshadefx::texture_format::rgb10a2:
+					name = "RGB10A2";
+					bytes_per_pixel = 4;
+					components = 4;
+					break;
+				case reshadefx::texture_format::rg11b10f:
+					name = "RG11B10F";
+					bytes_per_pixel = 4;
+					components = 3;
+					break;
+				}
 			}
+
+			const char *name;
+			int bytes_per_pixel;
+			int components;
 		};
 
 		const float total_width = ImGui::GetContentRegionAvail().x;
@@ -3332,7 +3407,7 @@ void reshade::runtime::draw_gui_statistics()
 
 			int64_t memory_size = 0;
 			for (uint32_t level = 0, width = tex.width, height = tex.height, depth = tex.depth; level < tex.levels; ++level, width /= 2, height /= 2, depth /= 2)
-				memory_size += static_cast<size_t>(width) * static_cast<size_t>(height) * static_cast<size_t>(depth) * texture_format_info(tex.format).second;
+				memory_size += static_cast<size_t>(width) * static_cast<size_t>(height) * static_cast<size_t>(depth) * texture_format_info(tex.format).bytes_per_pixel;
 
 			post_processing_memory_size += memory_size;
 
@@ -3354,7 +3429,7 @@ void reshade::runtime::draw_gui_statistics()
 				ImGui::Text("%u | %u mipmap(s) | %s | %lld.%03lld %s",
 					tex.width,
 					tex.levels - 1,
-					texture_format_info(tex.format).first,
+					texture_format_info(tex.format).name,
 					memory_view.quot, memory_view.rem, memory_size_unit);
 				break;
 			case reshadefx::texture_type::texture_2d:
@@ -3362,7 +3437,7 @@ void reshade::runtime::draw_gui_statistics()
 					tex.width,
 					tex.height,
 					tex.levels - 1,
-					texture_format_info(tex.format).first,
+					texture_format_info(tex.format).name,
 					memory_view.quot, memory_view.rem, memory_size_unit);
 				break;
 			case reshadefx::texture_type::texture_3d:
@@ -3371,7 +3446,7 @@ void reshade::runtime::draw_gui_statistics()
 					tex.height,
 					tex.depth,
 					tex.levels - 1,
-					texture_format_info(tex.format).first,
+					texture_format_info(tex.format).name,
 					memory_view.quot, memory_view.rem, memory_size_unit);
 				break;
 			}
@@ -3429,8 +3504,7 @@ void reshade::runtime::draw_gui_statistics()
 				}
 			}
 
-			const bool supports_saving =
-				tex.type != reshadefx::texture_type::texture_3d && (
+			const bool supports_saving = (tex.type != reshadefx::texture_type::texture_3d) && (
 				tex.format == reshadefx::texture_format::r8 ||
 				tex.format == reshadefx::texture_format::rg8 ||
 				tex.format == reshadefx::texture_format::rgba8 ||
@@ -3502,13 +3576,13 @@ void reshade::runtime::draw_gui_statistics()
 				ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1, 0, 0, 1));
 				imgui::toggle_button("R", r, 0.0f, ImGuiButtonFlags_AlignTextBaseLine);
 				ImGui::PopStyleColor();
-				if (tex.format >= reshadefx::texture_format::rg8)
+				if (texture_format_info(tex.format).components >= 2)
 				{
 					ImGui::SameLine(0, 1);
 					ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0, 1, 0, 1));
 					imgui::toggle_button("G", g, 0.0f, ImGuiButtonFlags_AlignTextBaseLine);
 					ImGui::PopStyleColor();
-					if (tex.format >= reshadefx::texture_format::rgba8)
+					if (texture_format_info(tex.format).components >= 3)
 					{
 						ImGui::SameLine(0, 1);
 						ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0, 0, 1, 1));
@@ -3558,11 +3632,13 @@ void reshade::runtime::draw_gui_log()
 	std::filesystem::path log_path = global_config().path();
 	log_path.replace_extension(L".log");
 
-	const bool filter_changed = imgui::search_input_box(_log_filter, sizeof(_log_filter), -(16.0f * _font_size + 2 * _imgui_context->Style.ItemSpacing.x));
+	const bool filter_changed = imgui::search_input_box(_log_filter, sizeof(_log_filter), -(ImGui::GetFrameHeight() + 8.0f * _font_size + 2 * _imgui_context->Style.ItemSpacing.x));
 
 	ImGui::SameLine();
 
-	imgui::toggle_button(_("Word Wrap"), _log_wordwrap, 8.0f * _font_size);
+	if (ImGui::Button(ICON_FK_FOLDER, ImVec2(ImGui::GetFrameHeight(), 0.0f)))
+		utils::open_explorer(log_path);
+	ImGui::SetItemTooltip(_("Open folder in explorer"));
 
 	ImGui::SameLine();
 
@@ -3572,57 +3648,61 @@ void reshade::runtime::draw_gui_log()
 
 	ImGui::Spacing();
 
-	if (ImGui::BeginChild("##log", ImVec2(0, -(ImGui::GetFrameHeightWithSpacing() + _imgui_context->Style.ItemSpacing.y)), ImGuiChildFlags_Borders, _log_wordwrap ? 0 : ImGuiWindowFlags_AlwaysHorizontalScrollbar))
+	const uintmax_t file_size = std::filesystem::file_size(log_path, ec);
+	if (filter_changed || _last_log_size != file_size)
 	{
-		const uintmax_t file_size = std::filesystem::file_size(log_path, ec);
-		if (filter_changed || _last_log_size != file_size)
+		_log_editor.clear_text();
+		_log_editor.set_readonly(true);
+
+		if (FILE *const file = _wfsopen(log_path.c_str(), L"r", SH_DENYNO))
 		{
-			_log_lines.clear();
+			imgui::code_editor::text_pos line_pos;
 
-			if (FILE *const file = _wfsopen(log_path.c_str(), L"r", SH_DENYNO))
+			char line_data[2048];
+			while (fgets(line_data, sizeof(line_data), file))
 			{
-				char line_data[2048];
-				while (fgets(line_data, sizeof(line_data), file))
-					if (string_contains(line_data, _log_filter))
-						_log_lines.push_back(line_data);
+				const std::string_view line(line_data);
+				if (string_contains(line, _log_filter))
+				{
+					if (line.back() != '\n')
+						continue;
 
-				fclose(file);
+					_log_editor.insert_text(line);
+
+					imgui::code_editor::color col = imgui::code_editor::color_default;
+					     if (line.find("ERROR |") != std::string_view::npos)
+						col = imgui::code_editor::color_error_marker;
+					else if (line.find("WARN  |") != std::string_view::npos)
+						col = imgui::code_editor::color_warning_marker;
+					else if (line.find("DEBUG |") != std::string_view::npos)
+						col = imgui::code_editor::color_comment;
+					else if (line.find("error") != std::string_view::npos)
+						col = imgui::code_editor::color_error_marker;
+					else if (line.find("warning") != std::string_view::npos)
+						col = imgui::code_editor::color_warning_marker;
+
+					imgui::code_editor::text_pos next_line_pos = line_pos;
+					next_line_pos.line++;
+
+					_log_editor.colorize(line_pos, next_line_pos, col);
+
+					line_pos = next_line_pos;
+				}
 			}
 
-			_last_log_size = file_size;
+			fclose(file);
 		}
 
-		ImGuiListClipper clipper;
-		clipper.Begin(static_cast<int>(_log_lines.size()), ImGui::GetTextLineHeightWithSpacing());
-		while (clipper.Step())
-		{
-			for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
-			{
-				ImVec4 textcol = ImGui::GetStyleColorVec4(ImGuiCol_Text);
-
-				if (_log_lines[i].find("ERROR |") != std::string::npos || _log_lines[i].find("error") != std::string::npos)
-					textcol = COLOR_RED;
-				else if (_log_lines[i].find("WARN  |") != std::string::npos || _log_lines[i].find("warning") != std::string::npos)
-					textcol = COLOR_YELLOW;
-				else if (_log_lines[i].find("DEBUG |") != std::string::npos)
-					textcol = ImColor(100, 100, 255);
-
-				if (_log_wordwrap)
-					ImGui::PushTextWrapPos();
-				ImGui::PushStyleColor(ImGuiCol_Text, textcol);
-				ImGui::TextUnformatted(_log_lines[i].c_str(), _log_lines[i].c_str() + _log_lines[i].size());
-				ImGui::PopStyleColor();
-				if (_log_wordwrap)
-					ImGui::PopTextWrapPos();
-			}
-		}
+		_last_log_size = file_size;
 	}
-	ImGui::EndChild();
 
-	ImGui::Spacing();
+	uint32_t palette[imgui::code_editor::color_palette_max];
+	std::copy_n(_editor_palette, imgui::code_editor::color_palette_max, palette);
+	palette[imgui::code_editor::color_error_marker] = ImColor(COLOR_RED);
+	palette[imgui::code_editor::color_warning_marker] = ImColor(COLOR_YELLOW);
+	palette[imgui::code_editor::color_comment] = ImColor(100, 100, 255);
 
-	if (ImGui::Button(ICON_FK_FOLDER " " + _("Open folder in explorer"), ImVec2(ImGui::GetContentRegionAvail().x, 0)))
-		utils::open_explorer(log_path);
+	_log_editor.render("##log", palette, true);
 }
 void reshade::runtime::draw_gui_about()
 {
@@ -3981,6 +4061,9 @@ void reshade::runtime::draw_variable_editor()
 			{
 				if (ImGui::BeginTabItem(type.name.c_str()))
 				{
+					if (&type.modified == &preset_modified)
+						ImGui::BeginDisabled(!_auto_save_preset);
+
 					for (auto it = type.definitions.begin(); it != type.definitions.end();)
 					{
 						char name[128];
@@ -4024,6 +4107,9 @@ void reshade::runtime::draw_variable_editor()
 					ImGui::SameLine(0, content_region_width - button_size);
 					if (ImGui::Button(ICON_FK_PLUS, ImVec2(button_size, 0)))
 						type.definitions.emplace_back();
+
+					if (&type.modified == &preset_modified)
+						ImGui::EndDisabled();
 
 					ImGui::EndTabItem();
 				}

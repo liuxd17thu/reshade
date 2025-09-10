@@ -320,14 +320,9 @@ void VKAPI_CALL vkCmdBindPipeline(VkCommandBuffer commandBuffer, VkPipelineBindP
 
 	reshade::vulkan::command_list_impl *const cmd_impl = device_impl->get_private_data_for_object<VK_OBJECT_TYPE_COMMAND_BUFFER>(commandBuffer);
 
-	const auto pipeline_stages =
-		pipelineBindPoint == VK_PIPELINE_BIND_POINT_COMPUTE ? reshade::api::pipeline_stage::all_compute :
-		pipelineBindPoint == VK_PIPELINE_BIND_POINT_GRAPHICS ? reshade::api::pipeline_stage::all_graphics :
-		static_cast<reshade::api::pipeline_stage>(0); // Unknown pipeline bind point
-
 	reshade::invoke_addon_event<reshade::addon_event::bind_pipeline>(
 		cmd_impl,
-		pipeline_stages,
+		reshade::vulkan::convert_pipeline_stages(pipelineBindPoint),
 		reshade::api::pipeline { (uint64_t)pipeline });
 #endif
 }
@@ -499,14 +494,9 @@ void VKAPI_CALL vkCmdBindDescriptorSets(VkCommandBuffer commandBuffer, VkPipelin
 
 	reshade::vulkan::command_list_impl *const cmd_impl = device_impl->get_private_data_for_object<VK_OBJECT_TYPE_COMMAND_BUFFER>(commandBuffer);
 
-	const auto shader_stages =
-		pipelineBindPoint == VK_PIPELINE_BIND_POINT_COMPUTE ? reshade::api::shader_stage::all_compute :
-		pipelineBindPoint == VK_PIPELINE_BIND_POINT_GRAPHICS ? reshade::api::shader_stage::all_graphics :
-		static_cast<reshade::api::shader_stage>(0); // Unknown pipeline bind point
-
 	reshade::invoke_addon_event<reshade::addon_event::bind_descriptor_tables>(
 		cmd_impl,
-		shader_stages,
+		reshade::vulkan::convert_shader_stages(pipelineBindPoint),
 		reshade::api::pipeline_layout { (uint64_t)layout },
 		firstSet, descriptorSetCount,
 		reinterpret_cast<const reshade::api::descriptor_table *>(pDescriptorSets));
@@ -1769,10 +1759,7 @@ void VKAPI_CALL vkCmdPushDescriptorSetKHR(VkCommandBuffer commandBuffer, VkPipel
 		max_descriptors = std::max(max_descriptors, pDescriptorWrites[i].descriptorCount);
 	temp_mem<uint64_t> descriptors(max_descriptors * 2);
 
-	const auto shader_stages =
-		pipelineBindPoint == VK_PIPELINE_BIND_POINT_COMPUTE ? reshade::api::shader_stage::all_compute :
-		pipelineBindPoint == VK_PIPELINE_BIND_POINT_GRAPHICS ? reshade::api::shader_stage::all_graphics :
-		static_cast<reshade::api::shader_stage>(0); // Unknown pipeline bind point
+	const auto shader_stages = reshade::vulkan::convert_shader_stages(pipelineBindPoint);
 
 	for (uint32_t i = 0, j = 0; i < descriptorWriteCount; ++i, j = 0)
 	{
@@ -1817,12 +1804,91 @@ void VKAPI_CALL vkCmdPushDescriptorSetKHR(VkCommandBuffer commandBuffer, VkPipel
 			{
 				assert(update.count == write_acceleration_structure->accelerationStructureCount);
 				update.descriptors = write_acceleration_structure->pAccelerationStructures;
+				break;
 			}
-			else
-			{
-				update.count = 0;
-				update.descriptors = nullptr;
-			}
+			[[fallthrough]];
+		default:
+			update.count = 0;
+			update.descriptors = nullptr;
+			break;
+		}
+
+		reshade::invoke_addon_event<reshade::addon_event::push_descriptors>(
+			cmd_impl,
+			shader_stages,
+			reshade::api::pipeline_layout { (uint64_t)layout },
+			set,
+			update);
+	}
+#endif
+}
+void VKAPI_CALL vkCmdPushDescriptorSetWithTemplateKHR(VkCommandBuffer commandBuffer, VkDescriptorUpdateTemplate descriptorUpdateTemplate, VkPipelineLayout layout, uint32_t set, const void *pData)
+{
+	reshade::vulkan::device_impl *const device_impl = g_vulkan_devices.at(dispatch_key_from_handle(commandBuffer));
+
+	GET_DISPATCH_PTR_FROM(CmdPushDescriptorSetWithTemplateKHR, device_impl);
+	trampoline(commandBuffer, descriptorUpdateTemplate, layout, set, pData);
+
+#if RESHADE_ADDON >= 2
+	if (!reshade::has_addon_event<reshade::addon_event::push_descriptors>())
+		return;
+
+	reshade::vulkan::command_list_impl *const cmd_impl = device_impl->get_private_data_for_object<VK_OBJECT_TYPE_COMMAND_BUFFER>(commandBuffer);
+
+	const auto template_data = device_impl->get_private_data_for_object<VK_OBJECT_TYPE_DESCRIPTOR_UPDATE_TEMPLATE>(descriptorUpdateTemplate);
+
+	uint32_t max_descriptors = 0;
+	for (const VkDescriptorUpdateTemplateEntry &entry : template_data->entries)
+		max_descriptors = std::max(max_descriptors, entry.descriptorCount);
+	temp_mem<uint64_t> descriptors(max_descriptors * 2);
+
+	const auto shader_stages = reshade::vulkan::convert_shader_stages(template_data->bind_point);
+
+	for (uint32_t i = 0, j = 0; i < static_cast<uint32_t>(template_data->entries.size()); ++i, j = 0)
+	{
+		const VkDescriptorUpdateTemplateEntry &entry = template_data->entries[i];
+
+		reshade::api::descriptor_table_update update;
+		update.table = { 0 };
+		update.binding = entry.dstBinding;
+		update.array_offset = entry.dstArrayElement;
+		update.count = entry.descriptorCount;
+		update.type = reshade::vulkan::convert_descriptor_type(entry.descriptorType);
+		update.descriptors = descriptors.p;
+
+		const void *const base = static_cast<const uint8_t *>(pData) + entry.offset;
+
+		switch (entry.descriptorType)
+		{
+		case VK_DESCRIPTOR_TYPE_SAMPLER:
+			for (uint32_t k = 0; k < entry.descriptorCount; ++k, ++j)
+				descriptors[j] = (uint64_t)static_cast<const VkDescriptorImageInfo *>(base)[k].sampler;
+			break;
+		case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+			for (uint32_t k = 0; k < entry.descriptorCount; ++k, j += 2)
+				descriptors[j + 0] = (uint64_t)static_cast<const VkDescriptorImageInfo *>(base)[k].sampler,
+				descriptors[j + 1] = (uint64_t)static_cast<const VkDescriptorImageInfo *>(base)[k].imageView;
+			break;
+		case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+		case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+			for (uint32_t k = 0; k < entry.descriptorCount; ++k, ++j)
+				descriptors[j] = (uint64_t)static_cast<const VkDescriptorImageInfo *>(base)[k].imageView;
+			break;
+		case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
+		case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
+			for (uint32_t k = 0; k < entry.descriptorCount; ++k, ++j)
+				descriptors[j] = (uint64_t)static_cast<const VkBufferView *>(base)[k];
+			break;
+		case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+		case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+			update.descriptors = static_cast<const VkDescriptorBufferInfo *>(base);
+			break;
+		case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
+			update.descriptors = static_cast<const VkAccelerationStructureKHR *>(base);
+			break;
+		default:
+			update.count = 0;
+			update.descriptors = nullptr;
 			break;
 		}
 

@@ -5,6 +5,7 @@
 
 #include "d3d11_device.hpp"
 #include "d3d11_device_context.hpp"
+#include "dxgi/dxgi_factory.hpp"
 #include "dll_log.hpp" // Include late to get 'hr_to_string' helper function
 #include "hook_manager.hpp"
 #include "addon_manager.hpp"
@@ -44,6 +45,20 @@ extern "C" HRESULT WINAPI D3D11CreateDeviceAndSwapChain(IDXGIAdapter *pAdapter, 
 	Flags &= ~D3D11_CREATE_DEVICE_PREVENT_ALTERING_LAYER_SETTINGS_FROM_REGISTRY;
 #endif
 
+#if RESHADE_ADDON >= 2
+	if (ppDevice != nullptr)
+	{
+		reshade::load_addons();
+
+		uint32_t api_version = (pFeatureLevels != nullptr && FeatureLevels > 0) ? pFeatureLevels[0] : D3D_FEATURE_LEVEL_11_0;
+		if (reshade::invoke_addon_event<reshade::addon_event::create_device>(reshade::api::device_api::d3d11, api_version))
+		{
+			FeatureLevels = 1;
+			pFeatureLevels = reinterpret_cast<const D3D_FEATURE_LEVEL *>(&api_version);
+		}
+	}
+#endif
+
 #ifdef RESHADE_TEST_APPLICATION
 	// Perform dummy call to 'CreateDXGIFactory1' to ensure virtual function table hooks are set up correctly
 	// This is done here in case a third party is hooking the factory too, to ensure the call chain of the factory methods is consistent:
@@ -51,20 +66,10 @@ extern "C" HRESULT WINAPI D3D11CreateDeviceAndSwapChain(IDXGIAdapter *pAdapter, 
 	// Otherwise it may happen that it will be called like this:
 	//    App -> D3D11CreateDeviceAndSwapChain -> X -> driver -> CreateDXGIFactory1
 	// And therefore the virtual function table hooks would be installed to the driver object, rather than the object created by the third party.
+	g_in_dxgi_runtime = true;
 	com_ptr<IDXGIFactory1> dummy_factory;
 	CreateDXGIFactory1(IID_PPV_ARGS(&dummy_factory));
 	dummy_factory.reset();
-#endif
-
-#if RESHADE_ADDON >= 2
-	reshade::load_addons();
-
-	uint32_t api_version = (pFeatureLevels != nullptr && FeatureLevels > 0) ? pFeatureLevels[0] : D3D_FEATURE_LEVEL_11_0;
-	if (reshade::invoke_addon_event<reshade::addon_event::create_device>(reshade::api::device_api::d3d11, api_version))
-	{
-		FeatureLevels = 1;
-		pFeatureLevels = reinterpret_cast<const D3D_FEATURE_LEVEL *>(&api_version);
-	}
 #endif
 
 	// Use local feature level variable in case the application did not pass one in
@@ -76,7 +81,8 @@ extern "C" HRESULT WINAPI D3D11CreateDeviceAndSwapChain(IDXGIAdapter *pAdapter, 
 	if (FAILED(hr))
 	{
 #if RESHADE_ADDON >= 2
-		reshade::unload_addons();
+		if (ppDevice != nullptr)
+			reshade::unload_addons();
 #endif
 		reshade::log::message(reshade::log::level::warning, "D3D11CreateDeviceAndSwapChain failed with error code %s.", reshade::log::hr_to_string(hr).c_str());
 		return hr;
@@ -91,10 +97,6 @@ extern "C" HRESULT WINAPI D3D11CreateDeviceAndSwapChain(IDXGIAdapter *pAdapter, 
 	if (ppDevice == nullptr)
 	{
 		assert(ppSwapChain == nullptr && ppImmediateContext == nullptr);
-
-#if RESHADE_ADDON >= 2
-		reshade::unload_addons();
-#endif
 		return hr;
 	}
 
@@ -146,7 +148,7 @@ extern "C" HRESULT WINAPI D3D11CreateDeviceAndSwapChain(IDXGIAdapter *pAdapter, 
 
 		reshade::log::message(reshade::log::level::info, "Calling IDXGIFactory::CreateSwapChain:");
 
-		hr = factory->CreateSwapChain(device, const_cast<DXGI_SWAP_CHAIN_DESC *>(pSwapChainDesc), ppSwapChain);
+		hr = IDXGIFactory_CreateSwapChain_Impl(factory.get(), device, const_cast<DXGI_SWAP_CHAIN_DESC *>(pSwapChainDesc), ppSwapChain);
 	}
 
 #if RESHADE_ADDON >= 2

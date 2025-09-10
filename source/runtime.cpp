@@ -186,7 +186,7 @@ reshade::runtime::runtime(api::swapchain *swapchain, api::command_queue *graphic
 	_texture_search_paths({ L".\\" }),
 	_config_path(config_path),
 	_screenshot_path(L".\\"),
-	_screenshot_name("%AppName% %Date% %Time%_%TimeMS%"), // Use a timestamp down to the millisecond because users may request more than one screenshot per-second
+	_screenshot_name("%AppName% %Date% %Time%_%TimeMS%"), // Include milliseconds by default because users may request more than one screenshot per second
 	_screenshot_post_save_command_arguments("\"%TargetPath%\""),
 	_screenshot_post_save_command_working_directory(L".\\")
 {
@@ -891,12 +891,12 @@ void reshade::runtime::on_present()
 			if (was_enabled)
 				_backup_texture_semantic_bindings = _texture_semantic_bindings;
 
-			for (const auto &info : _backup_texture_semantic_bindings)
+			for (const auto &binding : _backup_texture_semantic_bindings)
 			{
-				if (info.second.first == _effect_permutations[0].color_srv[0] && info.second.second == _effect_permutations[0].color_srv[1])
+				if (binding.second.first == _effect_permutations[0].color_srv[0] && binding.second.second == _effect_permutations[0].color_srv[1])
 					continue;
 
-				update_texture_bindings(info.first.c_str(), addon_enabled ? info.second.first : api::resource_view { 0 }, addon_enabled ? info.second.second : api::resource_view { 0 });
+				update_texture_bindings(binding.first.c_str(), addon_enabled ? binding.second.first : api::resource_view { 0 }, addon_enabled ? binding.second.second : api::resource_view { 0 });
 			}
 		}
 	}
@@ -1300,7 +1300,8 @@ void reshade::runtime::load_current_preset()
 					return technique.name == name;
 				}) == _techniques.end())
 		{
-			log::message(log::level::warning, "Preset '%s' uses unknown technique '%*s'.", _current_preset_path.u8string().c_str(), technique_name.size(), technique_name.data());
+			if (_reload_remaining_effects == 0)
+				log::message(log::level::warning, "Preset '%s' uses unknown technique '%*s'.", _current_preset_path.u8string().c_str(), technique_name.size(), technique_name.data());
 			_preset_is_incomplete = true;
 		}
 	}
@@ -1950,6 +1951,9 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 			source_hash,
 			source_file.extension() == L".addonfx"
 		};
+
+		// Allocate the default permutation
+		effect.permutations.resize(1);
 	}
 
 	if (_effect_load_skipping && !force_load)
@@ -1972,8 +1976,7 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 		}
 	}
 
-	if (permutation_index >= effect.permutations.size())
-		effect.permutations.resize(permutation_index + 1);
+	assert(permutation_index < effect.permutations.size());
 	effect::permutation &permutation = effect.permutations[permutation_index];
 
 	bool preprocessed = effect.preprocessed && permutation_index == 0;
@@ -2949,7 +2952,7 @@ bool reshade::runtime::create_effect(size_t effect_index, size_t permutation_ind
 
 	// Create global constant buffer (except in D3D9, which does not have constant buffers)
 	api::buffer_range cb_buffer_range = {};
-	if (_renderer_id != 0x9000 && !effect.uniform_data_storage.empty())
+	if (_device->get_api() != api::device_api::d3d9 && !effect.uniform_data_storage.empty())
 	{
 		if (permutation_index == 0)
 		{
@@ -2992,7 +2995,6 @@ bool reshade::runtime::create_effect(size_t effect_index, size_t permutation_ind
 			return false;
 		}
 	}
-
 	if (srv_range.count != 0 && !sampler_with_resource_view)
 	{
 		if (!_device->allocate_descriptor_tables(static_cast<uint32_t>(total_pass_count), permutation.layout, 2, shader_resource_view_tables.data()))
@@ -3001,7 +3003,6 @@ bool reshade::runtime::create_effect(size_t effect_index, size_t permutation_ind
 			return false;
 		}
 	}
-
 	if (uav_range.count != 0)
 	{
 		if (!_device->allocate_descriptor_tables(static_cast<uint32_t>(total_pass_count), permutation.layout, sampler_with_resource_view ? 2 : 3, unordered_access_view_tables.data()))
@@ -3097,7 +3098,6 @@ bool reshade::runtime::create_effect(size_t effect_index, size_t permutation_ind
 				}
 
 				api::format render_target_formats[8] = {};
-
 				if (pass.render_target_names[0].empty())
 				{
 					pass.viewport_width = _effect_permutations[permutation_index].width;
@@ -3117,7 +3117,14 @@ bool reshade::runtime::create_effect(size_t effect_index, size_t permutation_ind
 								return item.unique_name == unique_name && (item.resource != 0 || !item.semantic.empty());
 							});
 						assert(render_target_texture != _textures.cend());
-						assert(render_target_texture->semantic.empty() && render_target_texture->rtv[pass.srgb_write_enable] != 0);
+
+						const api::resource_view rtv = render_target_texture->rtv[pass.srgb_write_enable];
+						assert(rtv != 0 && render_target_texture->semantic.empty());
+
+						pass.render_target_views[render_target_count] = rtv;
+
+						const api::resource_desc res_desc = _device->get_resource_desc(render_target_texture->resource);
+						render_target_formats[render_target_count] = api::format_to_default_typed(res_desc.texture.format, pass.srgb_write_enable);
 
 						if (std::find(pass.modified_resources.cbegin(), pass.modified_resources.cend(), render_target_texture->resource) == pass.modified_resources.cend())
 						{
@@ -3126,12 +3133,6 @@ bool reshade::runtime::create_effect(size_t effect_index, size_t permutation_ind
 							if (pass.generate_mipmaps && render_target_texture->levels > 1)
 								pass.generate_mipmap_views.push_back(render_target_texture->srv[0]);
 						}
-
-						const api::resource_desc res_desc = _device->get_resource_desc(render_target_texture->resource);
-
-						render_target_formats[render_target_count] = api::format_to_default_typed(res_desc.texture.format, pass.srgb_write_enable);
-
-						pass.render_target_views[render_target_count] = render_target_texture->rtv[pass.srgb_write_enable];
 					}
 
 					subobjects.push_back({ api::pipeline_subobject_type::render_target_formats, static_cast<uint32_t>(render_target_count), render_target_formats });
@@ -3255,66 +3256,100 @@ bool reshade::runtime::create_effect(size_t effect_index, size_t permutation_ind
 				}
 			}
 
-			for (const reshadefx::sampler_binding &info : pass.sampler_bindings)
+			for (const reshadefx::sampler_binding &binding : pass.sampler_bindings)
 			{
-				api::sampler &sampler_handle = sampler_descriptors[pass_index_in_effect * sampler_range.count + info.entry_point_binding].sampler;
-
-				assert(info.entry_point_binding < 16 || sampler_with_resource_view);
-
-				// Only initialize sampler if it has not been created before
-				if (sampler_with_resource_view || 0 == (sampler_list & (1 << info.entry_point_binding)))
+				if (!sampler_with_resource_view)
 				{
-					if (!sampler_with_resource_view)
-						sampler_list |= (1 << info.entry_point_binding); // Maximum sampler slot count is 16, so a 16-bit integer is enough to hold all bindings
+					// Maximum sampler slot count is 16, so a 16-bit integer is enough to hold all bindings
+					assert(binding.entry_point_binding < 16);
 
-					if (!create_effect_sampler_state(permutation.module.samplers[info.index], sampler_handle))
-					{
-						log::message(log::level::error, "Failed to create sampler object in '%s'!", effect.source_file.u8string().c_str());
-						return false;
-					}
+					// Only initialize sampler if it has not been created before
+					if ((sampler_list & (1 << binding.entry_point_binding)) != 0)
+						continue;
 
-					api::descriptor_table_update &write = descriptor_writes.emplace_back();
-					write.table = sampler_with_resource_view ? pass.texture_table : permutation.sampler_table;
-					write.count = 1;
-					write.binding = info.entry_point_binding;
-					write.type = sampler_with_resource_view ? api::descriptor_type::sampler_with_resource_view : api::descriptor_type::sampler;
-					write.descriptors = &sampler_handle;
+					sampler_list |= (1 << binding.entry_point_binding);
 				}
+
+				api::sampler &sampler = sampler_descriptors[pass_index_in_effect * sampler_range.count + binding.entry_point_binding].sampler;
+
+				const reshadefx::sampler &sampler_info = permutation.module.samplers[binding.index];
+
+				api::sampler_desc desc;
+				desc.filter = static_cast<api::filter_mode>(sampler_info.filter);
+				desc.address_u = static_cast<api::texture_address_mode>(sampler_info.address_u);
+				desc.address_v = static_cast<api::texture_address_mode>(sampler_info.address_v);
+				desc.address_w = static_cast<api::texture_address_mode>(sampler_info.address_w);
+				desc.mip_lod_bias = sampler_info.lod_bias;
+				desc.max_anisotropy = (desc.filter == api::filter_mode::anisotropic || desc.filter == api::filter_mode::min_mag_anisotropic_mip_point) ? 16.0f : 1.0f;
+				desc.compare_op = api::compare_op::always;
+				desc.border_color[0] = 0.0f;
+				desc.border_color[1] = 0.0f;
+				desc.border_color[2] = 0.0f;
+				desc.border_color[3] = 0.0f;
+				desc.min_lod = sampler_info.min_lod;
+				desc.max_lod = sampler_info.max_lod;
+
+				// Generate hash for sampler description
+				size_t desc_hash = 2166136261;
+				for (int i = 0; i < sizeof(desc); ++i)
+					desc_hash = (desc_hash * 16777619) ^ reinterpret_cast<const uint8_t *>(&desc)[i];
+
+				if (const auto it = _effect_sampler_states.find(desc_hash);
+					it != _effect_sampler_states.end())
+				{
+					sampler = it->second;
+				}
+				else if (_device->create_sampler(desc, &sampler))
+				{
+					_effect_sampler_states.emplace(desc_hash, sampler);
+				}
+				else
+				{
+					log::message(log::level::error, "Failed to create sampler object in '%s'!", effect.source_file.u8string().c_str());
+					return false;
+				}
+
+				api::descriptor_table_update &write = descriptor_writes.emplace_back();
+				write.table = sampler_with_resource_view ? pass.texture_table : permutation.sampler_table;
+				write.binding = binding.entry_point_binding;
+				write.count = 1;
+				write.type = sampler_with_resource_view ? api::descriptor_type::sampler_with_resource_view : api::descriptor_type::sampler;
+				write.descriptors = &sampler;
 			}
 
-			for (const reshadefx::texture_binding &info : pass.texture_bindings)
+			for (const reshadefx::texture_binding &binding : pass.texture_bindings)
 			{
 				const auto sampler_texture = std::find_if(_textures.cbegin(), _textures.cend(),
-					[&unique_name = permutation.module.samplers[info.index].texture_name](const texture &item) {
+					[&unique_name = permutation.module.samplers[binding.index].texture_name](const texture &item) {
 						return item.unique_name == unique_name && (item.resource != 0 || !item.semantic.empty());
 					});
 				assert(sampler_texture != _textures.cend());
 
-				api::resource_view &srv = sampler_descriptors[pass_index_in_effect * srv_range.count + info.entry_point_binding].view;
+				api::resource_view &srv = sampler_descriptors[pass_index_in_effect * srv_range.count + binding.entry_point_binding].view;
 
 				if (sampler_with_resource_view)
 				{
 					// The sampler and descriptor table update for this 'sampler_with_resource_view' descriptor were already initialized above
 					assert(
 						srv_range.count == sampler_range.count &&
-						sampler_descriptors[pass_index_in_effect * srv_range.count + info.entry_point_binding].sampler != 0);
+						sampler_descriptors[pass_index_in_effect * srv_range.count + binding.entry_point_binding].sampler != 0);
 				}
 				else
 				{
 					api::descriptor_table_update &write = descriptor_writes.emplace_back();
 					write.table = pass.texture_table;
-					write.binding = info.entry_point_binding;
-					write.type = api::descriptor_type::shader_resource_view;
+					write.binding = binding.entry_point_binding;
 					write.count = 1;
+					write.type = api::descriptor_type::shader_resource_view;
 					write.descriptors = &srv;
 				}
 
 				if (!sampler_texture->semantic.empty())
 				{
 					if (sampler_texture->semantic == "COLOR")
-						srv = _effect_permutations[permutation_index].color_srv[info.srgb];
+						srv = _effect_permutations[permutation_index].color_srv[binding.srgb];
 					else if (const auto it = _texture_semantic_bindings.find(sampler_texture->semantic); it != _texture_semantic_bindings.end())
-						srv = info.srgb ? it->second.second : it->second.first;
+						srv = binding.srgb ? it->second.second : it->second.first;
 					else
 						srv = _empty_srv;
 
@@ -3322,27 +3357,38 @@ bool reshade::runtime::create_effect(size_t effect_index, size_t permutation_ind
 					permutation.texture_semantic_to_binding.push_back({
 						sampler_texture->semantic,
 						pass.texture_table,
-						info.entry_point_binding,
-						sampler_with_resource_view ? sampler_descriptors[pass_index_in_effect * srv_range.count + info.entry_point_binding].sampler : api::sampler { 0 },
-						info.srgb
+						binding.entry_point_binding,
+						sampler_with_resource_view ? sampler_descriptors[pass_index_in_effect * srv_range.count + binding.entry_point_binding].sampler : api::sampler { 0 },
+						binding.srgb
 					});
 				}
 				else
 				{
-					srv = sampler_texture->srv[info.srgb];
+					srv = sampler_texture->srv[binding.srgb];
 				}
 
 				assert(srv != 0);
 			}
 
-			for (const reshadefx::storage_binding &info : pass.storage_bindings)
+			for (const reshadefx::storage_binding &binding : pass.storage_bindings)
 			{
 				const auto storage_texture = std::find_if(_textures.cbegin(), _textures.cend(),
-					[&unique_name = permutation.module.storages[info.index].texture_name](const texture &item) {
+					[&unique_name = permutation.module.storages[binding.index].texture_name](const texture &item) {
 						return item.unique_name == unique_name && (item.resource != 0 || !item.semantic.empty());
 					});
 				assert(storage_texture != _textures.cend());
-				assert(storage_texture->semantic.empty() && storage_texture->uav[permutation.module.storages[info.index].level] != 0);
+
+				const api::resource_view &uav = storage_texture->uav[permutation.module.storages[binding.index].level];
+				assert(uav != 0 && storage_texture->semantic.empty());
+
+				{
+					api::descriptor_table_update &write = descriptor_writes.emplace_back();
+					write.table = pass.storage_table;
+					write.binding = binding.entry_point_binding;
+					write.count = 1;
+					write.type = api::descriptor_type::unordered_access_view;
+					write.descriptors = &uav;
+				}
 
 				if (std::find(pass.modified_resources.cbegin(), pass.modified_resources.cend(), storage_texture->resource) == pass.modified_resources.cend())
 				{
@@ -3351,13 +3397,6 @@ bool reshade::runtime::create_effect(size_t effect_index, size_t permutation_ind
 					if (pass.generate_mipmaps && storage_texture->levels > 1)
 						pass.generate_mipmap_views.push_back(storage_texture->srv[0]);
 				}
-
-				api::descriptor_table_update &write = descriptor_writes.emplace_back();
-				write.table = pass.storage_table;
-				write.binding = info.entry_point_binding;
-				write.type = api::descriptor_type::unordered_access_view;
-				write.count = 1;
-				write.descriptors = &storage_texture->uav[permutation.module.storages[info.index].level];
 			}
 		}
 
@@ -3372,45 +3411,6 @@ bool reshade::runtime::create_effect(size_t effect_index, size_t permutation_ind
 	load_textures(effect_index);
 
 	return true;
-}
-bool reshade::runtime::create_effect_sampler_state(const reshadefx::sampler_desc &info, api::sampler &sampler)
-{
-	api::sampler_desc desc;
-	desc.filter = static_cast<api::filter_mode>(info.filter);
-	desc.address_u = static_cast<api::texture_address_mode>(info.address_u);
-	desc.address_v = static_cast<api::texture_address_mode>(info.address_v);
-	desc.address_w = static_cast<api::texture_address_mode>(info.address_w);
-	desc.mip_lod_bias = info.lod_bias;
-	desc.max_anisotropy = (desc.filter == api::filter_mode::anisotropic || desc.filter == api::filter_mode::min_mag_anisotropic_mip_point) ? 16.0f : 1.0f;
-	desc.compare_op = api::compare_op::always;
-	desc.border_color[0] = 0.0f;
-	desc.border_color[1] = 0.0f;
-	desc.border_color[2] = 0.0f;
-	desc.border_color[3] = 0.0f;
-	desc.min_lod = info.min_lod;
-	desc.max_lod = info.max_lod;
-
-	// Generate hash for sampler description
-	size_t desc_hash = 2166136261;
-	for (int i = 0; i < sizeof(desc); ++i)
-		desc_hash = (desc_hash * 16777619) ^ reinterpret_cast<const uint8_t *>(&desc)[i];
-
-	if (const auto it = _effect_sampler_states.find(desc_hash);
-		it != _effect_sampler_states.end())
-	{
-		sampler = it->second;
-		return true;
-	}
-
-	if (_device->create_sampler(desc, &sampler))
-	{
-		_effect_sampler_states.emplace(desc_hash, sampler);
-		return true;
-	}
-	else
-	{
-		return false;
-	}
 }
 void reshade::runtime::destroy_effect(size_t effect_index, bool unload)
 {
@@ -3537,7 +3537,10 @@ void reshade::runtime::load_textures(size_t effect_index)
 
 		void *pixels = nullptr;
 		int width = 0, height = 1, depth = 1, channels = 0;
-		const bool is_floating_point_format = (tex.format == reshadefx::texture_format::r32f || tex.format == reshadefx::texture_format::rg32f || tex.format == reshadefx::texture_format::rgba32f);
+		const bool is_floating_point_format =
+			tex.format == reshadefx::texture_format::r32f ||
+			tex.format == reshadefx::texture_format::rg32f ||
+			tex.format == reshadefx::texture_format::rgba32f;
 
 		if (FILE *const file = _wfsopen(source_path.c_str(), L"rb", SH_DENYNO))
 		{
@@ -4302,9 +4305,13 @@ void reshade::runtime::update_effects()
 
 	if (!is_loading() && !_is_in_preset_transition && !_reload_required_effects.empty())
 	{
-		save_current_preset(); // Save preset preprocessor definitions (careful to not do this during a preset transition)
-
 		_reload_remaining_effects = 0;
+
+		// Sort list so that all default permutations are reloaded first (since that resets the entire effect), before other permutations
+		std::sort(_reload_required_effects.begin(), _reload_required_effects.end(),
+			[](const std::pair<size_t, size_t> &lhs, const std::pair<size_t, size_t> &rhs) {
+				return lhs.second < rhs.second || (lhs.second == rhs.second && lhs.first < rhs.first);
+			});
 
 		for (size_t i = 0; i < _reload_required_effects.size(); ++i)
 		{
@@ -4324,6 +4331,10 @@ void reshade::runtime::update_effects()
 			}
 			else
 			{
+				// This resize should only happen on the first non-default permutation, before launching threads that can access it
+				if (_effects[effect_index].permutations.size() < _effect_permutations.size())
+					_effects[effect_index].permutations.resize(_effect_permutations.size());
+
 				_reload_remaining_effects += 1;
 
 				_worker_threads.emplace_back([this, effect_index, permutation_index]() {
@@ -4756,12 +4767,12 @@ void reshade::runtime::render_technique(technique &tech, api::command_list *cmd_
 
 	// Update shader constants
 	if (void *mapped_uniform_data;
-		effect.cb != 0 && _device->map_buffer_region(effect.cb, 0, std::numeric_limits<uint64_t>::max(), api::map_access::write_discard, &mapped_uniform_data))
+		effect.cb != 0 && _device->map_buffer_region(effect.cb, 0, effect.uniform_data_storage.size(), api::map_access::write_discard, &mapped_uniform_data))
 	{
 		std::memcpy(mapped_uniform_data, effect.uniform_data_storage.data(), effect.uniform_data_storage.size());
 		_device->unmap_buffer_region(effect.cb);
 	}
-	else if (_renderer_id == 0x9000)
+	else if (_device->get_api() == api::device_api::d3d9)
 	{
 		cmd_list->push_constants(api::shader_stage::all, permutation.layout, 0, 0, static_cast<uint32_t>(effect.uniform_data_storage.size() / 4), effect.uniform_data_storage.data());
 	}
@@ -4899,7 +4910,7 @@ void reshade::runtime::render_technique(technique &tech, api::command_list *cmd_
 			};
 			cmd_list->bind_scissor_rects(0, 1, &scissor_rect);
 
-			if (_renderer_id == 0x9000)
+			if (_device->get_api() == api::device_api::d3d9)
 			{
 				// Set __TEXEL_SIZE__ constant (see effect_codegen_hlsl.cpp)
 				const float texel_size[4] = {

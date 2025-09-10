@@ -197,6 +197,14 @@ namespace reshade::imgui
 		/// </summary>
 		void set_line_spacing(float spacing) { _line_spacing = spacing; }
 
+		/// <summary>
+		/// Changes the color of a section of text.
+		/// </summary>
+		/// <param name="beg">First character to be colored.</param>
+		/// <param name="end">Last character to be colored.</param>
+		/// <param name="col">Color to use.</param>
+		void colorize(const text_pos &beg, const text_pos &end, color col);
+
 	private:
 		struct glyph
 		{
