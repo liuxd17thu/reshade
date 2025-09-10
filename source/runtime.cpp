@@ -1406,7 +1406,7 @@ void reshade::runtime::load_current_preset()
 			case reshadefx::type::t_bool:
 			case reshadefx::type::t_uint:
 				get_uniform_value(variable, values.as_uint, variable.type.components());
-				preset.get(effect_name, variable.name, values.as_uint);
+				preset.get(real_name, variable.name, values.as_uint);
 				set_uniform_value(variable, values.as_uint, variable.type.components());
 				break;
 			case reshadefx::type::t_float:
