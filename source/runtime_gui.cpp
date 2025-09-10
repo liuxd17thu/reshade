@@ -2503,8 +2503,15 @@ void reshade::runtime::draw_gui_home()
 }
 void reshade::runtime::draw_gui_settings()
 {
-	if (ImGui::Button(ICON_FK_FOLDER " " + _("Open base folder in explorer"), ImVec2(ImGui::GetContentRegionAvail().x, 0)))
+	if (ImGui::Button(ICON_FK_FOLDER " " + _("Open base folder in explorer"), ImVec2(ImGui::GetContentRegionAvail().x - ImGui::GetFrameHeight() - _imgui_context->Style.ItemSpacing.x, 0)))
 		utils::open_explorer(_config_path);
+
+	ImGui::SameLine(0, _imgui_context->Style.ItemSpacing.x);
+	if (ImGui::Button(ICON_FK_FLOPPY, ImVec2(ImGui::GetFrameHeight(), 0)))
+	{
+		save_config();
+		ini_file::flush_cache(_config_path);
+	}
 
 	ImGui::Spacing();
 
