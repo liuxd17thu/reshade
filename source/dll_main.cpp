@@ -78,7 +78,7 @@ std::filesystem::path get_base_path(bool default_to_target_executable_path = fal
 	std::filesystem::path result;
 
 	// Cannot use global config here yet, since it uses base path for look up, so look at config file next to target executable instead
-	if (ini_file::load_cache(g_target_executable_path.parent_path() / L"ReShade.ini").get("INSTALL", "BasePath", result) &&
+	if (reshade::ini_file::load_cache(g_target_executable_path.parent_path() / L"ReShade.ini").get("INSTALL", "BasePath", result) &&
 		resolve_env_path(result))
 		return result;
 
@@ -149,7 +149,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 
 			g_reshade_base_path = get_base_path(default_base_to_target_executable_path);
 
-			const ini_file &config = reshade::global_config();
+			const reshade::ini_file &config = reshade::global_config();
 
 			// When ReShade is not loaded by proxy, only actually load when a configuration file exists for the target executable
 			// This e.g. prevents loading the implicit Vulkan layer when not explicitly enabled for an application
@@ -223,6 +223,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 #ifndef NDEBUG
 			if (config.get("INSTALL", "DumpExceptions"))
 			{
+				// Load debug helper library as soon as possible, so that it is later available when an exception is handled
 				CreateThread(nullptr, 0, reinterpret_cast<LPTHREAD_START_ROUTINE>(&LoadLibraryW), const_cast<LPVOID>(static_cast<LPCVOID>(L"dbghelp.dll")), 0, nullptr);
 
 				s_exception_handler_handle = AddVectoredExceptionHandler(1, [](PEXCEPTION_POINTERS ex) -> LONG {
@@ -287,7 +288,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 
 					reshade::hooks::register_module(L"user32.dll");
 
-					// Always register DirectInput 1-8 module (to overwrite cooperative level)
 					reshade::hooks::register_module(get_system_path() / L"dinput.dll");
 					reshade::hooks::register_module(get_system_path() / L"dinput8.dll");
 				}
@@ -308,8 +308,16 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 
 				if (!GetEnvironmentVariableW(L"RESHADE_DISABLE_GRAPHICS_HOOK", nullptr, 0))
 				{
-					// Only register D3D hooks when module is not called opengl32.dll
-					if (!is_opengl)
+					// Can optionally hook the graphics entry points exported by NVIDIA Streamline, instead of the system ones, to have ReShade apply before Streamline
+					// This does not work when module is called dxgi.dll though, as Streamline would then load the ReShade module itself again to continue its call chain 
+					const bool streamline = !is_d3d && !is_dxgi && config.get("INSTALL", "HookStreamline");
+					if (streamline)
+					{
+						reshade::hooks::register_module(L"sl.interposer.dll");
+					}
+
+					// Only register DirectX hooks when module is not called opengl32.dll
+					if ((!is_opengl && !streamline) || config.get("INSTALL", "HookDirectX"))
 					{
 						// Register DirectDraw module in case it was used to load ReShade (but ignore otherwise)
 						if (_wcsicmp(module_name.c_str(), L"ddraw") == 0)
@@ -331,8 +339,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 					}
 
 					// Only register OpenGL hooks when module is not called any D3D module name
-					if (!is_d3d && !is_dxgi)
+					if ((!is_d3d && !is_dxgi && !streamline) || config.get("INSTALL", "HookOpenGL"))
+					{
 						reshade::hooks::register_module(get_system_path() / L"opengl32.dll");
+					}
 
 					// Do not register Vulkan hooks, since Vulkan layering mechanism is used instead
 
@@ -341,6 +351,14 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 			}
 
 			reshade::log::message(reshade::log::level::info, "Initialized.");
+
+#if RESHADE_ADDON
+			// It is not safe to call 'LoadLibrary' from 'DllMain', but there are cases where add-ons want to be loaded as early as possible, so at least give the option
+			if (config.get("ADDON", "LoadFromDllMain"))
+			{
+				reshade::load_addons();
+			}
+#endif
 			break;
 		}
 		case DLL_PROCESS_DETACH:
@@ -349,7 +367,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 
 #if RESHADE_ADDON
 			if (reshade::has_loaded_addons())
-				reshade::log::message(reshade::log::level::warning, "Add-ons are still loaded! Application may crash on exit.");
+			{
+				if (reshade::global_config().get("ADDON", "LoadFromDllMain"))
+					reshade::unload_addons();
+				else
+					reshade::log::message(reshade::log::level::warning, "Add-ons are still loaded! Application may crash on exit.");
+			}
 #endif
 
 			reshade::hooks::uninstall();

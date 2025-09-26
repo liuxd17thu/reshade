@@ -42,6 +42,7 @@ bool D3D12CommandQueue::check_and_upgrade_interface(REFIID riid)
 
 	static constexpr IID iid_lookup[] = {
 		__uuidof(ID3D12CommandQueue),
+		__uuidof(ID3D12CommandQueue1),
 	};
 
 	for (unsigned short version = 0; version < ARRAYSIZE(iid_lookup); ++version)
@@ -77,6 +78,15 @@ HRESULT STDMETHODCALLTYPE D3D12CommandQueue::QueryInterface(REFIID riid, void **
 	{
 		AddRef();
 		*ppvObj = this;
+		return S_OK;
+	}
+
+	// Interface ID to query the original object from a proxy object
+	constexpr GUID IID_UnwrappedObject = { 0x7f2c9a11, 0x3b4e, 0x4d6a, { 0x81, 0x2f, 0x5e, 0x9c, 0xd3, 0x7a, 0x1b, 0x42 } }; // {7F2C9A11-3B4E-4D6A-812F-5E9CD37A1B42}
+	if (riid == IID_UnwrappedObject)
+	{
+		_orig->AddRef();
+		*ppvObj = _orig;
 		return S_OK;
 	}
 
@@ -227,4 +237,25 @@ HRESULT STDMETHODCALLTYPE D3D12CommandQueue::GetClockCalibration(UINT64 *pGpuTim
 D3D12_COMMAND_QUEUE_DESC STDMETHODCALLTYPE D3D12CommandQueue::GetDesc()
 {
 	return _orig->GetDesc();
+}
+
+HRESULT STDMETHODCALLTYPE D3D12CommandQueue::SetProcessPriority(D3D12_COMMAND_QUEUE_PROCESS_PRIORITY Priority)
+{
+	assert(_interface_version >= 1);
+	return static_cast<ID3D12CommandQueue1 *>(_orig)->SetProcessPriority(Priority);
+}
+HRESULT STDMETHODCALLTYPE D3D12CommandQueue::GetProcessPriority(D3D12_COMMAND_QUEUE_PROCESS_PRIORITY *pOutValue)
+{
+	assert(_interface_version >= 1);
+	return static_cast<ID3D12CommandQueue1 *>(_orig)->GetProcessPriority(pOutValue);
+}
+HRESULT STDMETHODCALLTYPE D3D12CommandQueue::SetGlobalPriority(D3D12_COMMAND_QUEUE_GLOBAL_PRIORITY Priority)
+{
+	assert(_interface_version >= 1);
+	return static_cast<ID3D12CommandQueue1 *>(_orig)->SetGlobalPriority(Priority);
+}
+HRESULT STDMETHODCALLTYPE D3D12CommandQueue::GetGlobalPriority(D3D12_COMMAND_QUEUE_GLOBAL_PRIORITY *pOutValue)
+{
+	assert(_interface_version >= 1);
+	return static_cast<ID3D12CommandQueue1 *>(_orig)->GetGlobalPriority(pOutValue);
 }

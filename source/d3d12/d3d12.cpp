@@ -4,6 +4,7 @@
  */
 
 #include "d3d12_device.hpp"
+#include "dxgi/dxgi_adapter.hpp"
 #include "dll_log.hpp" // Include late to get 'hr_to_string' helper function
 #include "com_utils.hpp"
 #include "hook_manager.hpp"
@@ -28,6 +29,10 @@ extern "C" HRESULT WINAPI D3D12CreateDevice(IUnknown *pAdapter, D3D_FEATURE_LEVE
 		reshade::log::level::info,
 		"Redirecting D3D12CreateDevice(pAdapter = %p, MinimumFeatureLevel = %x, riid = %s, ppDevice = %p) ...",
 		pAdapter, MinimumFeatureLevel, reshade::log::iid_to_string(riid).c_str(), ppDevice);
+
+	com_ptr<DXGIAdapter> adapter_proxy;
+	if (pAdapter && SUCCEEDED(pAdapter->QueryInterface(&adapter_proxy)))
+		pAdapter = adapter_proxy->_orig;
 
 #if RESHADE_ADDON >= 2
 	if (ppDevice != nullptr)
@@ -63,11 +68,17 @@ extern "C" HRESULT WINAPI D3D12CreateDevice(IUnknown *pAdapter, D3D_FEATURE_LEVE
 	const auto device = static_cast<ID3D12Device *>(*ppDevice);
 
 	// Direct3D 12 devices are singletons per adapter, so first check if one was already created previously
-	const auto device_proxy_existing = get_private_pointer_d3dx<D3D12Device>(device);
-	const auto device_proxy = (device_proxy_existing != nullptr) ? device_proxy_existing : new D3D12Device(device);
-
-	if (device_proxy_existing != nullptr)
-		device_proxy_existing->_ref++;
+	D3D12Device *device_proxy = nullptr;
+	D3D12Device *const device_proxy_existing = get_private_pointer_d3dx<D3D12Device>(device);
+	if (device_proxy_existing != nullptr && device_proxy_existing->_orig == device)
+	{
+		InterlockedIncrement(&device_proxy_existing->_ref);
+		device_proxy = device_proxy_existing;
+	}
+	else
+	{
+		device_proxy = new D3D12Device(device);
+	}
 
 #if RESHADE_ADDON >= 2
 	reshade::unload_addons();

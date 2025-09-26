@@ -12,10 +12,151 @@
 #include <cstring> // std::memcpy, std::strcmp, std::strncmp, std::strncpy
 #include <algorithm> // std::copy_n, std::fill_n, std::max
 
-#define gl gl3wProcs.gl
+#define RESHADE_OPENGL_IMPORT_WITH_VULKAN 1
 
-reshade::opengl::device_impl::device_impl(HDC initial_hdc, HGLRC shared_hglrc, bool compatibility_context) :
+#if RESHADE_OPENGL_IMPORT_WITH_VULKAN
+#include "vulkan/vulkan_impl_type_convert.hpp"
+
+// There is no API in OpenGL to query the memory size of a resource, but that information is necessary to import an external resource
+// To solve this, temporarily initialize Vulkan and use it to query the memory requirements instead
+static GLuint64 get_resource_import_size(const reshade::api::resource_desc &desc, const GLubyte device_luid[8])
+{
+	const auto vulkan_module = LoadLibraryW(L"vulkan-1.dll");
+	if (vulkan_module == nullptr)
+	{
+		reshade::log::message(reshade::log::level::error, "Failed to load Vulkan!");
+		return 0;
+	}
+
+	GLuint64 import_size = 0;
+
+	GladVulkanContext vk;
+	vk.GetDeviceProcAddr = reinterpret_cast<PFN_vkGetDeviceProcAddr>(GetProcAddress(vulkan_module, "vkGetDeviceProcAddr"));
+	vk.GetInstanceProcAddr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(GetProcAddress(vulkan_module, "vkGetInstanceProcAddr"));
+
+	if (vk.GetInstanceProcAddr != nullptr && vk.GetDeviceProcAddr != nullptr)
+	{
+		vk.CreateInstance = reinterpret_cast<PFN_vkCreateInstance>(vk.GetInstanceProcAddr(nullptr, "vkCreateInstance"));
+		assert(vk.CreateInstance != nullptr);
+
+		// Create temporary Vulkan instance
+		VkApplicationInfo app_info { VK_STRUCTURE_TYPE_APPLICATION_INFO };
+		app_info.apiVersion = VK_API_VERSION_1_3;
+		app_info.pApplicationName = "ReShade";
+		VkInstanceCreateInfo instance_create_info = { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
+		instance_create_info.pApplicationInfo = &app_info;
+
+		VkInstance instance = VK_NULL_HANDLE;
+		if (vk.CreateInstance(&instance_create_info, nullptr, &instance) == VK_SUCCESS)
+		{
+			vk.DestroyInstance = reinterpret_cast<PFN_vkDestroyInstance>(vk.GetInstanceProcAddr(instance, "vkDestroyInstance"));
+			assert(vk.DestroyInstance != nullptr);
+			vk.EnumeratePhysicalDevices = reinterpret_cast<PFN_vkEnumeratePhysicalDevices>(vk.GetInstanceProcAddr(instance, "vkEnumeratePhysicalDevices"));
+			assert(vk.EnumeratePhysicalDevices != nullptr);
+			vk.GetPhysicalDeviceProperties2 = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties2>(vk.GetInstanceProcAddr(instance, "vkGetPhysicalDeviceProperties2"));
+			assert(vk.GetPhysicalDeviceProperties2 != nullptr);
+
+			// Find the same physical device used by the OpenGL context
+			uint32_t num_physical_devices = 0;
+			vk.EnumeratePhysicalDevices(instance, &num_physical_devices, nullptr);
+			std::vector<VkPhysicalDevice> physical_devices(num_physical_devices);
+			vk.EnumeratePhysicalDevices(instance, &num_physical_devices, physical_devices.data());
+
+			VkPhysicalDevice physical_device = VK_NULL_HANDLE;
+			for (uint32_t i = 0; i < num_physical_devices; ++i)
+			{
+				VkPhysicalDeviceProperties2 props { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 };
+				VkPhysicalDeviceIDProperties device_id_props { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES };
+				props.pNext = &device_id_props;
+				vk.GetPhysicalDeviceProperties2(physical_devices[i], &props);
+
+				if (device_id_props.deviceLUIDValid && std::memcmp(device_id_props.deviceLUID, device_luid, 8) == 0)
+				{
+					physical_device = physical_devices[i];
+					break;
+				}
+			}
+
+			if (physical_device != VK_NULL_HANDLE)
+			{
+				vk.GetPhysicalDeviceFeatures2 = reinterpret_cast<PFN_vkGetPhysicalDeviceFeatures2>(vk.GetInstanceProcAddr(instance, "vkGetPhysicalDeviceFeatures2"));
+				assert(vk.GetPhysicalDeviceFeatures2 != nullptr);
+				vk.CreateDevice = reinterpret_cast<PFN_vkCreateDevice>(vk.GetInstanceProcAddr(instance, "vkCreateDevice"));
+				assert(vk.CreateDevice != nullptr);
+
+				VkPhysicalDeviceFeatures2 features { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
+				VkPhysicalDeviceMaintenance9FeaturesKHR maintenance9_features { VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_9_FEATURES_KHR };
+				features.pNext = &maintenance9_features;
+				vk.GetPhysicalDeviceFeatures2(physical_device, &features);
+
+				// Create temporary Vulkan device
+				float queue_priority = 0.0f;
+				VkDeviceQueueCreateInfo queue_info;
+
+				VkDeviceCreateInfo device_create_info { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
+				if (maintenance9_features.maintenance9)
+				{
+					static const char *maintenance9_name = VK_KHR_MAINTENANCE_9_EXTENSION_NAME;
+
+					device_create_info.pNext = &maintenance9_features;
+					device_create_info.enabledExtensionCount = 1;
+					device_create_info.ppEnabledExtensionNames = &maintenance9_name;
+				}
+				else
+				{
+					queue_info = { VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO };
+					queue_info.queueCount = 1;
+					queue_info.pQueuePriorities = &queue_priority;
+
+					device_create_info.queueCreateInfoCount = 1;
+					device_create_info.pQueueCreateInfos = &queue_info;
+				}
+
+				VkDevice device = VK_NULL_HANDLE;
+				if (vk.CreateDevice(physical_device, &device_create_info, nullptr, &device) == VK_SUCCESS)
+				{
+					vk.DestroyDevice = reinterpret_cast<PFN_vkDestroyDevice>(vk.GetDeviceProcAddr(device, "vkDestroyDevice"));
+					assert(vk.DestroyDevice != nullptr);
+					vk.GetDeviceImageMemoryRequirements = reinterpret_cast<PFN_vkGetDeviceImageMemoryRequirements>(vk.GetDeviceProcAddr(device, "vkGetDeviceImageMemoryRequirements"));
+					assert(vk.GetDeviceImageMemoryRequirements != nullptr);
+
+					VkImageCreateInfo create_info { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
+					reshade::vulkan::convert_resource_desc(desc, create_info);
+
+					VkDeviceImageMemoryRequirements requirements_info { VK_STRUCTURE_TYPE_DEVICE_IMAGE_MEMORY_REQUIREMENTS };
+					requirements_info.pCreateInfo = &create_info;
+					VkMemoryRequirements2 requirements { VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2 };
+					vk.GetDeviceImageMemoryRequirements(device, &requirements_info, &requirements);
+
+					import_size = requirements.memoryRequirements.size;
+
+					vk.DestroyDevice(device, nullptr);
+				}
+				else
+				{
+					reshade::log::message(reshade::log::level::error, "Failed to create temporary Vulkan device!");
+				}
+			}
+
+			vk.DestroyInstance(instance, nullptr);
+		}
+		else
+		{
+			reshade::log::message(reshade::log::level::error, "Failed to create temporary Vulkan instance!");
+		}
+	}
+
+	FreeLibrary(vulkan_module);
+
+	return import_size;
+}
+#endif
+
+#define gl _dispatch_table
+
+reshade::opengl::device_impl::device_impl(HDC initial_hdc, HGLRC shared_hglrc, const GladGLContext &dispatch_table, bool compatibility_context) :
 	api_object_impl(shared_hglrc),
+	_dispatch_table(dispatch_table),
 	_compatibility_context(compatibility_context)
 {
 	// The pixel format has to be the same for all device contexts used with this rendering context, so can cache information about it here
@@ -58,11 +199,6 @@ reshade::opengl::device_impl::device_impl(HDC initial_hdc, HGLRC shared_hglrc, b
 	if (pfd.dwFlags & PFD_STEREO)
 		_default_fbo_desc.texture.depth_or_layers = 2;
 
-	const auto opengl_module = GetModuleHandleW(L"opengl32.dll");
-	assert(opengl_module != nullptr);
-	const auto wglGetProcAddress = reinterpret_cast<PROC(WINAPI *)(LPCSTR lpszProc)>(GetProcAddress(opengl_module, "wglGetProcAddress"));
-	assert(wglGetProcAddress != nullptr);
-	const auto wglGetPixelFormatAttribivARB = reinterpret_cast<BOOL(WINAPI *)(HDC hdc, int iPixelFormat, int iLayerPlane, UINT nAttributes, const int *piAttributes, int *piValues)>(wglGetProcAddress("wglGetPixelFormatAttribivARB"));
 	if (wglGetPixelFormatAttribivARB != nullptr)
 	{
 		int attrib_names[1] = { 0x2042 /* WGL_SAMPLES_ARB */ }, attrib_values[1] = {};
@@ -74,7 +210,7 @@ reshade::opengl::device_impl::device_impl(HDC initial_hdc, HGLRC shared_hglrc, b
 	}
 
 	// Check whether this context supports Direct State Access
-	_supports_dsa = gl3wIsSupported(4, 5);
+	_supports_dsa = gl.VERSION_4_5;
 
 	// Check for special extension to detect whether this is a compatibility context (https://www.khronos.org/opengl/wiki/OpenGL_Context#OpenGL_3.1_and_ARB_compatibility)
 	GLint num_extensions = 0;
@@ -88,17 +224,6 @@ reshade::opengl::device_impl::device_impl(HDC initial_hdc, HGLRC shared_hglrc, b
 			break;
 		}
 	}
-
-#ifndef NDEBUG
-	const auto debug_message_callback = [](unsigned int /*source*/, unsigned int type, unsigned int /*id*/, unsigned int /*severity*/, int /*length*/, const char *message, const void * /*userParam*/) {
-		if (type == GL_DEBUG_TYPE_ERROR || type == GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR)
-			OutputDebugStringA(message), OutputDebugStringA("\n");
-	};
-
-	gl.Enable(GL_DEBUG_OUTPUT);
-	gl.Enable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
-	gl.DebugMessageCallback(debug_message_callback, nullptr);
-#endif
 
 	// Some games use fixed resource names, which can clash with the ones ReShade generates below, since most implementations will return values linearly
 	// Reserve a configurable range of resource names in old OpenGL games (which will use a compatibility context) to work around this
@@ -182,6 +307,13 @@ bool reshade::opengl::device_impl::get_property(api::device_properties property,
 		std::strncpy(static_cast<char *>(data), reinterpret_cast<const char *>(name), 256);
 		return true;
 	}
+	case api::device_properties::adapter_luid:
+		if (gl.EXT_memory_object)
+		{
+			gl.GetUnsignedBytevEXT(GL_DEVICE_LUID_EXT, static_cast<GLubyte *>(data));
+			return true;
+		}
+		return false;
 	default:
 		return false;
 	}
@@ -236,16 +368,18 @@ bool reshade::opengl::device_impl::check_capability(api::device_caps capability)
 		return true;
 	case api::device_caps::shared_resource:
 	case api::device_caps::shared_resource_nt_handle:
-		// TODO: Implement using 'GL_EXT_memory_object' and 'GL_EXT_memory_object_win32' extensions
-		return false;
+		return gl.EXT_memory_object && gl.EXT_memory_object_win32;
 	case api::device_caps::resolve_depth_stencil:
 		return true;
 	case api::device_caps::shared_fence:
 	case api::device_caps::shared_fence_nt_handle:
-		// TODO: Implement using 'GL_EXT_semaphore' and 'GL_EXT_semaphore_win32' extensions
-		return false;
+		return gl.EXT_semaphore && gl.EXT_semaphore_win32;
 	case api::device_caps::amplification_and_mesh_shader:
 	case api::device_caps::ray_tracing:
+		return false;
+	case api::device_caps::update_buffer_region_command:
+	case api::device_caps::update_texture_region_command:
+		return true;
 	default:
 		return false;
 	}
@@ -383,7 +517,7 @@ void reshade::opengl::device_impl::destroy_sampler(api::sampler sampler)
 	gl.DeleteSamplers(1, &object);
 }
 
-bool reshade::opengl::device_impl::create_resource(const api::resource_desc &desc, const api::subresource_data *initial_data, api::resource_usage, api::resource *out_resource, HANDLE * /*shared_handle*/)
+bool reshade::opengl::device_impl::create_resource(const api::resource_desc &desc, const api::subresource_data *initial_data, api::resource_usage, api::resource *out_resource, HANDLE *shared_handle)
 {
 	*out_resource = { 0 };
 
@@ -452,10 +586,12 @@ bool reshade::opengl::device_impl::create_resource(const api::resource_desc &des
 		return false;
 	}
 
-#if 0
 	GLenum shared_handle_type = GL_NONE;
 	if ((desc.flags & api::resource_flags::shared) != 0)
 	{
+		if (!gl.EXT_memory_object || !gl.EXT_memory_object_win32)
+			return false;
+
 		// Only import is supported
 		if (shared_handle == nullptr || *shared_handle == nullptr)
 			return false;
@@ -467,10 +603,6 @@ bool reshade::opengl::device_impl::create_resource(const api::resource_desc &des
 		else
 			shared_handle_type = GL_HANDLE_TYPE_OPAQUE_WIN32_KMT_EXT;
 	}
-#else
-	if ((desc.flags & api::resource_flags::shared) != 0)
-		return false;
-#endif
 
 	GLuint object = 0;
 	GLuint prev_binding = 0;
@@ -493,7 +625,6 @@ bool reshade::opengl::device_impl::create_resource(const api::resource_desc &des
 		GLbitfield storage_flags = GL_NONE;
 		convert_resource_desc(desc, buffer_size, storage_flags);
 
-#if 0
 		if (shared_handle_type != GL_NONE)
 		{
 			GLuint mem = 0;
@@ -505,13 +636,15 @@ bool reshade::opengl::device_impl::create_resource(const api::resource_desc &des
 			gl.DeleteMemoryObjectsEXT(1, &mem);
 		}
 		else
-#endif
 		{
 			// Upload of initial data is using 'glBufferSubData', which requires the dynamic storage flag
 			if (initial_data != nullptr)
 				storage_flags |= GL_DYNAMIC_STORAGE_BIT;
 
-			gl.BufferStorage(target, buffer_size, nullptr, storage_flags);
+			if (gl.VERSION_4_4)
+				gl.BufferStorage(target, buffer_size, nullptr, storage_flags);
+			else
+				gl.BufferData(target, buffer_size, nullptr, GL_DYNAMIC_DRAW);
 		}
 
 		status = gl.GetError();
@@ -553,16 +686,26 @@ bool reshade::opengl::device_impl::create_resource(const api::resource_desc &des
 
 		GLuint depth_or_layers = desc.texture.depth_or_layers;
 
-#if 0
 		if (shared_handle_type != GL_NONE)
 		{
 			GLuint mem = 0;
 			gl.CreateMemoryObjectsEXT(1, &mem);
 
+#if RESHADE_OPENGL_IMPORT_WITH_VULKAN
+			GLubyte device_luid[8] = {};
+			gl.GetUnsignedBytevEXT(GL_DEVICE_LUID_EXT, device_luid);
+
+			GLuint64 import_size = get_resource_import_size(desc, device_luid);
+			// Fall back to naive calculation if querying the actual resource size was not successful
+			if (import_size == 0)
+#else
 			GLuint64 import_size = 0;
-			for (uint32_t level = 0, width = desc.texture.width, height = desc.texture.height; level < levels; ++level, width /= 2, height /= 2)
-				import_size += api::format_slice_pitch(desc.texture.format, api::format_row_pitch(desc.texture.format, width), height);
-			import_size *= desc.texture.depth_or_layers;
+#endif
+			{
+				for (uint32_t level = 0, width = desc.texture.width, height = desc.texture.height; level < levels; ++level, width /= 2, height /= 2)
+					import_size += api::format_slice_pitch(desc.texture.format, api::format_row_pitch(desc.texture.format, width), height);
+				import_size *= desc.texture.depth_or_layers;
+			}
 
 			gl.ImportMemoryWin32HandleEXT(mem, import_size, shared_handle_type, *shared_handle);
 
@@ -597,7 +740,6 @@ bool reshade::opengl::device_impl::create_resource(const api::resource_desc &des
 			gl.DeleteMemoryObjectsEXT(1, &mem);
 		}
 		else
-#endif
 		{
 			switch (target)
 			{
@@ -1325,7 +1467,7 @@ reshade::api::resource_view reshade::opengl::device_impl::get_framebuffer_attach
 
 			if (target == GL_TEXTURE)
 			{
-				if (gl.GetTextureParameteriv != nullptr)
+				if (gl.VERSION_4_5)
 					gl.GetTextureParameteriv(object, GL_TEXTURE_TARGET, reinterpret_cast<GLint *>(&target));
 				else
 					target = GL_TEXTURE_2D; // Assume this is a 2D texture attachment if it cannot be queried
@@ -1805,7 +1947,7 @@ void reshade::opengl::device_impl::update_texture_region(const api::subresource_
 	gl.PixelStorei(GL_UNPACK_SKIP_IMAGES, prev_unpack_skip_images);
 }
 
-static bool create_shader_module(GLenum type, const reshade::api::shader_desc &desc, GLuint &shader_object)
+bool reshade::opengl::device_impl::create_shader(GLenum type, const reshade::api::shader_desc &desc, GLuint &out_shader)
 {
 	if (desc.code_size > 5 && std::strncmp(static_cast<const char *>(desc.code), "!!ARB", 5) == 0)
 	{
@@ -1813,14 +1955,14 @@ static bool create_shader_module(GLenum type, const reshade::api::shader_desc &d
 		return false;
 	}
 
-	shader_object = gl.CreateShader(type);
+	out_shader = gl.CreateShader(type);
 
 	if (desc.code_size > 4 && *static_cast<const uint32_t *>(desc.code) == 0x07230203) // Check for SPIR-V magic number
 	{
 		assert(desc.code_size <= static_cast<size_t>(std::numeric_limits<GLsizei>::max()));
 
-		gl.ShaderBinary(1, &shader_object, GL_SHADER_BINARY_FORMAT_SPIR_V, desc.code, static_cast<GLsizei>(desc.code_size));
-		gl.SpecializeShader(shader_object, desc.entry_point != nullptr ? desc.entry_point : "main", desc.spec_constants, desc.spec_constant_ids, desc.spec_constant_values);
+		gl.ShaderBinary(1, &out_shader, GL_SHADER_BINARY_FORMAT_SPIR_V, desc.code, static_cast<GLsizei>(desc.code_size));
+		gl.SpecializeShader(out_shader, desc.entry_point != nullptr ? desc.entry_point : "main", desc.spec_constants, desc.spec_constant_ids, desc.spec_constant_values);
 	}
 	else
 	{
@@ -1829,22 +1971,22 @@ static bool create_shader_module(GLenum type, const reshade::api::shader_desc &d
 
 		const auto source = static_cast<const GLchar *>(desc.code);
 		const auto source_len = static_cast<GLint>(desc.code_size);
-		gl.ShaderSource(shader_object, 1, &source, &source_len);
-		gl.CompileShader(shader_object);
+		gl.ShaderSource(out_shader, 1, &source, &source_len);
+		gl.CompileShader(out_shader);
 	}
 
 	GLint status = GL_FALSE;
-	gl.GetShaderiv(shader_object, GL_COMPILE_STATUS, &status);
+	gl.GetShaderiv(out_shader, GL_COMPILE_STATUS, &status);
 
 	if (GL_FALSE == status)
 	{
 		GLint log_size = 0;
-		gl.GetShaderiv(shader_object, GL_INFO_LOG_LENGTH, &log_size);
+		gl.GetShaderiv(out_shader, GL_INFO_LOG_LENGTH, &log_size);
 
 		if (0 < log_size)
 		{
 			std::vector<char> log(log_size);
-			gl.GetShaderInfoLog(shader_object, log_size, nullptr, log.data());
+			gl.GetShaderInfoLog(out_shader, log_size, nullptr, log.data());
 
 			reshade::log::message(reshade::log::level::error, "Failed to compile GLSL shader:\n%s", log.data());
 		}
@@ -1876,42 +2018,42 @@ bool reshade::opengl::device_impl::create_pipeline(api::pipeline_layout, uint32_
 			assert(subobjects[i].count == 1);
 			if (static_cast<const api::shader_desc *>(subobjects[i].data)->code_size == 0)
 				break;
-			if (!create_shader_module(GL_VERTEX_SHADER, *static_cast<const api::shader_desc *>(subobjects[i].data), shaders.emplace_back()))
+			if (!create_shader(GL_VERTEX_SHADER, *static_cast<const api::shader_desc *>(subobjects[i].data), shaders.emplace_back()))
 				goto exit_failure;
 			break;
 		case api::pipeline_subobject_type::hull_shader:
 			assert(subobjects[i].count == 1);
 			if (static_cast<const api::shader_desc *>(subobjects[i].data)->code_size == 0)
 				break;
-			if (!create_shader_module(GL_TESS_CONTROL_SHADER, *static_cast<const api::shader_desc *>(subobjects[i].data), shaders.emplace_back()))
+			if (!create_shader(GL_TESS_CONTROL_SHADER, *static_cast<const api::shader_desc *>(subobjects[i].data), shaders.emplace_back()))
 				goto exit_failure;
 			break;
 		case api::pipeline_subobject_type::domain_shader:
 			assert(subobjects[i].count == 1);
 			if (static_cast<const api::shader_desc *>(subobjects[i].data)->code_size == 0)
 				break;
-			if (!create_shader_module(GL_TESS_EVALUATION_SHADER, *static_cast<const api::shader_desc *>(subobjects[i].data), shaders.emplace_back()))
+			if (!create_shader(GL_TESS_EVALUATION_SHADER, *static_cast<const api::shader_desc *>(subobjects[i].data), shaders.emplace_back()))
 				goto exit_failure;
 			break;
 		case api::pipeline_subobject_type::geometry_shader:
 			assert(subobjects[i].count == 1);
 			if (static_cast<const api::shader_desc *>(subobjects[i].data)->code_size == 0)
 				break;
-			if (!create_shader_module(GL_GEOMETRY_SHADER, *static_cast<const api::shader_desc *>(subobjects[i].data), shaders.emplace_back()))
+			if (!create_shader(GL_GEOMETRY_SHADER, *static_cast<const api::shader_desc *>(subobjects[i].data), shaders.emplace_back()))
 				goto exit_failure;
 			break;
 		case api::pipeline_subobject_type::pixel_shader:
 			assert(subobjects[i].count == 1);
 			if (static_cast<const api::shader_desc *>(subobjects[i].data)->code_size == 0)
 				break;
-			if (!create_shader_module(GL_FRAGMENT_SHADER, *static_cast<const api::shader_desc *>(subobjects[i].data), shaders.emplace_back()))
+			if (!create_shader(GL_FRAGMENT_SHADER, *static_cast<const api::shader_desc *>(subobjects[i].data), shaders.emplace_back()))
 				goto exit_failure;
 			break;
 		case api::pipeline_subobject_type::compute_shader:
 			assert(subobjects[i].count == 1);
 			if (static_cast<const api::shader_desc *>(subobjects[i].data)->code_size == 0)
 				break;
-			if (!create_shader_module(GL_COMPUTE_SHADER, *static_cast<const api::shader_desc *>(subobjects[i].data), shaders.emplace_back()))
+			if (!create_shader(GL_COMPUTE_SHADER, *static_cast<const api::shader_desc *>(subobjects[i].data), shaders.emplace_back()))
 				goto exit_failure;
 			break;
 		case api::pipeline_subobject_type::input_layout:
@@ -2010,9 +2152,6 @@ bool reshade::opengl::device_impl::create_pipeline(api::pipeline_layout, uint32_
 	impl->topology = topology;
 
 	impl->sample_alpha_to_coverage = blend_desc.alpha_to_coverage_enable;
-	impl->logic_op_enable = blend_desc.logic_op_enable[0]; // Logic operation applies to all attachments
-	impl->logic_op = convert_logic_op(blend_desc.logic_op[0]);
-	std::copy_n(blend_desc.blend_constant, 4, impl->blend_constant);
 	for (int i = 0; i < 8; ++i)
 	{
 		impl->blend_enable[i] = blend_desc.blend_enable[i];
@@ -2027,6 +2166,9 @@ bool reshade::opengl::device_impl::create_pipeline(api::pipeline_layout, uint32_
 		impl->color_write_mask[i][2] = (blend_desc.render_target_write_mask[i] & (1 << 2)) != 0;
 		impl->color_write_mask[i][3] = (blend_desc.render_target_write_mask[i] & (1 << 3)) != 0;
 	}
+	std::copy_n(blend_desc.blend_constant, 4, impl->blend_constant);
+	impl->logic_op_enable = blend_desc.logic_op_enable[0]; // Logic operation applies to all attachments
+	impl->logic_op = convert_logic_op(blend_desc.logic_op[0]);
 	impl->sample_mask = sample_mask;
 
 	impl->polygon_mode = convert_fill_mode(rasterizer_desc.fill_mode);
@@ -2046,18 +2188,18 @@ bool reshade::opengl::device_impl::create_pipeline(api::pipeline_layout, uint32_
 	impl->stencil_test = depth_stencil_desc.stencil_enable;
 	impl->front_stencil_read_mask = depth_stencil_desc.front_stencil_read_mask;
 	impl->front_stencil_write_mask = depth_stencil_desc.front_stencil_write_mask;
-	impl->front_stencil_reference_value = static_cast<GLint>(depth_stencil_desc.front_stencil_reference_value);
+	impl->front_stencil_reference_value = depth_stencil_desc.front_stencil_reference_value;
 	impl->front_stencil_func = convert_compare_op(depth_stencil_desc.front_stencil_func);
-	impl->front_stencil_op_fail = convert_stencil_op(depth_stencil_desc.front_stencil_fail_op);
-	impl->front_stencil_op_depth_fail = convert_stencil_op(depth_stencil_desc.front_stencil_depth_fail_op);
-	impl->front_stencil_op_pass = convert_stencil_op(depth_stencil_desc.front_stencil_pass_op);
+	impl->front_stencil_pass_op = convert_stencil_op(depth_stencil_desc.front_stencil_pass_op);
+	impl->front_stencil_fail_op = convert_stencil_op(depth_stencil_desc.front_stencil_fail_op);
+	impl->front_stencil_depth_fail_op = convert_stencil_op(depth_stencil_desc.front_stencil_depth_fail_op);
 	impl->back_stencil_read_mask = depth_stencil_desc.back_stencil_read_mask;
 	impl->back_stencil_write_mask = depth_stencil_desc.back_stencil_write_mask;
-	impl->back_stencil_reference_value = static_cast<GLint>(depth_stencil_desc.back_stencil_reference_value);
+	impl->back_stencil_reference_value = depth_stencil_desc.back_stencil_reference_value;
 	impl->back_stencil_func = convert_compare_op(depth_stencil_desc.back_stencil_func);
-	impl->back_stencil_op_fail = convert_stencil_op(depth_stencil_desc.back_stencil_fail_op);
-	impl->back_stencil_op_depth_fail = convert_stencil_op(depth_stencil_desc.back_stencil_depth_fail_op);
-	impl->back_stencil_op_pass = convert_stencil_op(depth_stencil_desc.back_stencil_pass_op);
+	impl->back_stencil_pass_op = convert_stencil_op(depth_stencil_desc.back_stencil_pass_op);
+	impl->back_stencil_fail_op = convert_stencil_op(depth_stencil_desc.back_stencil_fail_op);
+	impl->back_stencil_depth_fail_op = convert_stencil_op(depth_stencil_desc.back_stencil_depth_fail_op);
 
 	*out_pipeline = { reinterpret_cast<uintptr_t>(impl) };
 	return true;
@@ -2390,13 +2532,15 @@ bool reshade::opengl::device_impl::create_fence(uint64_t initial_value, api::fen
 
 	if ((flags & api::fence_flags::shared) != 0)
 	{
+		if (!gl.EXT_semaphore || !gl.EXT_semaphore_win32)
+			return false;
+
 		// Only import is supported
 		if (shared_handle == nullptr || *shared_handle == nullptr)
 			return false;
 
-#if 0
 		GLuint object = 0;
-		glGenSemaphoresEXT(1, &object);
+		gl.GenSemaphoresEXT(1, &object);
 
 		GLenum shared_handle_type;
 		if ((flags & api::fence_flags::shared_nt_handle) != 0)
@@ -2404,13 +2548,10 @@ bool reshade::opengl::device_impl::create_fence(uint64_t initial_value, api::fen
 		else
 			shared_handle_type = GL_HANDLE_TYPE_OPAQUE_WIN32_KMT_EXT;
 
-		glImportSemaphoreWin32HandleEXT(object, shared_handle_type, *shared_handle);
+		gl.ImportSemaphoreWin32HandleEXT(object, shared_handle_type, *shared_handle);
 
-		*out_fence = (0xFFFFFFFFull << 40) | object;
+		*out_fence = { (0xFFFFFFFFull << 40) | object };
 		return true;
-#else
-		return false;
-#endif
 	}
 
 	fence_impl *const impl = new fence_impl();
@@ -2424,10 +2565,12 @@ void reshade::opengl::device_impl::destroy_fence(api::fence fence)
 {
 	if ((fence.handle >> 40) == 0xFFFFFFFF)
 	{
-#if 0
+		if (!gl.EXT_semaphore)
+			return;
+
 		const GLuint object = fence.handle & 0xFFFFFFFF;
-		glDeleteSemaphoresEXT(1, &object);
-#endif
+
+		gl.DeleteSemaphoresEXT(1, &object);
 		return;
 	}
 
@@ -2446,16 +2589,14 @@ uint64_t reshade::opengl::device_impl::get_completed_fence_value(api::fence fenc
 {
 	if ((fence.handle >> 40) == 0xFFFFFFFF)
 	{
-#if 0
+		if (!gl.EXT_semaphore)
+			return 0;
+
 		const GLuint object = fence.handle & 0xFFFFFFFF;
 
 		GLuint64 value = 0;
-		glGetSemaphoreParameterui64vEXT(object, GL_D3D12_FENCE_VALUE_EXT, &value);
+		gl.GetSemaphoreParameterui64vEXT(object, GL_D3D12_FENCE_VALUE_EXT, &value);
 		return value;
-#else
-		assert(false);
-		return 0;
-#endif
 	}
 
 	const auto impl = reinterpret_cast<fence_impl *>(fence.handle);
@@ -2476,31 +2617,23 @@ uint64_t reshade::opengl::device_impl::get_completed_fence_value(api::fence fenc
 bool reshade::opengl::device_impl::wait(api::fence fence, uint64_t value, uint64_t timeout)
 {
 	if ((fence.handle >> 40) == 0xFFFFFFFF)
-	{
 		return false;
-	}
 
 	const auto impl = reinterpret_cast<fence_impl *>(fence.handle);
 	if (value > impl->current_value)
 		return false;
 
-	const GLsync &sync_object = impl->sync_objects[value % std::size(impl->sync_objects)];
-	if (sync_object != 0)
-	{
-		const GLenum res = gl.ClientWaitSync(sync_object, GL_SYNC_FLUSH_COMMANDS_BIT, timeout);
-		return res == GL_ALREADY_SIGNALED || res == GL_CONDITION_SATISFIED;
-	}
-	else
-	{
+	const GLsync sync_object = impl->sync_objects[value % std::size(impl->sync_objects)];
+	if (sync_object == 0)
 		return false;
-	}
+
+	const GLenum sync_result = gl.ClientWaitSync(sync_object, GL_SYNC_FLUSH_COMMANDS_BIT, timeout);
+	return sync_result == GL_ALREADY_SIGNALED || sync_result == GL_CONDITION_SATISFIED;
 }
 bool reshade::opengl::device_impl::signal(api::fence fence, uint64_t value)
 {
 	if ((fence.handle >> 40) == 0xFFFFFFFF)
-	{
 		return false;
-	}
 
 	const auto impl = reinterpret_cast<fence_impl *>(fence.handle);
 	if (value < impl->current_value)

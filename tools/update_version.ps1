@@ -2,9 +2,9 @@ Param(
 	[Parameter(Mandatory = $true)][string]
 	$path,
 	[string]
-	$config = "Release",
+	$config = "",
 	[string]
-	$platform = "x64"
+	$platform = ""
 )
 
 $exists = Test-Path $path
@@ -22,6 +22,8 @@ $build = $(git rev-parse --short HEAD)
 $cn2 = "Alpha 11.1"
 $cn2_pro = "Delta 11.1"
 
+$global:ReShadeVersion = $version
+
 # Increment build version for release builds
 if (($config -eq "Release") -or
     ($config -eq "Release Signed")) {
@@ -32,7 +34,7 @@ elseif ($exists) {
 	return
 }
 
-$official = Test-Path ($path + "\..\sign.pfx")
+$official = Test-Path "$path\..\sign.pfx"
 
 # Update version file with the new version information
 @"

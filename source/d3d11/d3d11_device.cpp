@@ -15,8 +15,8 @@
 
 using reshade::d3d11::to_handle;
 
-D3D11Device::D3D11Device(IDXGIDevice1 *original_dxgi_device, ID3D11Device *original) :
-	DXGIDevice(original_dxgi_device), device_impl(original)
+D3D11Device::D3D11Device(IDXGIAdapter *adapter, IDXGIDevice1 *original_dxgi_device, ID3D11Device *original) :
+	DXGIDevice(adapter, original_dxgi_device), device_impl(original)
 {
 	assert(_orig != nullptr);
 
@@ -141,6 +141,15 @@ HRESULT STDMETHODCALLTYPE D3D11Device::QueryInterface(REFIID riid, void **ppvObj
 		return S_OK;
 	}
 
+	// Interface ID to query the original object from a proxy object
+	constexpr GUID IID_UnwrappedObject = { 0x7f2c9a11, 0x3b4e, 0x4d6a, { 0x81, 0x2f, 0x5e, 0x9c, 0xd3, 0x7a, 0x1b, 0x42 } }; // {7F2C9A11-3B4E-4D6A-812F-5E9CD37A1B42}
+	if (riid == IID_UnwrappedObject)
+	{
+		_orig->AddRef();
+		*ppvObj = _orig;
+		return S_OK;
+	}
+
 	if (riid == __uuidof(ID3D11On12Device) ||
 		riid == __uuidof(ID3D11On12Device1) ||
 		riid == __uuidof(ID3D11On12Device2))
@@ -237,7 +246,7 @@ HRESULT STDMETHODCALLTYPE D3D11Device::CreateBuffer(const D3D11_BUFFER_DESC *pDe
 	{
 		ID3D11Buffer *const resource = *ppBuffer;
 
-		reshade::hooks::install("ID3D11Buffer::GetDevice", reshade::hooks::vtable_from_instance(resource), 3, reinterpret_cast<reshade::hook::address>(&ID3D11Resource_GetDevice));
+		reshade::hooks::install("ID3D11Buffer::GetDevice", reshade::hooks::vtable_from_instance(resource), 3, &ID3D11Resource_GetDevice);
 
 #if RESHADE_ADDON
 		reshade::invoke_addon_event<reshade::addon_event::init_resource>(this, desc, reinterpret_cast<const reshade::api::subresource_data *>(pInitialData), reshade::api::resource_usage::general, to_handle(resource));
@@ -292,7 +301,7 @@ HRESULT STDMETHODCALLTYPE D3D11Device::CreateTexture1D(const D3D11_TEXTURE1D_DES
 	{
 		ID3D11Texture1D *const resource = *ppTexture1D;
 
-		reshade::hooks::install("ID3D11Texture1D::GetDevice", reshade::hooks::vtable_from_instance(resource), 3, reinterpret_cast<reshade::hook::address>(&ID3D11Resource_GetDevice));
+		reshade::hooks::install("ID3D11Texture1D::GetDevice", reshade::hooks::vtable_from_instance(resource), 3, &ID3D11Resource_GetDevice);
 
 #if RESHADE_ADDON
 		reshade::invoke_addon_event<reshade::addon_event::init_resource>(this, desc, reinterpret_cast<const reshade::api::subresource_data *>(pInitialData), reshade::api::resource_usage::general, to_handle(resource));
@@ -346,7 +355,7 @@ HRESULT STDMETHODCALLTYPE D3D11Device::CreateTexture2D(const D3D11_TEXTURE2D_DES
 	{
 		ID3D11Texture2D *const resource = *ppTexture2D;
 
-		reshade::hooks::install("ID3D11Texture2D::GetDevice", reshade::hooks::vtable_from_instance(resource), 3, reinterpret_cast<reshade::hook::address>(&ID3D11Resource_GetDevice));
+		reshade::hooks::install("ID3D11Texture2D::GetDevice", reshade::hooks::vtable_from_instance(resource), 3, &ID3D11Resource_GetDevice);
 
 #if RESHADE_ADDON
 		reshade::invoke_addon_event<reshade::addon_event::init_resource>(this, desc, reinterpret_cast<const reshade::api::subresource_data *>(pInitialData), reshade::api::resource_usage::general, to_handle(resource));
@@ -400,7 +409,7 @@ HRESULT STDMETHODCALLTYPE D3D11Device::CreateTexture3D(const D3D11_TEXTURE3D_DES
 	{
 		ID3D11Texture3D *const resource = *ppTexture3D;
 
-		reshade::hooks::install("ID3D11Texture3D::GetDevice", reshade::hooks::vtable_from_instance(resource), 3, reinterpret_cast<reshade::hook::address>(&ID3D11Resource_GetDevice));
+		reshade::hooks::install("ID3D11Texture3D::GetDevice", reshade::hooks::vtable_from_instance(resource), 3, &ID3D11Resource_GetDevice);
 
 #if RESHADE_ADDON
 		reshade::invoke_addon_event<reshade::addon_event::init_resource>(this, desc, reinterpret_cast<const reshade::api::subresource_data *>(pInitialData), reshade::api::resource_usage::general, to_handle(resource));
@@ -1709,7 +1718,7 @@ HRESULT STDMETHODCALLTYPE D3D11Device::CreateTexture2D1(const D3D11_TEXTURE2D_DE
 	{
 		ID3D11Texture2D1 *const resource = *ppTexture2D;
 
-		reshade::hooks::install("ID3D11Texture2D1::GetDevice", reshade::hooks::vtable_from_instance(resource), 3, reinterpret_cast<reshade::hook::address>(&ID3D11Resource_GetDevice));
+		reshade::hooks::install("ID3D11Texture2D1::GetDevice", reshade::hooks::vtable_from_instance(resource), 3, &ID3D11Resource_GetDevice);
 
 #if RESHADE_ADDON
 		reshade::invoke_addon_event<reshade::addon_event::init_resource>(this, desc, reinterpret_cast<const reshade::api::subresource_data *>(pInitialData), reshade::api::resource_usage::general, to_handle(resource));
@@ -1765,7 +1774,7 @@ HRESULT STDMETHODCALLTYPE D3D11Device::CreateTexture3D1(const D3D11_TEXTURE3D_DE
 	{
 		ID3D11Texture3D1 *const resource = *ppTexture3D;
 
-		reshade::hooks::install("ID3D11Texture3D1::GetDevice", reshade::hooks::vtable_from_instance(resource), 3, reinterpret_cast<reshade::hook::address>(&ID3D11Resource_GetDevice));
+		reshade::hooks::install("ID3D11Texture3D1::GetDevice", reshade::hooks::vtable_from_instance(resource), 3, &ID3D11Resource_GetDevice);
 
 #if RESHADE_ADDON
 		reshade::invoke_addon_event<reshade::addon_event::init_resource>(this, desc, reinterpret_cast<const reshade::api::subresource_data *>(pInitialData), reshade::api::resource_usage::general, to_handle(resource));

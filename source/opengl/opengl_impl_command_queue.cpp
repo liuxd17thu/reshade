@@ -7,7 +7,7 @@
 #include "opengl_impl_device_context.hpp"
 #include "opengl_impl_type_convert.hpp"
 
-#define gl gl3wProcs.gl
+#define gl _device_impl->_dispatch_table
 
 reshade::opengl::device_context_impl::device_context_impl(device_impl *device, HGLRC hglrc) :
 	api_object_impl(hglrc),
@@ -15,6 +15,16 @@ reshade::opengl::device_context_impl::device_context_impl(device_impl *device, H
 	_default_fbo_width(device->_default_fbo_desc.texture.width),
 	_default_fbo_height(device->_default_fbo_desc.texture.height)
 {
+#ifndef NDEBUG
+	const auto debug_message_callback = [](unsigned int /* source */, unsigned int type, unsigned int /* id */, unsigned int /* severity */, int /* length */, const char *message, const void * /* userParam */) {
+		if (type == GL_DEBUG_TYPE_ERROR || type == GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR)
+			OutputDebugStringA(message), OutputDebugStringA("\n");
+	};
+
+	gl.Enable(GL_DEBUG_OUTPUT);
+	gl.Enable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+	gl.DebugMessageCallback(debug_message_callback, nullptr);
+#endif
 }
 reshade::opengl::device_context_impl::~device_context_impl()
 {
@@ -49,43 +59,39 @@ bool reshade::opengl::device_context_impl::wait(api::fence fence, uint64_t value
 {
 	if ((fence.handle >> 40) == 0xFFFFFFFF)
 	{
-#if 0
+		if (!gl.EXT_semaphore)
+			return false;
+
 		const GLuint object = fence.handle & 0xFFFFFFFF;
-		glSemaphoreParameterui64vEXT(object, GL_D3D12_FENCE_VALUE_EXT, &value);
-		glWaitSemaphoreEXT(object, 0, nullptr, 0, nullptr, nullptr);
+
+		gl.SemaphoreParameterui64vEXT(object, GL_D3D12_FENCE_VALUE_EXT, &value);
+		gl.WaitSemaphoreEXT(object, 0, nullptr, 0, nullptr, nullptr);
 		return true;
-#else
-		return false;
-#endif
 	}
 
 	const auto impl = reinterpret_cast<fence_impl *>(fence.handle);
 	if (value > impl->current_value)
 		return false;
 
-	const GLsync &sync_object = impl->sync_objects[value % std::size(impl->sync_objects)];
-	if (sync_object != 0)
-	{
-		gl.WaitSync(sync_object, 0, GL_TIMEOUT_IGNORED);
-		return true;
-	}
-	else
-	{
+	const GLsync sync_object = impl->sync_objects[value % std::size(impl->sync_objects)];
+	if (sync_object == 0)
 		return false;
-	}
+
+	gl.WaitSync(sync_object, 0, GL_TIMEOUT_IGNORED);
+	return true;
 }
 bool reshade::opengl::device_context_impl::signal(api::fence fence, uint64_t value)
 {
 	if ((fence.handle >> 40) == 0xFFFFFFFF)
 	{
-#if 0
+		if (!gl.EXT_semaphore)
+			return false;
+
 		const GLuint object = fence.handle & 0xFFFFFFFF;
-		glSemaphoreParameterui64vEXT(object, GL_D3D12_FENCE_VALUE_EXT, &value);
-		glSignalSemaphoreEXT(object, 0, nullptr, 0, nullptr, nullptr);
+
+		gl.SemaphoreParameterui64vEXT(object, GL_D3D12_FENCE_VALUE_EXT, &value);
+		gl.SignalSemaphoreEXT(object, 0, nullptr, 0, nullptr, nullptr);
 		return true;
-#else
-		return false;
-#endif
 	}
 
 	const auto impl = reinterpret_cast<fence_impl *>(fence.handle);

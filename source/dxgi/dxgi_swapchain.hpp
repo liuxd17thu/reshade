@@ -15,11 +15,11 @@ namespace reshade::api { enum class device_api; struct swapchain; }
 
 struct DECLSPEC_UUID("1F445F9F-9887-4C4C-9055-4E3BADAFCCA8") DXGISwapChain final : IDXGISwapChain4
 {
-	DXGISwapChain(D3D10Device *device, IDXGISwapChain  *original);
-	DXGISwapChain(D3D10Device *device, IDXGISwapChain1 *original);
-	DXGISwapChain(D3D11Device *device, IDXGISwapChain  *original);
-	DXGISwapChain(D3D11Device *device, IDXGISwapChain1 *original);
-	DXGISwapChain(D3D12CommandQueue *command_queue, IDXGISwapChain3 *original);
+	DXGISwapChain(IDXGIFactory *factory, D3D10Device *device, IDXGISwapChain  *original);
+	DXGISwapChain(IDXGIFactory *factory, D3D10Device *device, IDXGISwapChain1 *original);
+	DXGISwapChain(IDXGIFactory *factory, D3D11Device *device, IDXGISwapChain  *original);
+	DXGISwapChain(IDXGIFactory *factory, D3D11Device *device, IDXGISwapChain1 *original);
+	DXGISwapChain(IDXGIFactory *factory, D3D12CommandQueue *command_queue, IDXGISwapChain3 *original);
 	~DXGISwapChain();
 
 	DXGISwapChain(const DXGISwapChain &) = delete;
@@ -83,10 +83,10 @@ struct DECLSPEC_UUID("1F445F9F-9887-4C4C-9055-4E3BADAFCCA8") DXGISwapChain final
 	HRESULT STDMETHODCALLTYPE SetHDRMetaData(DXGI_HDR_METADATA_TYPE Type, UINT Size, void *pMetaData) override;
 	#pragma endregion
 
-	void on_init(bool resize);
-	void on_reset(bool resize);
+	void on_init([[maybe_unused]] bool resize);
+	void on_reset([[maybe_unused]] bool resize);
 	void on_present(UINT flags, [[maybe_unused]] const DXGI_PRESENT_PARAMETERS *params = nullptr);
-	void handle_device_loss(HRESULT hr);
+	void on_finish_present(HRESULT hr);
 
 	bool check_and_upgrade_interface(REFIID riid);
 
@@ -103,6 +103,8 @@ struct DECLSPEC_UUID("1F445F9F-9887-4C4C-9055-4E3BADAFCCA8") DXGISwapChain final
 	IUnknown *const _direct3d_command_queue, *_direct3d_command_queue_per_back_buffer[DXGI_MAX_SWAP_CHAIN_BUFFERS] = {};
 	const reshade::api::device_api _direct3d_version;
 
+	IDXGIFactory *const _parent_factory;
+
 	std::recursive_mutex _impl_mutex;
 	reshade::api::swapchain *const _impl;
 	bool _is_initialized = false;
@@ -111,6 +113,7 @@ struct DECLSPEC_UUID("1F445F9F-9887-4C4C-9055-4E3BADAFCCA8") DXGISwapChain final
 #if RESHADE_ADDON
 	UINT _sync_interval = UINT_MAX;
 	BOOL _current_fullscreen_state = -1;
+	bool _is_desc_modified = false;
 	DXGI_SWAP_CHAIN_DESC _orig_desc = {};
 #endif
 };

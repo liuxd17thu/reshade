@@ -5,6 +5,7 @@
 
 #include "d3d11_impl_device.hpp"
 #include "d3d11_impl_type_convert.hpp"
+#include "d3d11_extensions.hpp"
 #include <cstring> // std::memcpy, std::strlen
 #include <algorithm> // std::copy_n
 #include <utf8/unchecked.h>
@@ -31,6 +32,11 @@ static auto adapter_from_device(ID3D11Device *device, DXGI_ADAPTER_DESC *adapter
 reshade::d3d11::device_impl::device_impl(ID3D11Device *device) :
 	api_object_impl(device)
 {
+	load_driver_extensions();
+}
+reshade::d3d11::device_impl::~device_impl()
+{
+	unload_driver_extensions();
 }
 
 bool reshade::d3d11::device_impl::get_property(api::device_properties property, void *data) const
@@ -71,6 +77,14 @@ bool reshade::d3d11::device_impl::get_property(api::device_properties property, 
 		{
 			static_assert(std::size(adapter_desc.Description) <= 256);
 			utf8::unchecked::utf16to8(adapter_desc.Description, adapter_desc.Description + std::size(adapter_desc.Description), static_cast<char *>(data));
+			return true;
+		}
+		return false;
+	case api::device_properties::adapter_luid:
+		if (DXGI_ADAPTER_DESC adapter_desc;
+			adapter_from_device(_orig, &adapter_desc))
+		{
+			*static_cast<LUID *>(data) = adapter_desc.AdapterLuid;
 			return true;
 		}
 		return false;
@@ -140,6 +154,10 @@ bool reshade::d3d11::device_impl::check_capability(api::device_caps capability) 
 			return false;
 	case api::device_caps::amplification_and_mesh_shader:
 	case api::device_caps::ray_tracing:
+		return false;
+	case api::device_caps::update_buffer_region_command:
+	case api::device_caps::update_texture_region_command:
+		return true;
 	default:
 		return false;
 	}

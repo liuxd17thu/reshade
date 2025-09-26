@@ -27,28 +27,23 @@
 #define XR_USE_GRAPHICS_API_VULKAN
 #include <openxr/openxr_platform.h>
 
-struct openxr_session_data
+struct openxr_session
 {
-	const openxr_dispatch_table *dispatch_table = nullptr;
+	const XrGeneratedDispatchTable *dispatch_table = nullptr;
 	reshade::openxr::swapchain_impl *swapchain_impl = nullptr;
 };
-struct openxr_swapchain_data
+struct openxr_swapchain
 {
-	const openxr_dispatch_table *dispatch_table = nullptr;
+	const XrGeneratedDispatchTable *dispatch_table = nullptr;
 	XrSwapchainCreateFlags create_flags = 0;
 	std::vector<reshade::api::resource> surface_images;
 	std::deque<uint32_t> acquired_index;
 	uint32_t last_released_index = 0;
 };
 
-extern lockfree_linear_map<XrInstance, openxr_dispatch_table, 16> g_openxr_instances;
-static lockfree_linear_map<XrSession, openxr_session_data, 16> s_openxr_sessions;
-static lockfree_linear_map<XrSwapchain, openxr_swapchain_data, 16> s_openxr_swapchains;
-
-#define GET_DISPATCH_PTR_FROM(name, data) \
-	assert((data) != nullptr); \
-	PFN_xr##name trampoline = (data)->name; \
-	assert(trampoline != nullptr)
+static lockfree_linear_map<XrSession, openxr_session, 16> s_openxr_sessions;
+extern lockfree_linear_map<XrInstance, openxr_instance, 16> g_openxr_instances;
+static lockfree_linear_map<XrSwapchain, openxr_swapchain, 16> s_openxr_swapchains;
 
 XrResult XRAPI_CALL xrCreateSession(XrInstance instance, const XrSessionCreateInfo *pCreateInfo, XrSession *pSession)
 {
@@ -56,8 +51,8 @@ XrResult XRAPI_CALL xrCreateSession(XrInstance instance, const XrSessionCreateIn
 
 	assert(pCreateInfo != nullptr && pSession != nullptr);
 
-	const openxr_dispatch_table &dispatch_table = g_openxr_instances.at(instance);
-	GET_DISPATCH_PTR_FROM(CreateSession, &dispatch_table);
+	const XrGeneratedDispatchTable &dispatch_table = g_openxr_instances.at(instance).dispatch_table;
+	RESHADE_OPENXR_GET_DISPATCH_PTR_FROM(CreateSession, &dispatch_table);
 
 	const XrResult result = trampoline(instance, pCreateInfo, pSession);
 	if (XR_FAILED(result))
@@ -154,7 +149,7 @@ XrResult XRAPI_CALL xrCreateSession(XrInstance instance, const XrSessionCreateIn
 		reshade::log::message(reshade::log::level::warning, "Skipping OpenXR session because the system does not support the stereo view configuration.");
 	}
 
-	s_openxr_sessions.emplace(*pSession, openxr_session_data { &dispatch_table, swapchain_impl });
+	s_openxr_sessions.emplace(*pSession, openxr_session { &dispatch_table, swapchain_impl });
 
 #if RESHADE_VERBOSE_LOG
 	reshade::log::message(reshade::log::level::debug, "Returning OpenXR session %" PRIx64 ".", *pSession);
@@ -168,8 +163,8 @@ XrResult XRAPI_CALL xrDestroySession(XrSession session)
 
 	assert(session != XR_NULL_HANDLE);
 
-	const openxr_session_data &data = s_openxr_sessions.at(session);
-	GET_DISPATCH_PTR_FROM(DestroySession, data.dispatch_table);
+	const openxr_session &data = s_openxr_sessions.at(session);
+	RESHADE_OPENXR_GET_DISPATCH_PTR_FROM(DestroySession, data.dispatch_table);
 
 	delete data.swapchain_impl;
 
@@ -182,8 +177,8 @@ XrResult XRAPI_CALL xrCreateSwapchain(XrSession session, const XrSwapchainCreate
 {
 	reshade::log::message(reshade::log::level::info, "Redirecting xrCreateSwapchain(session = %" PRIx64 ", pCreateInfo = %p, pSwapchain = %p) ...", session, pCreateInfo, pSwapchain);
 
-	const openxr_session_data &data = s_openxr_sessions.at(session);
-	GET_DISPATCH_PTR_FROM(CreateSwapchain, data.dispatch_table);
+	const openxr_session &data = s_openxr_sessions.at(session);
+	RESHADE_OPENXR_GET_DISPATCH_PTR_FROM(CreateSwapchain, data.dispatch_table);
 
 	assert(pCreateInfo != nullptr && pSwapchain != nullptr);
 
@@ -246,7 +241,7 @@ XrResult XRAPI_CALL xrCreateSwapchain(XrSession session, const XrSwapchainCreate
 		}
 	}
 
-	s_openxr_swapchains.emplace(*pSwapchain, openxr_swapchain_data { data.dispatch_table, create_info.createFlags, std::move(images) });
+	s_openxr_swapchains.emplace(*pSwapchain, openxr_swapchain { data.dispatch_table, create_info.createFlags, std::move(images) });
 
 #if RESHADE_VERBOSE_LOG
 	reshade::log::message(reshade::log::level::debug, "Returning OpenXR swap chain %" PRIx64 ".", *pSwapchain);
@@ -258,8 +253,8 @@ XrResult XRAPI_CALL xrDestroySwapchain(XrSwapchain swapchain)
 {
 	reshade::log::message(reshade::log::level::info, "Redirecting xrDestroySwapchain(swapchain = %" PRIx64 ") ...", swapchain);
 
-	const openxr_swapchain_data &data = s_openxr_swapchains.at(swapchain);
-	GET_DISPATCH_PTR_FROM(DestroySwapchain, data.dispatch_table);
+	const openxr_swapchain &data = s_openxr_swapchains.at(swapchain);
+	RESHADE_OPENXR_GET_DISPATCH_PTR_FROM(DestroySwapchain, data.dispatch_table);
 
 	s_openxr_swapchains.erase(swapchain);
 
@@ -268,8 +263,8 @@ XrResult XRAPI_CALL xrDestroySwapchain(XrSwapchain swapchain)
 
 XrResult XRAPI_CALL xrAcquireSwapchainImage(XrSwapchain swapchain, const XrSwapchainImageAcquireInfo *pAcquireInfo, uint32_t *pIndex)
 {
-	openxr_swapchain_data &data = s_openxr_swapchains.at(swapchain);
-	GET_DISPATCH_PTR_FROM(AcquireSwapchainImage, data.dispatch_table);
+	openxr_swapchain &data = s_openxr_swapchains.at(swapchain);
+	RESHADE_OPENXR_GET_DISPATCH_PTR_FROM(AcquireSwapchainImage, data.dispatch_table);
 
 	const XrResult result = trampoline(swapchain, pAcquireInfo, pIndex);
 	if (XR_FAILED(result))
@@ -282,8 +277,8 @@ XrResult XRAPI_CALL xrAcquireSwapchainImage(XrSwapchain swapchain, const XrSwapc
 
 XrResult XRAPI_CALL xrReleaseSwapchainImage(XrSwapchain swapchain, const XrSwapchainImageReleaseInfo *pReleaseInfo)
 {
-	openxr_swapchain_data &data = s_openxr_swapchains.at(swapchain);
-	GET_DISPATCH_PTR_FROM(ReleaseSwapchainImage, data.dispatch_table);
+	openxr_swapchain &data = s_openxr_swapchains.at(swapchain);
+	RESHADE_OPENXR_GET_DISPATCH_PTR_FROM(ReleaseSwapchainImage, data.dispatch_table);
 
 	const XrResult result = trampoline(swapchain, pReleaseInfo);
 	if (XR_FAILED(result))
@@ -298,7 +293,7 @@ XrResult XRAPI_CALL xrReleaseSwapchainImage(XrSwapchain swapchain, const XrSwapc
 
 XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInfo *frameEndInfo)
 {
-	const openxr_session_data &data = s_openxr_sessions.at(session);
+	const openxr_session &data = s_openxr_sessions.at(session);
 
 	if (data.swapchain_impl != nullptr)
 	{
@@ -321,12 +316,12 @@ XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInfo *frameEnd
 				{
 					XrSwapchainSubImage const &sub_image = layer->views[view_count].subImage;
 
-					const openxr_swapchain_data &swapchain_data = s_openxr_swapchains.at(sub_image.swapchain);
+					const openxr_swapchain &swapchain = s_openxr_swapchains.at(sub_image.swapchain);
 
-					if ((swapchain_data.create_flags & XR_SWAPCHAIN_CREATE_STATIC_IMAGE_BIT) != 0)
+					if ((swapchain.create_flags & XR_SWAPCHAIN_CREATE_STATIC_IMAGE_BIT) != 0)
 						break; // Cannot apply effects to a static image, since it would just stack on top of the previous result every frame
 
-					view_textures[view_count] = swapchain_data.surface_images[swapchain_data.last_released_index];
+					view_textures[view_count] = swapchain.surface_images[swapchain.last_released_index];
 
 					assert(sub_image.imageRect.offset.x >= 0 && sub_image.imageRect.offset.y >= 0 && sub_image.imageRect.extent.width >= 0 && sub_image.imageRect.extent.height >= 0);
 
@@ -340,10 +335,10 @@ XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInfo *frameEnd
 
 					view_layers[view_count] = sub_image.imageArrayIndex;
 
-					swapchain_images = &swapchain_data.surface_images;
+					swapchain_images = &swapchain.surface_images;
 					if (view_textures[view_count] != view_textures[0] || view_layers[view_count] != view_layers[0])
 						swapchain_images = nullptr;
-					swap_index = swapchain_data.last_released_index;
+					swap_index = swapchain.last_released_index;
 				}
 
 				if (view_count == layer->viewCount)
@@ -355,6 +350,6 @@ XrResult XRAPI_CALL xrEndFrame(XrSession session, const XrFrameEndInfo *frameEnd
 		}
 	}
 
-	GET_DISPATCH_PTR_FROM(EndFrame, data.dispatch_table);
+	RESHADE_OPENXR_GET_DISPATCH_PTR_FROM(EndFrame, data.dispatch_table);
 	return trampoline(session, frameEndInfo);
 }

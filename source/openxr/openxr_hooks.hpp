@@ -5,12 +5,8 @@
 
 #pragma once
 
+#include <cassert>
 #include <xr_generated_dispatch_table_core.h>
-
-struct openxr_dispatch_table : public XrGeneratedDispatchTable
-{
-	XrInstance instance;
-};
 
 template <typename T>
 static const T *find_in_structure_chain(const void *structure_chain, XrStructureType type)
@@ -20,3 +16,17 @@ static const T *find_in_structure_chain(const void *structure_chain, XrStructure
 		next = reinterpret_cast<const T *>(next->next);
 	return next;
 }
+
+struct openxr_instance
+{
+	XrInstance handle;
+	XrGeneratedDispatchTable dispatch_table;
+};
+
+#define RESHADE_OPENXR_GET_DISPATCH_PTR(name) \
+	PFN_xr##name trampoline = g_openxr_instances.at(instance).dispatch_table.name; \
+	assert(trampoline != nullptr)
+#define RESHADE_OPENXR_GET_DISPATCH_PTR_FROM(name, data) \
+	assert((data) != nullptr); \
+	PFN_xr##name trampoline = (data)->name; \
+	assert(trampoline != nullptr)

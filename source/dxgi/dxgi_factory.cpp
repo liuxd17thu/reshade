@@ -4,13 +4,29 @@
  */
 
 #include "dxgi_factory.hpp"
+#include "dxgi_adapter.hpp"
 #include "dll_log.hpp"
+#include "com_utils.hpp"
 
-DXGIFactory::DXGIFactory(IDXGIFactory *original) :
+DXGIFactory::DXGIFactory(IDXGIFactory  *original) :
 	_orig(original),
 	_interface_version(0)
 {
 	assert(_orig != nullptr);
+
+	// Add proxy object to the private data of the factory, so that it can be retrieved again when only the original factory is available
+	DXGIFactory *const factory_proxy = this;
+	_orig->SetPrivateData(__uuidof(DXGIFactory), sizeof(factory_proxy), &factory_proxy);
+}
+DXGIFactory::DXGIFactory(IDXGIFactory2 *original) :
+	DXGIFactory(static_cast<IDXGIFactory *>(original))
+{
+	_interface_version = 1;
+}
+DXGIFactory::~DXGIFactory()
+{
+	// Remove pointer to this proxy object from the private data of the factory
+	_orig->SetPrivateData(__uuidof(DXGIFactory), 0, nullptr);
 }
 
 bool DXGIFactory::check_and_upgrade_interface(REFIID riid)
@@ -55,6 +71,48 @@ bool DXGIFactory::check_and_upgrade_interface(REFIID riid)
 	return false;
 }
 
+void DXGIFactory::check_and_proxy_adapter_interface(REFIID riid, void **out_adapter)
+{
+	IDXGIAdapter *const adapter = static_cast<IDXGIAdapter *>(*out_adapter);
+
+	DXGIAdapter *adapter_proxy = get_private_pointer_d3dx<DXGIAdapter>(adapter);
+	if (adapter_proxy != nullptr)
+	{
+		if (adapter_proxy->check_and_upgrade_interface(riid))
+		{
+			adapter_proxy->AddRef();
+			adapter->Release();
+			*out_adapter = adapter_proxy;
+
+#if RESHADE_VERBOSE_LOG
+			reshade::log::message(
+				reshade::log::level::debug,
+				"Returning IDXGIAdapter%hu object %p (%p).",
+				adapter_proxy->_interface_version, adapter_proxy, adapter_proxy->_orig);
+#endif
+		}
+	}
+	else
+	{
+		adapter_proxy = new DXGIAdapter(this, adapter);
+		if (adapter_proxy->check_and_upgrade_interface(riid))
+		{
+			*out_adapter = adapter_proxy;
+
+#if RESHADE_VERBOSE_LOG
+			reshade::log::message(
+				reshade::log::level::debug,
+				"Returning IDXGIAdapter%hu object %p (%p).",
+				adapter_proxy->_interface_version, adapter_proxy, adapter_proxy->_orig);
+#endif
+		}
+		else
+		{
+			delete adapter_proxy;
+		}
+	}
+}
+
 HRESULT STDMETHODCALLTYPE DXGIFactory::QueryInterface(REFIID riid, void **ppvObj)
 {
 	if (ppvObj == nullptr)
@@ -64,6 +122,15 @@ HRESULT STDMETHODCALLTYPE DXGIFactory::QueryInterface(REFIID riid, void **ppvObj
 	{
 		AddRef();
 		*ppvObj = this;
+		return S_OK;
+	}
+
+	// Interface ID to query the original object from a proxy object
+	constexpr GUID IID_UnwrappedObject = { 0x7f2c9a11, 0x3b4e, 0x4d6a, { 0x81, 0x2f, 0x5e, 0x9c, 0xd3, 0x7a, 0x1b, 0x42 } }; // {7F2C9A11-3B4E-4D6A-812F-5E9CD37A1B42}
+	if (riid == IID_UnwrappedObject)
+	{
+		_orig->AddRef();
+		*ppvObj = _orig;
 		return S_OK;
 	}
 
@@ -91,7 +158,7 @@ ULONG   STDMETHODCALLTYPE DXGIFactory::Release()
 	delete this;
 
 	const ULONG ref_orig = orig->Release();
-	if (ref_orig != 0) // Verify internal reference count
+	if (ref_orig > 1) // One reference can still be held by a DXGI device
 		reshade::log::message(reshade::log::level::warning, "Reference count for IDXGIFactory%hu object %p (%p) is inconsistent (%lu).", interface_version, this, orig, ref_orig);
 	return 0;
 }
@@ -115,7 +182,15 @@ HRESULT STDMETHODCALLTYPE DXGIFactory::GetParent(REFIID riid, void **ppParent)
 
 HRESULT STDMETHODCALLTYPE DXGIFactory::EnumAdapters(UINT Adapter, IDXGIAdapter **ppAdapter)
 {
-	return _orig->EnumAdapters(Adapter, ppAdapter);
+	reshade::log::message(
+		reshade::log::level::info,
+		"Redirecting IDXGIFactory::EnumAdapters(this = %p, Adapter = %u, ppAdapter = %p) ...",
+		this, Adapter, ppAdapter);
+
+	const HRESULT hr = _orig->EnumAdapters(Adapter, ppAdapter);
+	if (SUCCEEDED(hr))
+		check_and_proxy_adapter_interface(IID_PPV_ARGS(ppAdapter));
+	return hr;
 }
 HRESULT STDMETHODCALLTYPE DXGIFactory::MakeWindowAssociation(HWND WindowHandle, UINT Flags)
 {
@@ -139,8 +214,16 @@ HRESULT STDMETHODCALLTYPE DXGIFactory::CreateSoftwareAdapter(HMODULE Module, IDX
 
 HRESULT STDMETHODCALLTYPE DXGIFactory::EnumAdapters1(UINT Adapter, IDXGIAdapter1 **ppAdapter)
 {
+	reshade::log::message(
+		reshade::log::level::info,
+		"Redirecting IDXGIFactory1::EnumAdapters1(this = %p, Adapter = %u, ppAdapter = %p) ...",
+		this, Adapter, ppAdapter);
+
 	assert(_interface_version >= 1);
-	return static_cast<IDXGIFactory1 *>(_orig)->EnumAdapters1(Adapter, ppAdapter);
+	const HRESULT hr = static_cast<IDXGIFactory1 *>(_orig)->EnumAdapters1(Adapter, ppAdapter);
+	if (SUCCEEDED(hr))
+		check_and_proxy_adapter_interface(IID_PPV_ARGS(ppAdapter));
+	return hr;
 }
 BOOL    STDMETHODCALLTYPE DXGIFactory::IsCurrent()
 {
@@ -148,7 +231,7 @@ BOOL    STDMETHODCALLTYPE DXGIFactory::IsCurrent()
 	return static_cast<IDXGIFactory1 *>(_orig)->IsCurrent();
 }
 
-BOOL    STDMETHODCALLTYPE DXGIFactory::IsWindowedStereoEnabled(void)
+BOOL    STDMETHODCALLTYPE DXGIFactory::IsWindowedStereoEnabled()
 {
 	assert(_interface_version >= 2);
 	return static_cast<IDXGIFactory2 *>(_orig)->IsWindowedStereoEnabled();
@@ -221,8 +304,16 @@ UINT    STDMETHODCALLTYPE DXGIFactory::GetCreationFlags()
 
 HRESULT STDMETHODCALLTYPE DXGIFactory::EnumAdapterByLuid(LUID AdapterLuid, REFIID riid, void **ppvAdapter)
 {
+	reshade::log::message(
+		reshade::log::level::info,
+		"Redirecting IDXGIFactory4::EnumAdapterByLuid(this = %p, AdapterLuid = %llx, riid = %s, ppvAdapter = %p) ...",
+		this, reinterpret_cast<const LARGE_INTEGER &>(AdapterLuid).QuadPart, reshade::log::iid_to_string(riid).c_str(), ppvAdapter);
+
 	assert(_interface_version >= 4);
-	return static_cast<IDXGIFactory4 *>(_orig)->EnumAdapterByLuid(AdapterLuid, riid, ppvAdapter);
+	const HRESULT hr = static_cast<IDXGIFactory4 *>(_orig)->EnumAdapterByLuid(AdapterLuid, riid, ppvAdapter);
+	if (SUCCEEDED(hr))
+		check_and_proxy_adapter_interface(riid, ppvAdapter);
+	return hr;
 }
 HRESULT STDMETHODCALLTYPE DXGIFactory::EnumWarpAdapter(REFIID riid, void **ppvAdapter)
 {
@@ -238,8 +329,16 @@ HRESULT STDMETHODCALLTYPE DXGIFactory::CheckFeatureSupport(DXGI_FEATURE Feature,
 
 HRESULT STDMETHODCALLTYPE DXGIFactory::EnumAdapterByGpuPreference(UINT Adapter, DXGI_GPU_PREFERENCE GpuPreference, REFIID riid, void **ppvAdapter)
 {
+	reshade::log::message(
+		reshade::log::level::info,
+		"Redirecting IDXGIFactory6::EnumAdapterByGpuPreference(this = %p, Adapter = %u, GpuPreference = %d, riid = %s, ppvAdapter = %p) ...",
+		this, Adapter, GpuPreference, reshade::log::iid_to_string(riid).c_str(), ppvAdapter);
+
 	assert(_interface_version >= 6);
-	return static_cast<IDXGIFactory6 *>(_orig)->EnumAdapterByGpuPreference(Adapter, GpuPreference, riid, ppvAdapter);
+	const HRESULT hr = static_cast<IDXGIFactory6 *>(_orig)->EnumAdapterByGpuPreference(Adapter, GpuPreference, riid, ppvAdapter);
+	if (SUCCEEDED(hr))
+		check_and_proxy_adapter_interface(riid, ppvAdapter);
+	return hr;
 }
 
 HRESULT STDMETHODCALLTYPE DXGIFactory::RegisterAdaptersChangedEvent(HANDLE hEvent, DWORD *pdwCookie)

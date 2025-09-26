@@ -24,7 +24,7 @@ void reshade::api::create_state_block(api::device *device, state_block *out_stat
 		*out_state_block = { reinterpret_cast<uintptr_t>(new d3d11::state_block(reinterpret_cast<ID3D11Device *>(device->get_native()))) };
 		break;
 	case api::device_api::opengl:
-		*out_state_block = { reinterpret_cast<uintptr_t>(new opengl::state_block()) };
+		*out_state_block = { reinterpret_cast<uintptr_t>(new opengl::state_block(static_cast<opengl::device_impl *>(device))) };
 		break;
 	default:
 		*out_state_block = { 0 };
@@ -65,7 +65,7 @@ void reshade::api::apply_state(api::command_list *cmd_list, state_block state_bl
 		reinterpret_cast<d3d11::state_block *>(state_block.handle)->apply_and_release();
 		break;
 	case api::device_api::opengl:
-		reinterpret_cast<opengl::state_block *>(state_block.handle)->apply(static_cast<opengl::device_impl *>(device)->get_compatibility_context());
+		reinterpret_cast<opengl::state_block *>(state_block.handle)->apply();
 		break;
 	}
 }
@@ -85,7 +85,7 @@ void reshade::api::capture_state(api::command_list *cmd_list, state_block state_
 		reinterpret_cast<d3d11::state_block *>(state_block.handle)->capture(reinterpret_cast<ID3D11DeviceContext *>(cmd_list->get_native()));
 		break;
 	case api::device_api::opengl:
-		reinterpret_cast<opengl::state_block *>(state_block.handle)->capture(static_cast<opengl::device_impl *>(device)->get_compatibility_context());
+		reinterpret_cast<opengl::state_block *>(state_block.handle)->capture();
 		break;
 	}
 }

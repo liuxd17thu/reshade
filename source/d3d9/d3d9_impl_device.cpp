@@ -176,6 +176,13 @@ bool reshade::d3d9::device_impl::get_property(api::device_properties property, v
 			return true;
 		}
 		return false;
+	case api::device_properties::adapter_luid:
+		if (com_ptr<IDirect3D9Ex> d3dex;
+			SUCCEEDED(_d3d->QueryInterface(IID_PPV_ARGS(&d3dex))))
+		{
+			return SUCCEEDED(d3dex->GetAdapterLUID(_cp.AdapterOrdinal, static_cast<LUID *>(data)));
+		}
+		return false;
 	default:
 		return false;
 	}
@@ -226,6 +233,10 @@ bool reshade::d3d9::device_impl::check_capability(api::device_caps capability) c
 	case api::device_caps::shared_fence_nt_handle:
 	case api::device_caps::amplification_and_mesh_shader:
 	case api::device_caps::ray_tracing:
+		return false;
+	case api::device_caps::update_buffer_region_command:
+	case api::device_caps::update_texture_region_command:
+		return true;
 	default:
 		return false;
 	}
@@ -237,6 +248,9 @@ bool reshade::d3d9::device_impl::check_format_support(api::format format, api::r
 
 	DWORD d3d_usage = 0;
 	convert_resource_usage_to_d3d_usage(usage, d3d_usage);
+	if (format != api::format_to_default_typed(format, 0) &&
+		format == api::format_to_default_typed(format, 1))
+		d3d_usage |= D3DUSAGE_QUERY_SRGBREAD | D3DUSAGE_QUERY_SRGBWRITE;
 
 	const D3DFORMAT d3d_format = convert_format(format);
 	return d3d_format != D3DFMT_UNKNOWN && SUCCEEDED(_d3d->CheckDeviceFormat(_cp.AdapterOrdinal, _cp.DeviceType, D3DFMT_X8R8G8B8, d3d_usage, D3DRTYPE_TEXTURE, d3d_format));

@@ -48,6 +48,7 @@ void reshade::input::register_window_with_raw_input(window_handle window, bool n
 
 	if (!insert.second) insert.first->second |= flags;
 }
+
 std::shared_ptr<reshade::input> reshade::input::register_window(window_handle window)
 {
 	assert(window != nullptr);
@@ -543,7 +544,7 @@ bool reshade::input::is_blocking_any_mouse_cursor_warping()
 
 extern "C" BOOL WINAPI HookGetMessageA(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax)
 {
-#if 1
+#ifndef RESHADE_TEST_APPLICATION
 	DWORD mask = QS_ALLINPUT;
 	if (wMsgFilterMin != 0 || wMsgFilterMax != 0)
 	{
@@ -600,7 +601,7 @@ extern "C" BOOL WINAPI HookGetMessageA(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMi
 }
 extern "C" BOOL WINAPI HookGetMessageW(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax)
 {
-#if 1
+#ifndef RESHADE_TEST_APPLICATION
 	DWORD mask = QS_ALLINPUT;
 	if (wMsgFilterMin != 0 || wMsgFilterMax != 0)
 	{

@@ -82,6 +82,15 @@ HRESULT STDMETHODCALLTYPE Direct3DSwapChain9::QueryInterface(REFIID riid, void *
 		return S_OK;
 	}
 
+	// Interface ID to query the original object from a proxy object
+	constexpr GUID IID_UnwrappedObject = { 0x7f2c9a11, 0x3b4e, 0x4d6a, { 0x81, 0x2f, 0x5e, 0x9c, 0xd3, 0x7a, 0x1b, 0x42 } }; // {7F2C9A11-3B4E-4D6A-812F-5E9CD37A1B42}
+	if (riid == IID_UnwrappedObject)
+	{
+		_orig->AddRef();
+		*ppvObj = _orig;
+		return S_OK;
+	}
+
 	return _orig->QueryInterface(riid, ppvObj);
 }
 ULONG   STDMETHODCALLTYPE Direct3DSwapChain9::AddRef()
@@ -123,19 +132,11 @@ ULONG   STDMETHODCALLTYPE Direct3DSwapChain9::Release()
 
 HRESULT STDMETHODCALLTYPE Direct3DSwapChain9::Present(const RECT *pSourceRect, const RECT *pDestRect, HWND hDestWindowOverride, const RGNDATA *pDirtyRegion, DWORD dwFlags)
 {
-	// Skip when no presentation is requested
-	if (((dwFlags & D3DPRESENT_DONOTFLIP) == 0) &&
-		// Also skip when the same frame is presented multiple times
-		((dwFlags & D3DPRESENT_DONOTWAIT) == 0 || !_was_still_drawing_last_frame))
-	{
-		assert(!_was_still_drawing_last_frame);
-
-		on_present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
-	}
+	on_present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion, dwFlags);
 
 	const HRESULT hr = _orig->Present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion, dwFlags);
 
-	handle_device_loss(hr);
+	on_finish_present(hr);
 
 	return hr;
 }
@@ -186,7 +187,7 @@ HRESULT STDMETHODCALLTYPE Direct3DSwapChain9::GetDisplayModeEx(D3DDISPLAYMODEEX 
 	return static_cast<IDirect3DSwapChain9Ex *>(_orig)->GetDisplayModeEx(pMode, pRotation);
 }
 
-void Direct3DSwapChain9::on_init(bool resize)
+void Direct3DSwapChain9::on_init([[maybe_unused]] bool resize)
 {
 	assert(!_is_initialized);
 
@@ -207,15 +208,13 @@ void Direct3DSwapChain9::on_init(bool resize)
 		to_handle(_back_buffer.get()));
 
 	reshade::invoke_addon_event<reshade::addon_event::set_fullscreen_state>(this, pp.Windowed == FALSE, nullptr);
-#else
-	UNREFERENCED_PARAMETER(resize);
 #endif
 
 	reshade::init_effect_runtime(this);
 
 	_is_initialized = true;
 }
-void Direct3DSwapChain9::on_reset(bool resize)
+void Direct3DSwapChain9::on_reset([[maybe_unused]] bool resize)
 {
 	// May be called without a previous call to 'on_init' if a device reset had failed
 	if (!_is_initialized)
@@ -227,8 +226,6 @@ void Direct3DSwapChain9::on_reset(bool resize)
 	reshade::invoke_addon_event<reshade::addon_event::destroy_resource_view>(_device, to_handle(_back_buffer.get()));
 
 	reshade::invoke_addon_event<reshade::addon_event::destroy_swapchain>(this, resize);
-#else
-	UNREFERENCED_PARAMETER(resize);
 #endif
 
 	_back_buffer.reset();
@@ -236,8 +233,17 @@ void Direct3DSwapChain9::on_reset(bool resize)
 	_is_initialized = false;
 }
 
-void Direct3DSwapChain9::on_present(const RECT *source_rect, [[maybe_unused]] const RECT *dest_rect, HWND window_override, [[maybe_unused]] const RGNDATA *dirty_region)
+void Direct3DSwapChain9::on_present(const RECT *source_rect, [[maybe_unused]] const RECT *dest_rect, HWND window_override, [[maybe_unused]] const RGNDATA *dirty_region, DWORD flags)
 {
+	// Skip when no presentation is requested
+	if ((flags & D3DPRESENT_DONOTFLIP) != 0)
+		return;
+
+	// Also skip when the same frame is presented multiple times
+	if ((flags & D3DPRESENT_DONOTWAIT) != 0 && _was_still_drawing_last_frame)
+		return;
+	assert(!_was_still_drawing_last_frame);
+
 	assert(_is_initialized);
 
 	if (SUCCEEDED(_device->_orig->BeginScene()))
@@ -264,7 +270,7 @@ void Direct3DSwapChain9::on_present(const RECT *source_rect, [[maybe_unused]] co
 	}
 }
 
-void Direct3DSwapChain9::handle_device_loss(HRESULT hr)
+void Direct3DSwapChain9::on_finish_present(HRESULT hr)
 {
 	_was_still_drawing_last_frame = (hr == D3DERR_WASSTILLDRAWING);
 
@@ -274,4 +280,10 @@ void Direct3DSwapChain9::handle_device_loss(HRESULT hr)
 		reshade::log::message(reshade::log::level::error, "Device was lost with %s!", reshade::log::hr_to_string(hr).c_str());
 		// Do not clean up resources, since application has to call 'IDirect3DDevice9::Reset' anyway, which will take care of that
 	}
+#if RESHADE_ADDON
+	else if (!_was_still_drawing_last_frame)
+	{
+		reshade::invoke_addon_event<reshade::addon_event::finish_present>(_device, this);
+	}
+#endif
 }
