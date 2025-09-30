@@ -4179,7 +4179,7 @@ void reshade::runtime::draw_variable_editor()
 				_preset_section_editing = std::numeric_limits<size_t>::max();
 			}
 
-			if (ImGui::Button((ICON_FK_COPY"##" + effect_name).c_str(), ImVec2(edit_button_width, 3.0f * ImGui::GetFontSize()))
+			if (ImGui::Button((ICON_FK_COPY"##" + effect_name).c_str(), ImVec2(edit_button_width, 3.0f * ImGui::GetFontSize())))
 			{
 				ImGui::SetClipboardText(preset_section_text.c_str());
 				preset_section_modified = false;
