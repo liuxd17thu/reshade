@@ -264,6 +264,7 @@ void reshade::runtime::build_font_atlas()
 		cfg.PixelSnapH = true;
 
 		atlas->AddFontFromMemoryCompressedBase85TTF(FONT_ICON_BUFFER_NAME_FK, 0.0f, &cfg);
+		atlas->AddFontFromMemoryCompressedBase85TTF(FONT_ICON_BUFFER_NAME_AU, 0.0f, &cfg);
 	}
 
 	// Add editor font
@@ -2195,7 +2196,7 @@ void reshade::runtime::draw_gui_home()
 
 	if (_reload_remaining_effects != std::numeric_limits<size_t>::max())
 	{
-		ImGui::SetCursorPos(ImGui::GetWindowSize() * 0.5f - ImVec2(21, 21));
+		ImGui::SetCursorPos(ImGui::GetWindowSize() * 0.5f - ImVec2(31.5, 21.0));
 		// imgui::spinner((_effects.size() - _reload_remaining_effects) / float(_effects.size()), 16.0f * ImGui::GetFontSize() / 13, 10.0f * ImGui::GetFontSize() / 13);
 		const size_t remaining_effects = (_reload_remaining_effects.load() == std::numeric_limits<size_t>::max()) ? 0 : _reload_remaining_effects.load();
 		imgui::aurora_progress((_effects.size() - remaining_effects) / float(_effects.size()), 16.0f * ImGui::GetFontSize() / 13, 10.0f * ImGui::GetFontSize() / 13);
