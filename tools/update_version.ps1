@@ -8,7 +8,7 @@ Param(
 )
 
 $exists = Test-Path $path
-$version = 6,5,1,0
+$version = 6,6,0,0
 
 # Get version from existing file
 # if ($exists -and $(Get-Content $path | Out-String) -match "VERSION_FULL (\d+).(\d+).(\d+).(\d+)") {
@@ -19,8 +19,8 @@ $version = 6,5,1,0
 # }
 
 $build = $(git rev-parse --short HEAD)
-$cn2 = "Alpha 11.1"
-$cn2_pro = "Delta 11.1"
+$cn2 = "Alpha 12.0"
+$cn2_pro = "Delta 12.0"
 
 $global:ReShadeVersion = $version
 
@@ -34,7 +34,7 @@ elseif ($exists) {
 	return
 }
 
-$official = Test-Path "$path\..\sign.pfx"
+# $official = Test-Path "$path\..\sign.pfx"
 
 # Update version file with the new version information
 @"
