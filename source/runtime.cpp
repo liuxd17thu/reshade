@@ -1526,10 +1526,11 @@ void reshade::runtime::save_current_preset(ini_file &preset) const
 
 	for (int i = 0; i < 8; ++i)
 	{
-		if (aurora_technique_groups[i].empty())
-			continue;
 		const std::string label = "TechniqueGroup" + std::to_string(i + 1);
-		preset.set({}, label, std::move(aurora_technique_groups[i]));
+		if (aurora_technique_groups[i].empty())
+			preset.remove_key({}, label);
+		else
+			preset.set({}, label, std::move(aurora_technique_groups[i]));
 	}
 
 	// Save preset description
