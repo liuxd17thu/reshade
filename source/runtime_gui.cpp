@@ -2122,7 +2122,7 @@ void reshade::runtime::draw_gui_home()
 
 			ImGui::BeginDisabled(_current_flair == ":");
 
-			std::string detach_label = ICON_FK_DETACH;
+			std::string detach_label = ICON_FK_UNLINK;
 			detach_label += _(" Detach").data;
 			if (ImGui::ButtonEx(detach_label.c_str(), ImVec2(12.5f * ImGui::GetFontSize() - 3 * (button_height + button_spacing), button_height), ImGuiButtonFlags_NoNavFocus | ImGuiButtonFlags_PressedOnClick))
 			{
@@ -2244,7 +2244,7 @@ void reshade::runtime::draw_gui_home()
 
 		ImGui::BeginDisabled(_is_in_preset_transition);
 
-		if (ImGui::Button(ICON_FK_TOP, ImVec2(tech_button_width, 0)))
+		if (ImGui::Button(ICON_FK_EJECT, ImVec2(tech_button_width, 0)))
 		{
 			std::vector<size_t> technique_indices = _technique_sorting;
 
@@ -2272,7 +2272,7 @@ void reshade::runtime::draw_gui_home()
 		{
 			ImGui::SameLine(0, button_spacing);
 
-			if (ImGui::Button((_effects_expanded_state & 2) ? ICON_FK_COLLAPSE : ICON_FK_EXPAND, ImVec2(tech_button_width, 0)))
+			if (ImGui::Button((_effects_expanded_state & 2) ? ICON_FK_RESIZE_COMPRESS : ICON_FK_RESIZE_EXPAND, ImVec2(tech_button_width, 0)))
 				_effects_expanded_state = (~_effects_expanded_state & 2) | 1;
 			ImGui::SetItemTooltip((_effects_expanded_state & 2) ? _("Collapse all") : _("Expand all"));
 		}
@@ -5312,7 +5312,7 @@ void reshade::runtime::draw_technique_editor()
 						auto select_flair_pos = ImGui::GetCursorScreenPos();
 						bool flair_selected = false;
 
-						const std::string import_str = std::string(ICON_FK_IMPORT" ") + _("Import");
+						const std::string import_str = std::string(ICON_FK_DOWNLOAD" ") + _("Import");
 						if (ImGui::Button(import_str.c_str(), ImVec2(4.5f * ImGui::GetFontSize(), ImGui::GetFrameHeight())))
 							ImGui::OpenPopup("##SelectFrom");
 						ImGui::SetNextWindowSize(ImVec2(9.0f * ImGui::GetFontSize() + _imgui_context->Style.ItemInnerSpacing.x + 2.0f, 0));
@@ -5331,7 +5331,7 @@ void reshade::runtime::draw_technique_editor()
 						ImGui::SameLine(0, 2.0f);
 						select_flair_pos = ImGui::GetCursorScreenPos();
 
-						const std::string export_str = std::string(ICON_FK_EXPORT" ") + _("Export");
+						const std::string export_str = std::string(ICON_FK_UPLOAD" ") + _("Export");
 						if (ImGui::Button(export_str.c_str(), ImVec2(4.5f * ImGui::GetFontSize(), ImGui::GetFrameHeight())))
 							ImGui::OpenPopup("##SelectTo");
 						ImGui::SetNextWindowSize(ImVec2(9.0f * ImGui::GetFontSize() + _imgui_context->Style.ItemInnerSpacing.x + 2.0f, 0));
