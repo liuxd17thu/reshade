@@ -1,6 +1,6 @@
 #include "forkawesome.h"
 
-static const char FONT_ICON_BUFFER_NAME_FK[58400+1] =
+static const char FK_compressed_data_base85[58400+1] =
     "7])#######rxC/U'/###W),##*Mc##f/5##EI[^ITeZ0%g4)=-ef6#5-2JuBJ:*bfI2NP&*RUV$]_[FHEll'vTr.>-+tEn/Dd@UCD:Lf%7*m<-(7T;-QF%U.kKYYD?gG<-b3N;6Q-0%J"
     "COmh(Oa+/(`#.crWOV=Bupt9ixYqr$=JwA-p1YsLLaw;%P?us'alVP&^@Wu.Ng.%<:%Yb%(rtAut+b+DMZCg(4h2W%0V`q2wgSe$hFrZu4A'+&dT)<#g0_)Ng8=gMBaX`<3@:B#-mu##"
     "VCDX-3on34wdJe$_/_f1%it&#A2nu5-xCT.TP'##7xS,M$@,gL*8T;-AqC*NKQFV.5G:;$5rO<No4RA-W8x/M(C>,MPZH'vj=*x'CHa+Nh-`ENK=5,M[iqwM9.gfLUXG-M9fG<-/%Vp."

@@ -190,9 +190,10 @@ void reshade::runtime::build_font_atlas()
 		if (language.find("HK") == std::string::npos && language.find("TW") == std::string::npos && language.find("Hant") == std::string::npos)
 		{
 			// Microsoft YaHei
-			_default_font_path = L"C:\\Windows\\Fonts\\msyh.ttc";
-			if (!std::filesystem::exists(_default_font_path, ec))
-				_default_font_path = L"C:\\Windows\\Fonts\\simsun.ttc";
+			if (std::filesystem::exists(L"C:\\Windows\\Fonts\\msyh.ttc", ec))
+				_default_font_path = L"C:\\Windows\\Fonts\\msyh.ttc";
+			else
+				_default_font_path = L"C:\\Windows\\Fonts\\simhei.ttf";
 		}
 		// Traditional Chinese (zh-HK, zh-TW, zh-Hant, ...)
 		else
@@ -208,7 +209,8 @@ void reshade::runtime::build_font_atlas()
 	const auto add_font_from_file = [atlas](std::filesystem::path &font_path, const ImFontConfig *font_config, std::error_code &ec) -> bool {
 		if (font_path.empty())
 		{
-			atlas->AddFontDefault(font_config);
+			// atlas->AddFontDefault(font_config);
+			atlas->AddFontFromMemoryCompressedBase85TTF(Iosevka_compressed_data_base85, 0.0f, font_config);
 			return true;
 		}
 
@@ -232,7 +234,8 @@ void reshade::runtime::build_font_atlas()
 		}
 
 		// Use default font if custom font failed to load
-		atlas->AddFontDefault(font_config);
+		// atlas->AddFontDefault(font_config);
+		atlas->AddFontFromMemoryCompressedBase85TTF(Iosevka_compressed_data_base85, 0.0f, font_config);
 		return false;
 	};
 
