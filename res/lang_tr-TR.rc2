@@ -12,12 +12,12 @@ LANGUAGE 31, 1
 STRINGTABLE
 BEGIN
 
-55975 "Yeni bir güncelleme mevcut! Lütfen %s adresine giderek yeni sürümü (v%u.%u.%u) yükleyin."
-37123 "Haberler, güncellemeler, efektler ve tartışmalar için %s adresini ziyaret edin."
+// 55975 "Yeni bir güncelleme mevcut! Lütfen %s adresine giderek yeni sürümü (v%u.%u.%u) yükleyin."
+// 37123 "Haberler, güncellemeler, efektler ve tartışmalar için %s adresini ziyaret edin."
 6954 "Derleniyor (%zu efekt kaldı)... Bu biraz sürebilir. Uygulama bir süre yanıt vermeyebilir."
 60691 "Klavye veya fare girişi algılanamadı."
 36869 "Oyun kolunu kullanın: Yapılandırma menüsünü açmak için 'sol + sağ omuz + başlat' tuşlarına basın."
-16144 "ReShade başarıyla kuruldu! Öğreticiye başlamak için '%s' tuşuna basın."
+42533 "AuroraShade başarıyla kuruldu! Öğreticiye başlamak için '%s' tuşuna basın."
 690 "Yapılandırma menüsünü açmak için '%s' tuşuna basın."
 16882 "Bazı eklentiler yüklenirken hatalar oluştu."
 2323 "Bazı efektler yüklenirken hatalar oluştu."
@@ -38,6 +38,8 @@ BEGIN
 3613 "Bu ön ayar seçim ekranıdır. Tüm değişiklikler seçili ön ayar dosyasına kaydedilir.\n\nYeni bir ön ayar eklemek için '+' düğmesine tıklayın.\nBir ön ayar düğmesine sağ tıklayarak ek seçenekler menüsünü açabilirsiniz."
 46542 "Önceki ön ayar"
 52128 "Sonraki ön ayar"
+// 52993
+52495 "Yeni bir ön ayar ekle."
 33659 "Klasörü gezginde aç"
 16638 "Otomatik Kaydet açık"
 1761 "Otomatik Kaydet"
@@ -46,14 +48,27 @@ BEGIN
 6106 "Tüm efektleri mevcut ön ayarın değerlerine sıfırla."
 55161 "Geçerli ön ayarı temizle ve kaydet (devre dışı efektlerin tüm değerlerini kaldırır)."
 54866 "Geçerli ön ayarı kaydet."
-52495 "Yeni bir ön ayar ekle."
+// 27867
+// 1204
+// 17794
+// 42302
+// 25372
+// 23458
+// 5172
+// 47367
+// 47636
 62989 "Mevcut ön ayardan devral"
 6867 "Şablon"
 31597 "Ön ayar adı"
 27907 "Seçilen dosya geçerli bir ön ayar değil!"
+// 11669
+// 20693
+// 27586
+// 49951
+// 36976
+// 48641
 37421 "Seçili ön ayar bilinmeyen efektler kullanıyor. Gerekli tüm efekt dosyalarını yüklediğinizden emin olun!"
-2606 "Hoş geldiniz! Bu, ReShade’i ilk kez başlattığınız için size kısa bir öğretici göstereceğiz ve en önemli özellikleri tanıtacağız.\n\nBu metni okumakta zorlanıyorsanız, 'Ctrl' tuşuna basılı tutun ve fare tekerleğini çevirerek yazı tipi boyutunu ayarlayın. Pencere boyutunuda değiştirebilirsiniz, pencerenin sağ kenarını tutup hareket ettirin.\n\nFare girişi çalışmıyorsa klavyeyi de kullanabilirsiniz. Ok tuşlarıyla gezin, boşluk tuşuyla bir eylemi onaylayın veya bir kontrolü seçin, 'Esc' tuşuyla kontrolden çıkın. Sekmeler arasında geçiş yapmak için 'Ctrl + Tab' tuşlarını kullanın (diğer gezinme tuşları ilk başta çalışmıyorsa bu sayfayı odaklamak için bunu kullanın).\n\nDevam etmek için 'Devam Et' düğmesine tıklayın."
-25545 "Yükleniyor ..."
+2703 "Hoş geldiniz! Bu, AuroraShade’i ilk kez başlattığınız için size kısa bir öğretici göstereceğiz ve en önemli özellikleri tanıtacağız.\n\nBu metni okumakta zorlanıyorsanız, 'Ctrl' tuşuna basılı tutun ve fare tekerleğini çevirerek yazı tipi boyutunu ayarlayın. Pencere boyutunuda değiştirebilirsiniz, pencerenin sağ kenarını tutup hareket ettirin.\n\nFare girişi çalışmıyorsa klavyeyi de kullanabilirsiniz. Ok tuşlarıyla gezin, boşluk tuşuyla bir eylemi onaylayın veya bir kontrolü seçin, 'Esc' tuşuyla kontrolden çıkın. Sekmeler arasında geçiş yapmak için 'Ctrl + Tab' tuşlarını kullanın (diğer gezinme tuşları ilk başta çalışmıyorsa bu sayfayı odaklamak için bunu kullanın).\n\nDevam etmek için 'Devam Et' düğmesine tıklayın."
 24836 "Etkin olanı üste taşı"
 46707 "Tümünü daralt"
 20841 "Tümünü genişlet"
@@ -78,6 +93,8 @@ BEGIN
 36049 "Efekt yeniden yükleme tuşu"
 41151 "Önceki ön ayar tuşu"
 20675 "Sonraki ön ayar tuşu"
+// 27437
+// 45992
 62542 "Ön ayar geçiş süresi"
 54891 "Ön ayarlar arasında geçiş yaparken yumuşak bir geçiş uygular, ancak yalnızca kayan noktalı değerler için.\nAynı efektleri içeren birden fazla ön ayar için önerilir, aksi takdirde bunu sıfıra ayarlayın.\nDeğer milisaniye cinsindendir."
 40696 "Başlangıç ön ayarı"
@@ -86,6 +103,8 @@ BEGIN
 16540 "Efekt dosyalarının (.fx) aranacağı dizin yollarının listesi.\n'\\**' ile biten yollar özyinelemeli olarak aranır."
 54466 "Doku arama yolları"
 46747 "Doku kaynağı olarak kullanılacak görüntü dosyalarının aranacağı dizinlerin listesi.\n'\\**' ile biten yollar özyinelemeli olarak aranır."
+// 2333
+// 31003
 24012 "Yalnızca şuanda etkin olan efektleri yükle"
 25062 "Efekt önbelleğini temizle"
 14824 """%s"" konumunda bulunan efekt önbelleğini temizle."
@@ -115,7 +134,9 @@ BEGIN
 58370 "Ön ayar geçiş mesajını göster"
 54153 "Ön ayar geçiş süresi sıfır olamaz; aksi takdirde geçiş mesajı gösterilmez."
 45894 """Tüm efektleri zorla yükle"" düğmesini göster"
+// 34048
 45223 "Efekt dosyalarını ağaç yerine sekmelerle gruplandır"
+// 32800
 761 "Genel stil"
 30004 "Metin düzenleyici stili"
 34840 "Genel yazı tipi"
@@ -152,7 +173,6 @@ BEGIN
 36347 "Toplam bellek kullanımı: %lld.%03lld %s"
 42207 "Satır Kaydırma"
 16256 "Günlüğü temizle"
-40136 "Crosire tarafından geliştirildi ve sürdürülmektedir."
 49329 "Bu proje çeşitli açık kaynak kütüphaneler kullanmaktadır, lisansları aşağıda listelenmiştir:"
 63124 "Yüksek ağ etkinliği tespit edildi.\nKötüye kullanımı önlemek için tüm eklentiler devre dışı bırakıldı.\n\nBu bir çok oyunculu oyun değilse, tam eklenti desteği içeren ReShade sürümünü kullanın."
 59709 "Bu ReShade sürümü yalnızca sınırlı eklenti işlevselliğine sahiptir."
@@ -172,7 +192,9 @@ BEGIN
 38344 "Geçerli Ön Ayar"
 10646 "'%s' önişlemci tanımını gerçekten kaldırmak istiyor musunuz?"
 63179 "Uygula"
+// 23747
 9813 "Tümünü varsayılanlara sıfırla"
+// 14882
 2781 "'%s' içindeki tüm değerleri gerçekten varsayılanlara sıfırlamak istiyor musunuz?"
 18455 "'%s' içindekilerin tümünü varsayılan yap"
 15955 "Varsayılanlara sıfırla"
@@ -184,8 +206,12 @@ BEGIN
 2202 "Kaynak kodu düzenle"
 58076 "Derlenmiş sonuçları göster"
 35636 "Oluşturulan kod"
+// 24770
 10061 "En üste taşı"
 9764 "En alta taşı"
+// 51885
+// 50592
+// 9294
 53670 "Kaydet"
 62309 "Seç"
 45172 "İptal"
@@ -195,6 +221,7 @@ BEGIN
 42682 "Evet"
 35957 "Hayır"
 25121 "Kapalı\nAçık\n"
+// Depth
 
 END
 
