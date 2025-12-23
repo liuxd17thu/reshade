@@ -12,12 +12,18 @@
 #include <vk_mem_alloc.h>
 #pragma warning(pop)
 #include "reshade_api_object_impl.hpp"
+#include <mutex>
 #include <shared_mutex>
+#include <vector>
 #include <unordered_map>
 
 namespace reshade::vulkan
 {
 	template <VkObjectType type> struct object_data;
+
+	class command_list_impl;
+	class command_list_immediate_impl;
+	class command_queue_impl;
 
 	class device_impl : public api::api_object_impl<VkDevice, api::device>
 	{
@@ -44,7 +50,7 @@ namespace reshade::vulkan
 		bool create_sampler(const api::sampler_desc &desc, api::sampler *out_sampler) final;
 		void destroy_sampler(api::sampler sampler) final;
 
-		bool create_resource(const api::resource_desc &desc, const api::subresource_data *initial_data, api::resource_usage initial_state, api::resource *out_resource, HANDLE *shared_handle = nullptr) final;
+		bool create_resource(const api::resource_desc &desc, const api::subresource_data *initial_data, api::resource_usage initial_state, api::resource *out_resource, void **shared_handle = nullptr) final;
 		void destroy_resource(api::resource resource) final;
 
 		api::resource_desc get_resource_desc(api::resource resource) const final;
@@ -87,7 +93,7 @@ namespace reshade::vulkan
 		void set_resource_name(api::resource resource, const char *name) final;
 		void set_resource_view_name(api::resource_view view, const char *name) final;
 
-		bool create_fence(uint64_t initial_value, api::fence_flags flags, api::fence *out_fence, HANDLE *shared_handle = nullptr) final;
+		bool create_fence(uint64_t initial_value, api::fence_flags flags, api::fence *out_fence, void **shared_handle = nullptr) final;
 		void destroy_fence(api::fence fence) final;
 
 		uint64_t get_completed_fence_value(api::fence fence) const final;

@@ -26,11 +26,11 @@ auto reshade::d3d11::convert_color_space(api::color_space type) -> DXGI_COLOR_SP
 	default:
 		assert(false);
 		[[fallthrough]];
-	case api::color_space::srgb_nonlinear:
+	case api::color_space::srgb:
 		return DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
-	case api::color_space::extended_srgb_linear:
+	case api::color_space::scrgb:
 		return DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
-	case api::color_space::hdr10_st2084:
+	case api::color_space::hdr10_pq:
 		return DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
 	case api::color_space::hdr10_hlg:
 		return DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P2020;
@@ -44,11 +44,11 @@ auto reshade::d3d11::convert_color_space(DXGI_COLOR_SPACE_TYPE type) -> api::col
 		assert(false);
 		return api::color_space::unknown;
 	case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709:
-		return api::color_space::srgb_nonlinear;
+		return api::color_space::srgb;
 	case DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709:
-		return api::color_space::extended_srgb_linear;
+		return api::color_space::scrgb;
 	case DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020:
-		return api::color_space::hdr10_st2084;
+		return api::color_space::hdr10_pq;
 	case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P2020:
 		return api::color_space::hdr10_hlg;
 	}
@@ -372,6 +372,8 @@ reshade::api::resource_desc reshade::d3d11::convert_resource_desc(const D3D11_BU
 
 	if (internal_desc.Usage == D3D11_USAGE_DYNAMIC)
 		desc.flags |= api::resource_flags::dynamic;
+	else if (internal_desc.Usage == D3D11_USAGE_IMMUTABLE)
+		desc.flags |= api::resource_flags::immutable;
 
 	if ((internal_desc.MiscFlags & D3D11_RESOURCE_MISC_DRAWINDIRECT_ARGS) != 0)
 		desc.usage |= api::resource_usage::indirect_argument;
@@ -402,6 +404,8 @@ reshade::api::resource_desc reshade::d3d11::convert_resource_desc(const D3D11_TE
 
 	if (internal_desc.Usage == D3D11_USAGE_DYNAMIC)
 		desc.flags |= api::resource_flags::dynamic;
+	else if (internal_desc.Usage == D3D11_USAGE_IMMUTABLE)
+		desc.flags |= api::resource_flags::immutable;
 
 	return desc;
 }
@@ -424,6 +428,8 @@ reshade::api::resource_desc reshade::d3d11::convert_resource_desc(const D3D11_TE
 
 	if (internal_desc.Usage == D3D11_USAGE_DYNAMIC)
 		desc.flags |= api::resource_flags::dynamic;
+	else if (internal_desc.Usage == D3D11_USAGE_IMMUTABLE)
+		desc.flags |= api::resource_flags::immutable;
 
 	return desc;
 }
@@ -450,6 +456,8 @@ reshade::api::resource_desc reshade::d3d11::convert_resource_desc(const D3D11_TE
 
 	if (internal_desc.Usage == D3D11_USAGE_DYNAMIC)
 		desc.flags |= api::resource_flags::dynamic;
+	else if (internal_desc.Usage == D3D11_USAGE_IMMUTABLE)
+		desc.flags |= api::resource_flags::immutable;
 
 	return desc;
 }
@@ -721,7 +729,7 @@ void reshade::d3d11::convert_resource_view_desc(const api::resource_view_desc &d
 	if (desc.type == api::resource_view_type::texture_2d || desc.type == api::resource_view_type::texture_2d_array)
 	{
 		internal_desc.Format = convert_format(desc.format);
-		assert(desc.type == api::resource_view_type::buffer || desc.texture.level_count == 1);
+		assert(desc.texture.level_count == 1);
 		switch (desc.type)
 		{
 		case api::resource_view_type::texture_2d:
@@ -1080,7 +1088,7 @@ void reshade::d3d11::convert_blend_desc(const api::blend_desc &desc, D3D11_BLEND
 			desc.render_target_write_mask[i] != desc.render_target_write_mask[0])
 			internal_desc.IndependentBlendEnable = TRUE;
 
-		assert(!desc.logic_op_enable);
+		assert(!desc.logic_op_enable[i]);
 
 		internal_desc.RenderTarget[i].BlendEnable = desc.blend_enable[i];
 		internal_desc.RenderTarget[i].SrcBlend = convert_blend_factor(desc.source_color_blend_factor[i]);

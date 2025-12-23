@@ -10,11 +10,7 @@
 #include "addon_manager.hpp"
 #include <Windows.h>
 #include <Psapi.h>
-#ifndef NDEBUG
-#include <DbgHelp.h>
-
-static PVOID s_exception_handler_handle = nullptr;
-#endif
+#include <delayimp.h> // Delay-load helpers
 
 // Export special symbol to identify modules as ReShade instances
 extern "C" __declspec(dllexport) const char *ReShadeVersion = VERSION_STRING_PRODUCT;
@@ -30,8 +26,7 @@ std::filesystem::path g_target_executable_path;
 /// </summary>
 bool is_uwp_app()
 {
-	const auto GetCurrentPackageFullName = reinterpret_cast<LONG(WINAPI *)(UINT32 *, PWSTR)>(
-		GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "GetCurrentPackageFullName"));
+	const auto GetCurrentPackageFullName = reinterpret_cast<LONG(WINAPI *)(UINT32 *, PWSTR)>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "GetCurrentPackageFullName"));
 	if (GetCurrentPackageFullName == nullptr)
 		return false;
 	// This will return APPMODEL_ERROR_NO_PACKAGE if not a packaged UWP app
@@ -57,6 +52,9 @@ bool is_windows7()
 /// </summary>
 static bool resolve_env_path(std::filesystem::path &path, const std::filesystem::path &base = g_reshade_dll_path.parent_path())
 {
+	if (path.empty())
+		return false;
+
 	WCHAR buf[4096];
 	if (ExpandEnvironmentStringsW(path.c_str(), buf, ARRAYSIZE(buf)))
 		path = buf;
@@ -75,17 +73,17 @@ static bool resolve_env_path(std::filesystem::path &path, const std::filesystem:
 /// </summary>
 std::filesystem::path get_base_path(bool default_to_target_executable_path = false)
 {
-	std::filesystem::path result;
+	std::filesystem::path path_override;
 
 	// Cannot use global config here yet, since it uses base path for look up, so look at config file next to target executable instead
-	if (reshade::ini_file::load_cache(g_target_executable_path.parent_path() / L"ReShade.ini").get("INSTALL", "BasePath", result) &&
-		resolve_env_path(result))
-		return result;
+	if (reshade::ini_file::load_cache(g_target_executable_path.parent_path() / L"ReShade.ini").get("INSTALL", "BasePath", path_override) &&
+		resolve_env_path(path_override))
+		return path_override;
 
 	WCHAR buf[4096];
-	if (GetEnvironmentVariableW(L"RESHADE_BASE_PATH_OVERRIDE", buf, ARRAYSIZE(buf)) &&
-		resolve_env_path(result = buf))
-		return result;
+	path_override.assign(buf, buf + GetEnvironmentVariableW(L"RESHADE_BASE_PATH_OVERRIDE", buf, ARRAYSIZE(buf)));
+	if (resolve_env_path(path_override))
+		return path_override;
 
 	return default_to_target_executable_path ? g_target_executable_path.parent_path() : g_reshade_dll_path.parent_path();
 }
@@ -95,22 +93,18 @@ std::filesystem::path get_base_path(bool default_to_target_executable_path = fal
 /// </summary>
 std::filesystem::path get_system_path()
 {
-	static std::filesystem::path result;
-	if (!result.empty())
-		return result; // Return the cached path if it exists
+	std::filesystem::path path_override;
 
-	if (reshade::global_config().get("INSTALL", "ModulePath", result) &&
-		resolve_env_path(result))
-		return result;
+	if (reshade::global_config().get("INSTALL", "ModulePath", path_override) &&
+		resolve_env_path(path_override))
+		return path_override;
 
 	WCHAR buf[4096];
-	if (GetEnvironmentVariableW(L"RESHADE_MODULE_PATH_OVERRIDE", buf, ARRAYSIZE(buf)) &&
-		resolve_env_path(result = buf))
-		return result;
+	path_override.assign(buf, buf + GetEnvironmentVariableW(L"RESHADE_MODULE_PATH_OVERRIDE", buf, ARRAYSIZE(buf)));
+	if (resolve_env_path(path_override))
+		return path_override;
 
-	// First try environment variable, use system directory if it does not exist or is empty
-	GetSystemDirectoryW(buf, ARRAYSIZE(buf));
-	return result = buf;
+	return std::filesystem::path(buf, buf + GetSystemDirectoryW(buf, ARRAYSIZE(buf)));
 }
 
 /// <summary>
@@ -119,10 +113,16 @@ std::filesystem::path get_system_path()
 std::filesystem::path get_module_path(HMODULE module)
 {
 	WCHAR buf[4096];
-	return GetModuleFileNameW(module, buf, ARRAYSIZE(buf)) ? buf : std::filesystem::path();
+	return std::filesystem::path(buf, buf + GetModuleFileNameW(module, buf, ARRAYSIZE(buf)));
 }
 
 #ifndef RESHADE_TEST_APPLICATION
+
+#ifndef NDEBUG
+#include <DbgHelp.h>
+
+static PVOID s_exception_handler_handle = nullptr;
+#endif
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 {
@@ -155,6 +155,20 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 			// This e.g. prevents loading the implicit Vulkan layer when not explicitly enabled for an application
 			if (default_base_to_target_executable_path && !GetEnvironmentVariableW(L"RESHADE_DISABLE_LOADING_CHECK", nullptr, 0))
 			{
+#ifndef NDEBUG
+				// Avoid loading in the ReShade test application
+				if (g_target_executable_path.filename() ==
+#ifndef _WIN64
+						L"ReShade32.exe"
+#else
+						L"ReShade64.exe"
+#endif
+						)
+				{
+					return FALSE;
+				}
+#endif
+
 				std::error_code ec;
 				if (!std::filesystem::exists(config.path(), ec))
 				{
@@ -210,7 +224,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 			// Check if another ReShade instance was already loaded into the process
 			if (HMODULE modules[1024]; K32EnumProcessModules(GetCurrentProcess(), modules, sizeof(modules), &fdwReason)) // Use kernel32 variant which is available in DllMain
 			{
-				for (DWORD i = 0; i < std::min<DWORD>(fdwReason / sizeof(HMODULE), ARRAYSIZE(modules)); ++i)
+				// Skip first module (the main application module)
+				for (DWORD i = 1; i < std::min<DWORD>(fdwReason / sizeof(HMODULE), ARRAYSIZE(modules)); ++i)
 				{
 					if (modules[i] != hModule && GetProcAddress(modules[i], "ReShadeVersion") != nullptr)
 					{
@@ -352,7 +367,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 
 			reshade::log::message(reshade::log::level::info, "Initialized.");
 
-#if RESHADE_ADDON
+#if RESHADE_ADDON >= 2
 			// It is not safe to call 'LoadLibrary' from 'DllMain', but there are cases where add-ons want to be loaded as early as possible, so at least give the option
 			if (config.get("ADDON", "LoadFromDllMain"))
 			{
@@ -365,7 +380,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 		{
 			reshade::log::message(reshade::log::level::info, "Exiting ...");
 
-#if RESHADE_ADDON
+#if RESHADE_ADDON >= 2
 			if (reshade::has_loaded_addons())
 			{
 				if (reshade::global_config().get("ADDON", "LoadFromDllMain"))
@@ -400,5 +415,35 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD fdwReason, LPVOID)
 
 	return TRUE;
 }
+
+static FARPROC WINAPI DliNotifyHook2(unsigned dliNotify, PDelayLoadInfo pdli)
+{
+	if (dliNotify == dliNotePreLoadLibrary && _stricmp(pdli->szDll, "D3DCompiler_47.dll") == 0)
+	{
+		// Prefer loading up-to-date system D3DCompiler DLL over local variants
+		// Do not check system path when running in Wine though, since the D3DCompiler DLL there does not support various features
+		if (GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "wine_get_version") == nullptr)
+		{
+			const HMODULE d3dcompiler_47_module = LoadLibraryW((get_system_path() / L"D3DCompiler_47.dll").c_str());
+			return reinterpret_cast<FARPROC>(d3dcompiler_47_module);
+		}
+
+		if (const HMODULE d3dcompiler_47_module = LoadLibraryW(L"D3DCompiler_47.dll"))
+		{
+			return reinterpret_cast<FARPROC>(d3dcompiler_47_module);
+		}
+
+		// Fall back to older D3DCompiler version
+		if (const HMODULE d3dcompiler_43_module = LoadLibraryW(L"D3DCompiler_43.dll"))
+		{
+			return reinterpret_cast<FARPROC>(d3dcompiler_43_module);
+		}
+	}
+
+	return nullptr;
+}
+
+// See https://learn.microsoft.com/cpp/build/reference/understanding-the-helper-function
+extern "C" const PfnDliHook __pfnDliNotifyHook2 = DliNotifyHook2;
 
 #endif

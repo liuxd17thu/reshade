@@ -517,7 +517,7 @@ void reshade::opengl::device_impl::destroy_sampler(api::sampler sampler)
 	gl.DeleteSamplers(1, &object);
 }
 
-bool reshade::opengl::device_impl::create_resource(const api::resource_desc &desc, const api::subresource_data *initial_data, api::resource_usage, api::resource *out_resource, HANDLE *shared_handle)
+bool reshade::opengl::device_impl::create_resource(const api::resource_desc &desc, const api::subresource_data *initial_data, api::resource_usage, api::resource *out_resource, void **shared_handle)
 {
 	*out_resource = { 0 };
 
@@ -2376,7 +2376,7 @@ void reshade::opengl::device_impl::copy_descriptor_tables(uint32_t count, const 
 	{
 		const api::descriptor_table_copy &copy = copies[i];
 
-		const auto src_table_impl = reinterpret_cast<descriptor_table_impl *>(copy.source_table.handle);
+		const auto src_table_impl = reinterpret_cast<const descriptor_table_impl *>(copy.source_table.handle);
 		const auto dst_table_impl = reinterpret_cast<descriptor_table_impl *>(copy.dest_table.handle);
 		assert(src_table_impl != nullptr && dst_table_impl != nullptr && src_table_impl->type == dst_table_impl->type);
 
@@ -2526,7 +2526,7 @@ void reshade::opengl::device_impl::set_resource_view_name(api::resource_view vie
 	gl.ObjectLabel(GL_TEXTURE, view.handle & 0xFFFFFFFF, -1, name);
 }
 
-bool reshade::opengl::device_impl::create_fence(uint64_t initial_value, api::fence_flags flags, api::fence *out_fence, HANDLE *shared_handle)
+bool reshade::opengl::device_impl::create_fence(uint64_t initial_value, api::fence_flags flags, api::fence *out_fence, void **shared_handle)
 {
 	*out_fence = { 0 };
 

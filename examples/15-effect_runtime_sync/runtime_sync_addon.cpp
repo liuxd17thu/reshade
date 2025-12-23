@@ -8,6 +8,7 @@
 #include <vector>
 #include <shared_mutex>
 #include <algorithm> // std::remove
+#include <Windows.h>
 #include "localization.hpp"
 
 using namespace reshade::api;

@@ -165,23 +165,25 @@ void reshade::runtime::build_font_atlas()
 	if (language.empty())
 		language = resources::get_current_language();
 
-	if (language.find("bg") == 0 || language.find("ru") == 0)
+	if (language.find("bg") == 0 || language.find("ru") == 0 || language.find("sl") == 0 || language.find("tr") == 0 || language.find("th") == 0)
 	{
-		_default_font_path = L"C:\\Windows\\Fonts\\calibri.ttf";
+		// Microsoft Sans Serif
+		_default_font_path = L"C:\\Windows\\Fonts\\micross.ttf";
 	}
 	else
 	if (language.find("ja") == 0)
 	{
 		// Morisawa BIZ UDGothic Regular, available since Windows 10 October 2018 Update (1809) Build 17763.1
 		_default_font_path = L"C:\\Windows\\Fonts\\BIZ-UDGothicR.ttc";
+		// Fall back to MS Gothic if it does not exist
 		if (!std::filesystem::exists(_default_font_path, ec))
-			// MS Gothic
 			_default_font_path = L"C:\\Windows\\Fonts\\msgothic.ttc";
 	}
 	else
 	if (language.find("ko") == 0)
 	{
-		_default_font_path = L"C:\\Windows\\Fonts\\malgun.ttf"; // Malgun Gothic
+		// Malgun Gothic
+		_default_font_path = L"C:\\Windows\\Fonts\\malgun.ttf";
 	}
 	else
 	if (language.find("zh") == 0)
@@ -192,6 +194,7 @@ void reshade::runtime::build_font_atlas()
 			// Microsoft YaHei
 			if (std::filesystem::exists(L"C:\\Windows\\Fonts\\msyh.ttc", ec))
 				_default_font_path = L"C:\\Windows\\Fonts\\msyh.ttc";
+			// Fall back to SimHei if it does not exist
 			else
 				_default_font_path = L"C:\\Windows\\Fonts\\simhei.ttf";
 		}
@@ -200,6 +203,7 @@ void reshade::runtime::build_font_atlas()
 		{
 			// Microsoft JhengHei
 			_default_font_path = L"C:\\Windows\\Fonts\\msjh.ttc";
+			// Fall back to MingLiU if it does not exist
 			if (!std::filesystem::exists(_default_font_path, ec))
 				_default_font_path = L"C:\\Windows\\Fonts\\mingliu.ttc";
 		}
@@ -253,6 +257,7 @@ void reshade::runtime::build_font_atlas()
 			log::message(log::level::error, "Failed to load latin font from '%s' with error code %d!", resolved_font_path.u8string().c_str(), ec.value());
 
 		cfg.MergeMode = true;
+		cfg.PixelSnapH = true;
 	}
 #endif
 
@@ -1024,7 +1029,7 @@ void reshade::runtime::draw_gui()
 	_gather_gpu_statistics = false;
 	_effects_expanded_state &= 2;
 
-	if (!show_splash_window && !show_message_window && !show_statistics_window && !_show_overlay && _preview_texture == 0
+	if (!show_splash_window && !show_message_window && !show_statistics_window && !_show_overlay && _preview_texture == std::numeric_limits<size_t>::max()
 #if RESHADE_ADDON
 		&& !has_addon_event<addon_event::reshade_overlay>()
 #endif
@@ -1407,7 +1412,7 @@ void reshade::runtime::draw_gui()
 			fps_window_pos.y = imgui_io.DisplaySize.y - fps_window_size.y - 5;
 
 		ImGui::SetNextWindowPos(fps_window_pos);
-		ImGui::PushStyleColor(ImGuiCol_Text, (const ImVec4 &)_fps_col);
+		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(_fps_col[0], _fps_col[1], _fps_col[2], _fps_col[0]));
 		ImGui::Begin("OSD", nullptr,
 			ImGuiWindowFlags_NoDecoration |
 			ImGuiWindowFlags_NoNav |
@@ -1533,6 +1538,19 @@ void reshade::runtime::draw_gui()
 			for (const std::pair<std::string, void(runtime::*)()> &widget : overlay_callbacks)
 				ImGui::DockBuilderDockWindow(widget.first.c_str(), main_space_id);
 
+#if RESHADE_ADDON
+			for (const addon_info &info : addon_loaded_info)
+			{
+				for (const addon_info::overlay_callback &widget : info.overlay_callbacks)
+				{
+					if (widget.title == "OSD")
+						continue;
+
+					ImGui::DockBuilderDockWindow(widget.title.c_str(), main_space_id);
+				}
+			}
+#endif
+
 			// Attach editor window to the remaining dock space
 			ImGui::DockBuilderDockWindow("###editor", right_space_id);
 
@@ -1630,7 +1648,10 @@ void reshade::runtime::draw_gui()
 	}
 #endif
 
-	if (_preview_texture != 0 && _effects_enabled)
+	if (_effects_enabled &&
+		_preview_texture < _textures.size() &&
+		std::any_of(_textures[_preview_texture].shared.begin(), _textures[_preview_texture].shared.end(),
+			[this](const size_t effect_index) { return _effects[effect_index].rendering; }))
 	{
 		if (!_show_overlay)
 		{
@@ -1664,7 +1685,10 @@ void reshade::runtime::draw_gui()
 			preview_max.y = (preview_max.y * 0.5f) + (_preview_size[1] * 0.5f);
 		}
 
-		ImGui::FindWindowByName("Viewport")->DrawList->AddImage(_preview_texture.handle, preview_min, preview_max, ImVec2(0, 0), ImVec2(1, 1), _preview_size[2]);
+		const api::resource_view srv = _textures[_preview_texture].srv[0];
+		assert(srv != 0);
+
+		ImGui::FindWindowByName("Viewport")->DrawList->AddImage(srv.handle, preview_min, preview_max, ImVec2(0, 0), ImVec2(1, 1), _preview_size[2]);
 	}
 
 #if RESHADE_LOCALIZATION
@@ -2537,8 +2561,6 @@ void reshade::runtime::draw_gui_settings()
 			modified |= imgui::key_input_box(_("Effect toggle key"), _effects_key_data, *_input);
 			modified |= imgui::key_input_box(_("Effect reload key"), _reload_key_data, *_input);
 
-			modified |= imgui::key_input_box(_("Performance mode toggle key"), _performance_mode_key_data, *_input);
-
 			modified |= imgui::key_input_box(_("Previous preset key"), _prev_preset_key_data, *_input);
 			modified |= imgui::key_input_box(_("Next preset key"), _next_preset_key_data, *_input);
 
@@ -2632,15 +2654,19 @@ void reshade::runtime::draw_gui_settings()
 				"HH-mm-ss");
 		}
 
-		// HDR screenshots only support PNG, and have no alpha channel
-		if (_back_buffer_format == reshade::api::format::r16g16b16a16_float ||
-			_back_buffer_color_space == reshade::api::color_space::hdr10_st2084)
+		// HDR screenshots have no alpha channel
+		if (_back_buffer_format == api::format::r16g16b16a16_float || _back_buffer_color_space == api::color_space::hdr10_pq)
 		{
-			modified |= ImGui::SliderInt(_("HDR PNG quality"), reinterpret_cast<int *>(&_screenshot_hdr_bits), 7, 16, "%d bit", ImGuiSliderFlags_AlwaysClamp);
+			int hdr_screenshot_format = _screenshot_format == 3 ? 1 : 0;
+			if (ImGui::Combo(_("Screenshot format"), reinterpret_cast<int *>(&hdr_screenshot_format), "Portable Network Graphics (*.png)\0JPEG XL Lossless (*.jxl)\0"))
+			{
+				_screenshot_format = hdr_screenshot_format == 1 ? 3 : 1;
+				modified = true;
+			}
 		}
 		else
 		{
-			modified |= ImGui::Combo(_("Screenshot format"), reinterpret_cast<int *>(&_screenshot_format), "Bitmap (*.bmp)\0Portable Network Graphics (*.png)\0JPEG (*.jpeg)\0");
+			modified |= ImGui::Combo(_("Screenshot format"), reinterpret_cast<int *>(&_screenshot_format), "Bitmap (*.bmp)\0Portable Network Graphics (*.png)\0JPEG (*.jpeg)\0JPEG XL Lossless (*.jxl)\0");
 
 			if (_screenshot_format == 2)
 				modified |= ImGui::SliderInt(_("JPEG quality"), reinterpret_cast<int *>(&_screenshot_jpeg_quality), 1, 100, "%d", ImGuiSliderFlags_AlwaysClamp);
@@ -2670,7 +2696,22 @@ void reshade::runtime::draw_gui_settings()
 
 		if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
 		{
-			const std::string extension = _screenshot_format == 0 ? ".bmp" : _screenshot_format == 1 ? ".png" : ".jpg";
+			const char *extension = "";
+			switch (_screenshot_format)
+			{
+			case 0:
+				extension = ".bmp";
+				break;
+			case 1:
+				extension = ".png";
+				break;
+			case 2:
+				extension = ".jpg";
+				break;
+			case 3:
+				extension = ".jxl";
+				break;
+			}
 
 			ImGui::SetTooltip(_(
 				"Macros you can add that are resolved during command execution:\n"
@@ -2699,7 +2740,7 @@ void reshade::runtime::draw_gui_settings()
 				(_screenshot_path / (_screenshot_name + extension)).u8string().c_str(),
 				_screenshot_path.u8string().c_str(),
 				(_screenshot_name + extension).c_str(),
-				extension.c_str(),
+				extension,
 				_screenshot_name.c_str());
 		}
 
@@ -2901,8 +2942,7 @@ void reshade::runtime::draw_gui_settings()
 		}
 
 		// Only show on possible HDR swap chains
-		if (_back_buffer_format == reshade::api::format::r16g16b16a16_float ||
-			_back_buffer_color_space == reshade::api::color_space::hdr10_st2084)
+		if (_back_buffer_format == api::format::r16g16b16a16_float || _back_buffer_color_space == api::color_space::hdr10_pq)
 		{
 			if (ImGui::SliderFloat(_("HDR overlay brightness"), &_hdr_overlay_brightness, 20.f, 400.f, "%.0f nits", ImGuiSliderFlags_AlwaysClamp))
 				modified = true;
@@ -3290,7 +3330,7 @@ void reshade::runtime::draw_gui_statistics()
 		};
 
 		const float total_width = ImGui::GetContentRegionAvail().x;
-		int texture_index = 0;
+		int texture_count = 0;
 		const unsigned int num_columns = std::max(1u, static_cast<unsigned int>(std::ceil(total_width / (55.0f * ImGui::GetFontSize()))));
 		const float single_image_width = (total_width / num_columns) - 5.0f;
 
@@ -3299,14 +3339,16 @@ void reshade::runtime::draw_gui_statistics()
 		int64_t post_processing_memory_size = 0;
 		const char *memory_size_unit;
 
-		for (const texture &tex : _textures)
+		for (size_t texture_index = 0; texture_index < _textures.size(); ++texture_index)
 		{
+			const texture &tex = _textures[texture_index];
+
 			if (tex.resource == 0 || !tex.semantic.empty() ||
 				!std::any_of(tex.shared.cbegin(), tex.shared.cend(),
 					[this](size_t effect_index) { return _effects[effect_index].rendering; }))
 				continue;
 
-			ImGui::PushID(texture_index);
+			ImGui::PushID(texture_count);
 			ImGui::BeginGroup();
 
 			int64_t memory_size = 0;
@@ -3458,18 +3500,18 @@ void reshade::runtime::draw_gui_statistics()
 
 			if (tex.type == reshadefx::texture_type::texture_2d)
 			{
-				if (bool check = _preview_texture == tex.srv[0] && _preview_size[0] == 0; ImGui::RadioButton(_("Preview scaled"), check))
+				if (bool check = _preview_texture == texture_index && _preview_size[0] == 0; ImGui::RadioButton(_("Preview scaled"), check))
 				{
 					_preview_size[0] = 0;
 					_preview_size[1] = 0;
-					_preview_texture = !check ? tex.srv[0] : api::resource_view { 0 };
+					_preview_texture = !check ? texture_index : std::numeric_limits<size_t>::max();
 				}
 				ImGui::SameLine();
-				if (bool check = _preview_texture == tex.srv[0] && _preview_size[0] != 0; ImGui::RadioButton(_("Preview original"), check))
+				if (bool check = _preview_texture == texture_index && _preview_size[0] != 0; ImGui::RadioButton(_("Preview original"), check))
 				{
 					_preview_size[0] = tex.width;
 					_preview_size[1] = tex.height;
-					_preview_texture = !check ? tex.srv[0] : api::resource_view { 0 };
+					_preview_texture = !check ? texture_index : std::numeric_limits<size_t>::max();
 				}
 
 				bool r = (_preview_size[2] & 0x000000FF) != 0;
@@ -3504,13 +3546,13 @@ void reshade::runtime::draw_gui_statistics()
 			ImGui::EndGroup();
 			ImGui::PopID();
 
-			if ((texture_index++ % num_columns) != (num_columns - 1))
+			if ((texture_count++ % num_columns) != (num_columns - 1))
 				ImGui::SameLine(0.0f, 5.0f);
 			else
 				ImGui::Spacing();
 		}
 
-		if ((texture_index % num_columns) != 0)
+		if ((texture_count % num_columns) != 0)
 			ImGui::NewLine(); // Reset ImGui::SameLine() so the following starts on a new line
 
 		ImGui::Separator();
@@ -3737,6 +3779,16 @@ Copyright (c) 2015-2024, Renzhi Li (aka. Belleve Invis, belleve@typeof.net)
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1. (http://scripts.sil.org/OFL))");
 	}
+	if (ImGui::CollapsingHeader("libjxl simple lossless encoder"))
+	{
+		const resources::data_resource resource = resources::load_data_resource(IDR_LICENSE_S_JXL);
+		ImGui::TextUnformatted(static_cast<const char *>(resource.data), static_cast<const char *>(resource.data) + resource.data_size);
+	}
+	if (ImGui::CollapsingHeader("libjxl simple lossless encoder"))
+	{
+		const resources::data_resource resource = resources::load_data_resource(IDR_LICENSE_S_JXL);
+		ImGui::TextUnformatted(static_cast<const char *>(resource.data), static_cast<const char *>(resource.data) + resource.data_size);
+	}
 
 	ImGui::PopTextWrapPos();
 }
@@ -3951,7 +4003,7 @@ void reshade::runtime::draw_variable_editor()
 				std::string name;
 				std::vector<std::pair<std::string, std::string>> &definitions;
 				bool &modified;
-			} definition_types[] = {
+			} const definition_types[] = {
 				{ _("Global"), _global_preprocessor_definitions, global_modified },
 				{ _("Current Preset"), _preset_preprocessor_definitions[{}], preset_modified },
 			};
@@ -5454,8 +5506,8 @@ void reshade::runtime::draw_technique_editor()
 
 						std::string entry_point_name;
 						for (const std::pair<std::string, reshadefx::shader_type> &entry_point : effect.permutations[permutation_index].module.entry_points)
-							if (const auto assembly_it = effect.permutations[permutation_index].assembly_text.find(entry_point.first);
-								assembly_it != effect.permutations[permutation_index].assembly_text.end() && ImGui::MenuItem(entry_point.first.c_str()))
+							if (const auto assembly_it = effect.permutations[permutation_index].assembly.find(entry_point.first);
+								assembly_it != effect.permutations[permutation_index].assembly.end() && ImGui::MenuItem(entry_point.first.c_str()))
 								entry_point_name = entry_point.first;
 
 						ImGui::EndPopup();
@@ -5663,7 +5715,7 @@ void reshade::runtime::open_code_editor(editor_instance &instance) const
 		if (instance.entry_point_name.empty())
 			instance.editor.set_text(permutation.generated_code);
 		else
-			instance.editor.set_text(permutation.assembly_text.at(instance.entry_point_name));
+			instance.editor.set_text(permutation.assembly.at(instance.entry_point_name));
 		instance.editor.set_readonly(true);
 		return; // Errors only apply to the effect source, not generated code
 	}
@@ -6050,11 +6102,7 @@ void reshade::runtime::render_imgui_draw_data(api::command_list *cmd_list, ImDra
 							   -(2 * draw_data->DisplayPos.x + draw_data->DisplaySize.x + (adjust_half_pixel ? 1.0f : 0.0f)) / draw_data->DisplaySize.x,
 			(flip_y ? -1 : 1) * (2 * draw_data->DisplayPos.y + draw_data->DisplaySize.y + (adjust_half_pixel ? 1.0f : 0.0f)) / draw_data->DisplaySize.y, depth_clip_zero_to_one ? 0.5f : 0.0f, 1.0f,
 		},
-		_hdr_overlay_overwrite_color_space != api::color_space::unknown ?
-			_hdr_overlay_overwrite_color_space :
-			// Workaround for early HDR games, RGBA16F without a color space defined is pretty much guaranteed to be HDR for games
-			_back_buffer_format == api::format::r16g16b16a16_float ?
-				api::color_space::extended_srgb_linear : _back_buffer_color_space,
+		_hdr_overlay_overwrite_color_space != api::color_space::unknown ? _hdr_overlay_overwrite_color_space : _back_buffer_color_space,
 		_hdr_overlay_brightness
 	};
 

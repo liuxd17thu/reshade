@@ -15,18 +15,16 @@ extern bool is_windows7();
 static auto adapter_from_device(ID3D11Device *device, DXGI_ADAPTER_DESC *adapter_desc = nullptr) -> const com_ptr<IDXGIAdapter>
 {
 	com_ptr<IDXGIDevice> dxgi_device;
-	if (SUCCEEDED(device->QueryInterface(&dxgi_device)))
-	{
-		com_ptr<IDXGIAdapter> dxgi_adapter;
-		if (SUCCEEDED(dxgi_device->GetAdapter(&dxgi_adapter)))
-		{
-			if (adapter_desc != nullptr)
-				dxgi_adapter->GetDesc(adapter_desc);
-			return dxgi_adapter;
-		}
-	}
+	if (FAILED(device->QueryInterface(&dxgi_device)))
+		return nullptr;
 
-	return nullptr;
+	com_ptr<IDXGIAdapter> dxgi_adapter;
+	if (FAILED(dxgi_device->GetAdapter(&dxgi_adapter)))
+		return nullptr;
+
+	if (adapter_desc != nullptr)
+		dxgi_adapter->GetDesc(adapter_desc);
+	return dxgi_adapter;
 }
 
 reshade::d3d11::device_impl::device_impl(ID3D11Device *device) :
@@ -1299,7 +1297,7 @@ void reshade::d3d11::device_impl::copy_descriptor_tables(uint32_t count, const a
 	{
 		const api::descriptor_table_copy &copy = copies[i];
 
-		const auto src_table_impl = reinterpret_cast<descriptor_table_impl *>(copy.source_table.handle);
+		const auto src_table_impl = reinterpret_cast<const descriptor_table_impl *>(copy.source_table.handle);
 		const auto dst_table_impl = reinterpret_cast<descriptor_table_impl *>(copy.dest_table.handle);
 		assert(src_table_impl != nullptr && dst_table_impl != nullptr && src_table_impl->type == dst_table_impl->type);
 
@@ -1601,7 +1599,8 @@ bool reshade::d3d11::device_impl::signal(api::fence fence, uint64_t value)
 		com_ptr<ID3D11DeviceContext> immediate_context;
 		_orig->GetImmediateContext(&immediate_context);
 
-		return immediate_context->End(impl->event_queries[value % std::size(impl->event_queries)].get()), true;
+		immediate_context->End(impl->event_queries[value % std::size(impl->event_queries)].get());
+		return true;
 	}
 
 	if (com_ptr<ID3D11Fence> fence_object;

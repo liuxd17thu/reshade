@@ -145,6 +145,24 @@ bool reshade::vulkan::device_impl::get_property(api::device_properties property,
 	switch (property)
 	{
 	case api::device_properties::api_version:
+		// First check the API version the instance was created with
+		if (!_dispatch_table.VERSION_1_2)
+		{
+			*static_cast<uint32_t *>(data) = (1 << 12) | (1 << 8);
+			return true;
+		}
+		if (!_dispatch_table.VERSION_1_3)
+		{
+			*static_cast<uint32_t *>(data) = (1 << 12) | (2 << 8);
+			return true;
+		}
+		if (!_dispatch_table.VERSION_1_4)
+		{
+			*static_cast<uint32_t *>(data) = (1 << 12) | (3 << 8);
+			return true;
+		}
+
+		// Fall back to reporting the highest API version supported by the physical device
 		*static_cast<uint32_t *>(data) =
 			VK_API_VERSION_MAJOR(device_props.properties.apiVersion) << 12 |
 			VK_API_VERSION_MINOR(device_props.properties.apiVersion) <<  8;
@@ -343,7 +361,7 @@ void reshade::vulkan::device_impl::destroy_sampler(api::sampler sampler)
 	vk.DestroySampler(_orig, (VkSampler)sampler.handle, nullptr);
 }
 
-bool reshade::vulkan::device_impl::create_resource(const api::resource_desc &desc, const api::subresource_data *initial_data, api::resource_usage initial_state, api::resource *out_resource, HANDLE *shared_handle)
+bool reshade::vulkan::device_impl::create_resource(const api::resource_desc &desc, const api::subresource_data *initial_data, api::resource_usage initial_state, api::resource *out_resource, void **shared_handle)
 {
 	*out_resource = { 0 };
 
@@ -720,6 +738,14 @@ bool reshade::vulkan::device_impl::create_resource_view(api::resource resource, 
 			create_info.subresourceRange.aspectMask &= ~VK_IMAGE_ASPECT_DEPTH_BIT;
 		else if ((usage_type & api::resource_usage::shader_resource) != 0)
 			create_info.subresourceRange.aspectMask &= ~VK_IMAGE_ASPECT_STENCIL_BIT;
+
+		VkImageViewUsageCreateInfo usage_info { VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO };
+		if (usage_type != api::resource_usage::undefined)
+		{
+			convert_usage_to_image_usage_flags(usage_type, usage_info.usage);
+
+			create_info.pNext = &usage_info;
+		}
 
 		VkImageView image_view = VK_NULL_HANDLE;
 		if (vk.CreateImageView(_orig, &create_info, nullptr, &image_view) == VK_SUCCESS)
@@ -1574,10 +1600,17 @@ bool reshade::vulkan::device_impl::create_pipeline(api::pipeline_layout layout, 
 
 		std::vector<VkVertexInputBindingDescription> vertex_bindings;
 		std::vector<VkVertexInputAttributeDescription> vertex_attributes;
-		convert_input_layout_desc(input_layout_desc.count, static_cast<const api::input_element *>(input_layout_desc.data), vertex_bindings, vertex_attributes);
+		std::vector<VkVertexInputBindingDivisorDescription> vertex_binding_divisors;
+		convert_input_layout_desc(input_layout_desc.count, static_cast<const api::input_element *>(input_layout_desc.data), vertex_bindings, vertex_attributes, vertex_binding_divisors);
+
+		VkPipelineVertexInputDivisorStateCreateInfo vertex_input_divisor_state_info { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO };
+		vertex_input_divisor_state_info.vertexBindingDivisorCount = static_cast<uint32_t>(vertex_binding_divisors.size());
+		vertex_input_divisor_state_info.pVertexBindingDivisors = vertex_binding_divisors.data();
 
 		VkPipelineVertexInputStateCreateInfo vertex_input_state_info { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
 		create_info.pVertexInputState = &vertex_input_state_info;
+		if (!vertex_binding_divisors.empty())
+			vertex_input_state_info.pNext = &vertex_input_divisor_state_info;
 		vertex_input_state_info.vertexBindingDescriptionCount = static_cast<uint32_t>(vertex_bindings.size());
 		vertex_input_state_info.pVertexBindingDescriptions = vertex_bindings.data();
 		vertex_input_state_info.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertex_attributes.size());
@@ -1809,8 +1842,10 @@ bool reshade::vulkan::device_impl::create_pipeline_layout(uint32_t param_count, 
 		data.binding_to_offset.reserve(range_count);
 
 		std::vector<VkDescriptorSetLayoutBinding> internal_bindings;
+		std::vector<VkDescriptorSetLayoutCreateFlags> internal_binding_flags;
 		std::vector<std::vector<VkSampler>> internal_samplers;
 		internal_bindings.reserve(range_count);
+		internal_binding_flags.reserve(range_count);
 		internal_samplers.reserve(range_count);
 
 		for (uint32_t k = 0, offset = 0; k < range_count; ++k, range = (with_static_samplers ? range + 1 : reinterpret_cast<const api::descriptor_range_with_static_samplers *>(reinterpret_cast<const api::descriptor_range *>(range) + 1)))
@@ -1835,7 +1870,7 @@ bool reshade::vulkan::device_impl::create_pipeline_layout(uint32_t param_count, 
 
 			if (with_static_samplers && (range->type == api::descriptor_type::sampler || range->type == api::descriptor_type::sampler_with_resource_view) && range->static_samplers != nullptr)
 			{
-				if (range->array_size != 1)
+				if (range->array_size != 1 || range->count == UINT32_MAX)
 					goto exit_failure;
 
 				std::vector<VkSampler> &internal_binding_samplers = internal_samplers.emplace_back();
@@ -1857,7 +1892,14 @@ bool reshade::vulkan::device_impl::create_pipeline_layout(uint32_t param_count, 
 			}
 
 			if (range->count == UINT32_MAX)
-				continue; // Skip unbounded ranges
+			{
+				internal_binding_flags.push_back(VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT);
+				break; // Unbounded range must be the last binding
+			}
+			else
+			{
+				internal_binding_flags.push_back(0);
+			}
 
 			// Add additional bindings if the total descriptor count exceeds the array size of the binding
 			for (uint32_t j = 0; j < (range->count - range->array_size); ++j)
@@ -1871,10 +1913,16 @@ bool reshade::vulkan::device_impl::create_pipeline_layout(uint32_t param_count, 
 				additional_binding.stageFlags = static_cast<VkShaderStageFlags>(range->visibility);
 
 				offset += additional_binding.descriptorCount;
+
+				internal_binding_flags.push_back(0);
 			}
 		}
 
-		VkDescriptorSetLayoutCreateInfo create_info { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
+		VkDescriptorSetLayoutBindingFlagsCreateInfo binding_flags_info { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO };
+		binding_flags_info.bindingCount = static_cast<uint32_t>(internal_binding_flags.size());
+		binding_flags_info.pBindingFlags = internal_binding_flags.data();
+
+		VkDescriptorSetLayoutCreateInfo create_info { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, &binding_flags_info };
 		create_info.bindingCount = static_cast<uint32_t>(internal_bindings.size());
 		create_info.pBindings = internal_bindings.data();
 
@@ -1891,12 +1939,14 @@ bool reshade::vulkan::device_impl::create_pipeline_layout(uint32_t param_count, 
 		}
 	}
 
-	for (; i < param_count && params[i].type == api::pipeline_layout_param_type::push_constants; ++i)
+	for (uint32_t offset = 0; i < param_count && params[i].type == api::pipeline_layout_param_type::push_constants; ++i)
 	{
 		VkPushConstantRange &push_constant_range = push_constant_ranges.emplace_back();
 		push_constant_range.stageFlags = static_cast<VkShaderStageFlagBits>(params[i].push_constants.visibility);
-		push_constant_range.offset = 0;
+		push_constant_range.offset = offset;
 		push_constant_range.size = params[i].push_constants.count * 4;
+
+		offset += push_constant_range.size;
 	}
 
 	if (i < param_count)
@@ -2247,7 +2297,7 @@ void reshade::vulkan::device_impl::set_resource_view_name(api::resource_view vie
 #endif
 }
 
-bool reshade::vulkan::device_impl::create_fence(uint64_t initial_value, api::fence_flags flags, api::fence *out_fence, HANDLE *shared_handle)
+bool reshade::vulkan::device_impl::create_fence(uint64_t initial_value, api::fence_flags flags, api::fence *out_fence, void **shared_handle)
 {
 	*out_fence = { 0 };
 

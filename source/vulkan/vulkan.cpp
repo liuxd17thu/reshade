@@ -5,7 +5,9 @@
 
 #include "vulkan_hooks.hpp"
 #include "vulkan_impl_device.hpp"
+#ifdef RESHADE_TEST_APPLICATION
 #include "hook_manager.hpp"
+#endif
 #include "lockfree_linear_map.hpp"
 #include <cstring> // std::strcmp
 
@@ -13,14 +15,18 @@ extern lockfree_linear_map<void *, vulkan_instance, 16> g_vulkan_instances;
 extern lockfree_linear_map<void *, reshade::vulkan::device_impl *, 8> g_vulkan_devices;
 
 #define RESHADE_VULKAN_HOOK_PROC(name) \
-	if (0 == std::strcmp(pName, "vk" #name)) \
+	if (0 == std::strcmp(name_without_prefix, #name)) \
 		return reinterpret_cast<PFN_vkVoidFunction>(vk##name)
 #define RESHADE_VULKAN_HOOK_PROC_OPTIONAL(name, suffix) \
-	if (0 == std::strcmp(pName, "vk" #name #suffix) && g_vulkan_devices.at(dispatch_key_from_handle(device))->_dispatch_table.name != nullptr) \
+	if (0 == std::strcmp(name_without_prefix, #name #suffix) && g_vulkan_devices.at(dispatch_key_from_handle(device))->_dispatch_table.name != nullptr) \
 		return reinterpret_cast<PFN_vkVoidFunction>(vk##name);
 
 PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, const char *pName)
 {
+	if (pName == nullptr || pName[0] != 'v' || pName[1] != 'k')
+		return nullptr;
+	const char *name_without_prefix = pName + 2;
+
 	// The Vulkan loader gets the 'vkDestroyDevice' function from the device dispatch table
 	RESHADE_VULKAN_HOOK_PROC(DestroyDevice);
 
@@ -172,6 +178,12 @@ PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, const char *p
 	RESHADE_VULKAN_HOOK_PROC_OPTIONAL(CmdBindVertexBuffers2, );
 #endif
 
+	// Core 1_4
+#if RESHADE_ADDON >= 2
+	RESHADE_VULKAN_HOOK_PROC_OPTIONAL(CmdPushDescriptorSet, );
+	RESHADE_VULKAN_HOOK_PROC_OPTIONAL(CmdPushDescriptorSetWithTemplate, );
+#endif
+
 	// VK_KHR_swapchain
 	RESHADE_VULKAN_HOOK_PROC(CreateSwapchainKHR);
 	RESHADE_VULKAN_HOOK_PROC(DestroySwapchainKHR);
@@ -187,8 +199,8 @@ PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, const char *p
 
 #if RESHADE_ADDON >= 2
 	// VK_KHR_push_descriptor
-	RESHADE_VULKAN_HOOK_PROC_OPTIONAL(CmdPushDescriptorSetKHR, );
-	RESHADE_VULKAN_HOOK_PROC_OPTIONAL(CmdPushDescriptorSetWithTemplateKHR, );
+	RESHADE_VULKAN_HOOK_PROC_OPTIONAL(CmdPushDescriptorSet, KHR);
+	RESHADE_VULKAN_HOOK_PROC_OPTIONAL(CmdPushDescriptorSetWithTemplate, KHR);
 
 	// VK_KHR_descriptor_update_template
 	RESHADE_VULKAN_HOOK_PROC_OPTIONAL(CreateDescriptorUpdateTemplate, KHR);
@@ -289,6 +301,10 @@ PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, const char *p
 
 PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char *pName)
 {
+	if (pName == nullptr || pName[0] != 'v' || pName[1] != 'k')
+		return nullptr;
+	const char *name_without_prefix = pName + 2;
+
 	// Core 1_0
 	RESHADE_VULKAN_HOOK_PROC(CreateInstance);
 	RESHADE_VULKAN_HOOK_PROC(DestroyInstance);
@@ -319,9 +335,15 @@ PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const c
 	return trampoline(instance, pName);
 }
 
+enum VkNegotiateLayerStructType
+{
+	LAYER_NEGOTIATE_UNINTIALIZED = 0,
+	LAYER_NEGOTIATE_INTERFACE_STRUCT = 1,
+};
+
 struct VkNegotiateLayerInterface
 {
-	enum VkNegotiateLayerStructType sType;
+	VkNegotiateLayerStructType sType;
 	void *pNext;
 	uint32_t loaderLayerInterfaceVersion;
 	PFN_vkGetInstanceProcAddr pfnGetInstanceProcAddr;
@@ -329,10 +351,10 @@ struct VkNegotiateLayerInterface
 	PFN_vkGetInstanceProcAddr pfnGetPhysicalDeviceProcAddr;
 };
 
-VkResult VKAPI_CALL vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface *pVersionStruct)
+extern "C" VkResult VKAPI_CALL vkNegotiateLoaderLayerInterfaceVersion(VkNegotiateLayerInterface *pVersionStruct)
 {
 	if (pVersionStruct == nullptr ||
-		pVersionStruct->sType != 1 /* LAYER_NEGOTIATE_INTERFACE_STRUCT */)
+		pVersionStruct->sType != LAYER_NEGOTIATE_INTERFACE_STRUCT)
 		return VK_ERROR_INITIALIZATION_FAILED;
 
 	pVersionStruct->loaderLayerInterfaceVersion = 2; // Version 2 added 'vkNegotiateLoaderLayerInterfaceVersion'
