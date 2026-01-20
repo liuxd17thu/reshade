@@ -7,6 +7,7 @@
 
 #include "effect_module.hpp"
 #include "moving_average.hpp"
+#include <algorithm>
 
 namespace reshade
 {
@@ -67,8 +68,6 @@ namespace reshade
 		{
 			return type == desc.type && width == desc.width && height == desc.height && levels == desc.levels && format == desc.format;
 		}
-
-		size_t effect_index = std::numeric_limits<size_t>::max();
 
 		std::vector<size_t> shared;
 		bool loaded = false;
@@ -242,8 +241,8 @@ namespace reshade
 		{
 			reshadefx::effect_module module;
 			std::string generated_code;
+			std::unordered_map<std::string, std::string> cso;
 			std::unordered_map<std::string, std::string> assembly;
-			std::unordered_map<std::string, std::string> assembly_text;
 
 			api::pipeline_layout layout = {};
 			api::descriptor_table cb_table = {};

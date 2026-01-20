@@ -10,8 +10,6 @@
 #include <cstring> // std::strlen, std::strncpy
 #include <algorithm> // std::copy_n, std::fill, std::max, std::min
 
-constexpr GUID IID_ID3D12GraphicsCommandListExt = { 0x77a86b09, 0x2bea, 0x4801, { 0xb8, 0x9a, 0x37, 0x64, 0x8e, 0x10, 0x4a, 0xf1 } };
-
 void encode_pix3blob(UINT64(&pix3blob)[64], const char *label, const float color[4])
 {
 	pix3blob[0] = (0x2ull /* PIXEvent_BeginEvent_NoArgs */ << 10);
@@ -353,23 +351,6 @@ void reshade::d3d12::command_list_impl::push_descriptors(api::shader_stage stage
 {
 	const auto root_signature = reinterpret_cast<ID3D12RootSignature *>(layout.handle);
 
-	if ((stages & (api::shader_stage::all_compute | api::shader_stage::all_ray_tracing)) != 0)
-	{
-		if (root_signature != _current_root_signature[1])
-		{
-			_current_root_signature[1] = root_signature;
-			_orig->SetComputeRootSignature(root_signature);
-		}
-	}
-	if ((stages & api::shader_stage::all_graphics) != 0)
-	{
-		if (root_signature != _current_root_signature[0])
-		{
-			_current_root_signature[0] = root_signature;
-			_orig->SetGraphicsRootSignature(root_signature);
-		}
-	}
-
 	assert(update.table == 0 && update.array_offset == 0);
 
 	const D3D12_DESCRIPTOR_HEAP_TYPE heap_type = convert_descriptor_type_to_heap_type(update.type);
@@ -379,6 +360,23 @@ void reshade::d3d12::command_list_impl::push_descriptors(api::shader_stage stage
 		update.type != api::descriptor_type::texture_shader_resource_view &&
 		update.type != api::descriptor_type::texture_unordered_access_view)
 	{
+		if ((stages & (api::shader_stage::all_compute | api::shader_stage::all_ray_tracing)) != 0)
+		{
+			if (root_signature != _current_root_signature[1])
+			{
+				_current_root_signature[1] = root_signature;
+				_orig->SetComputeRootSignature(root_signature);
+			}
+		}
+		if ((stages & api::shader_stage::all_graphics) != 0)
+		{
+			if (root_signature != _current_root_signature[0])
+			{
+				_current_root_signature[0] = root_signature;
+				_orig->SetGraphicsRootSignature(root_signature);
+			}
+		}
+
 		if (update.type == api::descriptor_type::constant_buffer)
 		{
 			const auto &view_range = *static_cast<const api::buffer_range *>(update.descriptors);
@@ -498,9 +496,25 @@ void reshade::d3d12::command_list_impl::push_descriptors(api::shader_stage stage
 #endif
 
 	if ((stages & (api::shader_stage::all_compute | api::shader_stage::all_ray_tracing)) != 0)
+	{
+		if (root_signature != _current_root_signature[1])
+		{
+			_current_root_signature[1] = root_signature;
+			_orig->SetComputeRootSignature(root_signature);
+		}
+
 		_orig->SetComputeRootDescriptorTable(layout_param, base_handle_gpu);
+	}
 	if ((stages & api::shader_stage::all_graphics) != 0)
+	{
+		if (root_signature != _current_root_signature[0])
+		{
+			_current_root_signature[0] = root_signature;
+			_orig->SetGraphicsRootSignature(root_signature);
+		}
+
 		_orig->SetGraphicsRootDescriptorTable(layout_param, base_handle_gpu);
+	}
 }
 void reshade::d3d12::command_list_impl::bind_descriptor_tables(api::shader_stage stages, api::pipeline_layout layout, uint32_t first, uint32_t count, const api::descriptor_table *tables)
 {

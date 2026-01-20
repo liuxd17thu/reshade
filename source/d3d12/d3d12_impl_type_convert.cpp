@@ -26,11 +26,11 @@ auto reshade::d3d12::convert_color_space(api::color_space type) -> DXGI_COLOR_SP
 	default:
 		assert(false);
 		[[fallthrough]];
-	case api::color_space::srgb_nonlinear:
+	case api::color_space::srgb:
 		return DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
-	case api::color_space::extended_srgb_linear:
+	case api::color_space::scrgb:
 		return DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709;
-	case api::color_space::hdr10_st2084:
+	case api::color_space::hdr10_pq:
 		return DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
 	case api::color_space::hdr10_hlg:
 		return DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P2020;
@@ -40,17 +40,17 @@ auto reshade::d3d12::convert_color_space(DXGI_COLOR_SPACE_TYPE type) -> api::col
 {
 	switch (type)
 	{
+	case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709:
+		return api::color_space::srgb;
+	case DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709:
+		return api::color_space::scrgb;
+	case DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020:
+		return api::color_space::hdr10_pq;
+	case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P2020:
+		return api::color_space::hdr10_hlg;
 	default:
 		assert(false);
 		return api::color_space::unknown;
-	case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709:
-		return api::color_space::srgb_nonlinear;
-	case DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709:
-		return api::color_space::extended_srgb_linear;
-	case DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020:
-		return api::color_space::hdr10_st2084;
-	case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P2020:
-		return api::color_space::hdr10_hlg;
 	}
 }
 
@@ -431,8 +431,9 @@ void reshade::d3d12::convert_resource_desc(const api::resource_desc &desc, D3D12
 	if ((desc.flags & api::resource_flags::shared) != 0)
 		heap_flags |= D3D12_HEAP_FLAG_SHARED;
 
-	// Dynamic resources do not exist in D3D12
+	// Dynamic or immutable resources do not exist in D3D12
 	assert((desc.flags & api::resource_flags::dynamic) == 0);
+	assert((desc.flags & api::resource_flags::immutable) == 0);
 }
 void reshade::d3d12::convert_resource_desc(const api::resource_desc &desc, D3D12_RESOURCE_DESC1 &internal_desc, D3D12_HEAP_PROPERTIES &heap_props, D3D12_HEAP_FLAGS &heap_flags)
 {
@@ -1939,8 +1940,8 @@ auto reshade::d3d12::convert_acceleration_structure_copy_mode(D3D12_RAYTRACING_A
 		return api::acceleration_structure_copy_mode::serialize;
 	case D3D12_RAYTRACING_ACCELERATION_STRUCTURE_COPY_MODE_DESERIALIZE:
 		return api::acceleration_structure_copy_mode::deserialize;
-	default:
 	case D3D12_RAYTRACING_ACCELERATION_STRUCTURE_COPY_MODE_VISUALIZATION_DECODE_FOR_TOOLS:
+	default:
 		assert(false);
 		return static_cast<api::acceleration_structure_copy_mode>(UINT_MAX);
 	}
@@ -1984,8 +1985,8 @@ auto reshade::d3d12::convert_acceleration_structure_post_build_info_type(D3D12_R
 		return api::query_type::acceleration_structure_serialization_size;
 	case D3D12_RAYTRACING_ACCELERATION_STRUCTURE_POSTBUILD_INFO_CURRENT_SIZE:
 		return api::query_type::acceleration_structure_size;
-	default:
 	case D3D12_RAYTRACING_ACCELERATION_STRUCTURE_POSTBUILD_INFO_TOOLS_VISUALIZATION:
+	default:
 		assert(false);
 		return static_cast<api::query_type>(UINT_MAX);
 	}

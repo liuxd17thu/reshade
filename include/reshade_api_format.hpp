@@ -186,10 +186,18 @@ namespace reshade { namespace api
 	{
 		unknown = 0,
 
-		srgb_nonlinear,
-		extended_srgb_linear,
-		hdr10_st2084,
+		// BT.709/sRGB primaries
+		srgb,
+		// BT.709/sRGB primaries + linear
+		scrgb,
+		// BT.2020 primaries + PQ transfer function
+		hdr10_pq,
+		// BT.2020 primaries + HLG transfer function
 		hdr10_hlg,
+
+		srgb_nonlinear = srgb,
+		extended_srgb_linear = scrgb,
+		hdr10_st2084 = hdr10_pq,
 	};
 
 	/// <summary>
@@ -480,6 +488,8 @@ namespace reshade { namespace api
 		case format::b8g8r8x8_unorm:
 		case format::b8g8r8x8_unorm_srgb:
 			return 8;
+		case format::r9g9b9e5:
+			return 9;
 		case format::r10g10b10a2_typeless:
 		case format::r10g10b10a2_unorm:
 		case format::r10g10b10a2_xr_bias:

@@ -213,7 +213,7 @@ void reshade::runtime::get_uniform_variable_effect_name(api::effect_uniform_vari
 
 bool reshade::runtime::get_annotation_bool_from_uniform_variable(api::effect_uniform_variable handle, const char *name_in, bool *values, size_t count, size_t array_index) const
 {
-	if (handle.handle != 0 && name_in != nullptr)
+	if (handle != 0 && name_in != nullptr)
 	{
 		const uniform &variable = *reinterpret_cast<const uniform *>(handle.handle);
 		const std::string_view name(name_in);
@@ -234,7 +234,7 @@ bool reshade::runtime::get_annotation_bool_from_uniform_variable(api::effect_uni
 }
 bool reshade::runtime::get_annotation_float_from_uniform_variable(api::effect_uniform_variable handle, const char *name_in, float *values, size_t count, size_t array_index) const
 {
-	if (handle.handle != 0 && name_in != nullptr)
+	if (handle != 0 && name_in != nullptr)
 	{
 		const uniform &variable = *reinterpret_cast<const uniform *>(handle.handle);
 		const std::string_view name(name_in);
@@ -255,7 +255,7 @@ bool reshade::runtime::get_annotation_float_from_uniform_variable(api::effect_un
 }
 bool reshade::runtime::get_annotation_int_from_uniform_variable(api::effect_uniform_variable handle, const char *name_in, int32_t *values, size_t count, size_t array_index) const
 {
-	if (handle.handle != 0 && name_in != nullptr)
+	if (handle != 0 && name_in != nullptr)
 	{
 		const uniform &variable = *reinterpret_cast<const uniform *>(handle.handle);
 		const std::string_view name(name_in);
@@ -276,7 +276,7 @@ bool reshade::runtime::get_annotation_int_from_uniform_variable(api::effect_unif
 }
 bool reshade::runtime::get_annotation_uint_from_uniform_variable(api::effect_uniform_variable handle, const char *name_in, uint32_t *values, size_t count, size_t array_index) const
 {
-	if (handle.handle != 0 && name_in != nullptr)
+	if (handle != 0 && name_in != nullptr)
 	{
 		const uniform &variable = *reinterpret_cast<const uniform *>(handle.handle);
 		const std::string_view name(name_in);
@@ -297,7 +297,7 @@ bool reshade::runtime::get_annotation_uint_from_uniform_variable(api::effect_uni
 }
 bool reshade::runtime::get_annotation_string_from_uniform_variable(api::effect_uniform_variable handle, const char *name_in, char *value, size_t *size) const
 {
-	if (handle.handle != 0 && name_in != nullptr)
+	if (handle != 0 && name_in != nullptr)
 	{
 		const uniform &variable = *reinterpret_cast<const uniform *>(handle.handle);
 		const std::string_view name(name_in);
@@ -490,10 +490,10 @@ void reshade::runtime::get_texture_variable_effect_name(api::effect_texture_vari
 	if (size == nullptr)
 		return;
 
-	if (handle.handle != 0)
+	if (handle != 0)
 	{
 		const texture &variable = *reinterpret_cast<const texture *>(handle.handle);
-		const std::string effect_name = _effects[variable.effect_index].source_file.filename().u8string();
+		const std::string effect_name = _effects[variable.shared[0]].source_file.filename().u8string();
 
 		if (value == nullptr)
 		{
@@ -513,7 +513,7 @@ void reshade::runtime::get_texture_variable_effect_name(api::effect_texture_vari
 
 bool reshade::runtime::get_annotation_bool_from_texture_variable(api::effect_texture_variable handle, const char *name_in, bool *values, size_t count, size_t array_index) const
 {
-	if (handle.handle != 0 && name_in != nullptr)
+	if (handle != 0 && name_in != nullptr)
 	{
 		const texture &variable = *reinterpret_cast<const texture *>(handle.handle);
 		const std::string_view name(name_in);
@@ -534,7 +534,7 @@ bool reshade::runtime::get_annotation_bool_from_texture_variable(api::effect_tex
 }
 bool reshade::runtime::get_annotation_float_from_texture_variable(api::effect_texture_variable handle, const char *name_in, float *values, size_t count, size_t array_index) const
 {
-	if (handle.handle != 0 && name_in != nullptr)
+	if (handle != 0 && name_in != nullptr)
 	{
 		const texture &variable = *reinterpret_cast<const texture *>(handle.handle);
 		const std::string_view name(name_in);
@@ -555,7 +555,7 @@ bool reshade::runtime::get_annotation_float_from_texture_variable(api::effect_te
 }
 bool reshade::runtime::get_annotation_int_from_texture_variable(api::effect_texture_variable handle, const char *name_in, int32_t *values, size_t count, size_t array_index) const
 {
-	if (handle.handle != 0 && name_in != nullptr)
+	if (handle != 0 && name_in != nullptr)
 	{
 		const texture &variable = *reinterpret_cast<const texture *>(handle.handle);
 		const std::string_view name(name_in);
@@ -576,7 +576,7 @@ bool reshade::runtime::get_annotation_int_from_texture_variable(api::effect_text
 }
 bool reshade::runtime::get_annotation_uint_from_texture_variable(api::effect_texture_variable handle, const char *name_in, uint32_t *values, size_t count, size_t array_index) const
 {
-	if (handle.handle != 0 && name_in != nullptr)
+	if (handle != 0 && name_in != nullptr)
 	{
 		const texture &variable = *reinterpret_cast<const texture *>(handle.handle);
 		const std::string_view name(name_in);
@@ -597,7 +597,7 @@ bool reshade::runtime::get_annotation_uint_from_texture_variable(api::effect_tex
 }
 bool reshade::runtime::get_annotation_string_from_texture_variable(api::effect_texture_variable handle, const char *name_in, char *value, size_t *size) const
 {
-	if (handle.handle != 0 && name_in != nullptr)
+	if (handle != 0 && name_in != nullptr)
 	{
 		const texture &variable = *reinterpret_cast<const texture *>(handle.handle);
 		const std::string_view name(name_in);
@@ -839,7 +839,7 @@ void reshade::runtime::get_technique_effect_name(api::effect_technique handle, c
 
 bool reshade::runtime::get_annotation_bool_from_technique(api::effect_technique handle, const char *name_in, bool *values, size_t count, size_t array_index) const
 {
-	if (handle.handle != 0 && name_in != nullptr)
+	if (handle != 0 && name_in != nullptr)
 	{
 		const auto& tech = *reinterpret_cast<const technique *>(handle.handle);
 		const std::string_view name(name_in);
@@ -860,7 +860,7 @@ bool reshade::runtime::get_annotation_bool_from_technique(api::effect_technique 
 }
 bool reshade::runtime::get_annotation_float_from_technique(api::effect_technique handle, const char *name_in, float *values, size_t count, size_t array_index) const
 {
-	if (handle.handle != 0 && name_in != nullptr)
+	if (handle != 0 && name_in != nullptr)
 	{
 		const auto &tech = *reinterpret_cast<const technique *>(handle.handle);
 		const std::string_view name(name_in);
@@ -881,7 +881,7 @@ bool reshade::runtime::get_annotation_float_from_technique(api::effect_technique
 }
 bool reshade::runtime::get_annotation_int_from_technique(api::effect_technique handle, const char *name_in, int32_t *values, size_t count, size_t array_index) const
 {
-	if (handle.handle != 0 && name_in != nullptr)
+	if (handle != 0 && name_in != nullptr)
 	{
 		const auto &tech = *reinterpret_cast<const technique *>(handle.handle);
 		const std::string_view name(name_in);
@@ -902,7 +902,7 @@ bool reshade::runtime::get_annotation_int_from_technique(api::effect_technique h
 }
 bool reshade::runtime::get_annotation_uint_from_technique(api::effect_technique handle, const char *name_in, uint32_t *values, size_t count, size_t array_index) const
 {
-	if (handle.handle != 0 && name_in != nullptr)
+	if (handle != 0 && name_in != nullptr)
 	{
 		const auto &tech = *reinterpret_cast<const technique *>(handle.handle);
 		const std::string_view name(name_in);
@@ -923,7 +923,7 @@ bool reshade::runtime::get_annotation_uint_from_technique(api::effect_technique 
 }
 bool reshade::runtime::get_annotation_string_from_technique(api::effect_technique handle, const char *name_in, char *value, size_t *size) const
 {
-	if (handle.handle != 0 && name_in != nullptr)
+	if (handle != 0 && name_in != nullptr)
 	{
 		const auto &tech = *reinterpret_cast<const technique *>(handle.handle);
 		const std::string_view name(name_in);
@@ -1284,7 +1284,7 @@ void reshade::runtime::render_technique(api::effect_technique handle, api::comma
 	const size_t effect_index = tech->effect_index;
 
 	if (permutation_index >= tech->permutations.size() ||
-		(!tech->permutations[permutation_index].created && _effects[effect_index].permutations[permutation_index].assembly.empty()))
+		(!tech->permutations[permutation_index].created && _effects[effect_index].permutations[permutation_index].cso.empty()))
 	{
 		if (std::find(_reload_required_effects.begin(), _reload_required_effects.end(), std::make_pair(effect_index, permutation_index)) == _reload_required_effects.end())
 			_reload_required_effects.emplace_back(effect_index, permutation_index);
@@ -1410,7 +1410,7 @@ void reshade::runtime::reorder_techniques(size_t count, const api::effect_techni
 	std::vector<size_t> technique_indices(_techniques.size());
 	for (size_t i = 0; i < count; ++i)
 	{
-		const auto tech = reinterpret_cast<technique *>(techniques[i].handle);
+		const auto tech = reinterpret_cast<const technique *>(techniques[i].handle);
 		if (tech == nullptr)
 			return;
 

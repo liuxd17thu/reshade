@@ -268,18 +268,15 @@ namespace ReShade.Setup
 			}
 		}
 
-		static bool ModuleExists(string path, out bool isReShade)
+		static string GetModuleProductName(string path)
 		{
 			if (File.Exists(path))
 			{
-				isReShade = FileVersionInfo.GetVersionInfo(path).ProductName == "ReShade"
-					|| FileVersionInfo.GetVersionInfo(path).ProductName == "AuroraShade";
-				return true;
+				return FileVersionInfo.GetVersionInfo(path).ProductName;
 			}
 			else
 			{
-				isReShade = false;
-				return false;
+				return null;
 			}
 		}
 
@@ -303,7 +300,7 @@ namespace ReShade.Setup
 			// Filter out invalid search paths (and those with remaining wildcards that were not handled above)
 			var validSearchPaths = searchPaths.Where(searchPath =>
 				{
-					if (searchPath.IndexOfAny(Path.GetInvalidPathChars()) < 0 && searchPath.IndexOf('*') < 0)
+					if (searchPath.IndexOfAny(Path.GetInvalidPathChars()) >= 0 || searchPath.IndexOf('*') >= 0)
 					{
 						return false;
 					}
@@ -382,7 +379,7 @@ namespace ReShade.Setup
 					.Select(searchPath => searchPath.EndsWith(wildcard) ? new KeyValuePair<string, bool>(searchPath.Remove(searchPath.Length - 1 - wildcard.Length), true) : new KeyValuePair<string, bool>(searchPath, false))
 					.Where(searchPath =>
 						{
-							if (searchPath.Key.IndexOfAny(Path.GetInvalidPathChars()) < 0 && searchPath.Key.IndexOf('*') < 0)
+							if (searchPath.Key.IndexOfAny(Path.GetInvalidPathChars()) >= 0 || searchPath.Key.IndexOf('*') >= 0)
 							{
 								return false;
 							}
@@ -622,6 +619,11 @@ namespace ReShade.Setup
 				if (compatibilityIni.HasValue(executableName, "InstallTarget"))
 				{
 					basePath = Path.Combine(basePath, compatibilityIni.GetString(executableName, "InstallTarget"));
+
+					if (compatibilityIni.HasValue(executableName, "Is64Bit"))
+					{
+						currentInfo.is64Bit = compatibilityIni.GetString(executableName, "Is64Bit") == "1";
+					}
 				}
 
 				string api = compatibilityIni.GetString(executableName, "RenderApi");
@@ -678,6 +680,13 @@ namespace ReShade.Setup
 				{
 					isApiOpenGL = false; // Prefer Vulkan and Direct3D over OpenGL
 				}
+			}
+
+			// In case DXVK is installed, default to Vulkan
+			if (GetModuleProductName(Path.Combine(basePath, "d3d9.dll")) == "DXVK" ||
+				GetModuleProductName(Path.Combine(basePath, "dxgi.dll")) == "DXVK")
+			{
+				isApiVulkan = true;
 			}
 
 			// In case this game is modded with NVIDIA RTX Remix, install to the Remix Bridge
@@ -778,8 +787,6 @@ namespace ReShade.Setup
 
 			currentInfo.configPath = Path.Combine(basePath, "ReShade.ini");
 
-			bool isReShade = false;
-
 			if (currentInfo.targetApi == Api.Vulkan || currentInfo.targetOpenXR)
 			{
 				string moduleName = currentInfo.is64Bit ? "ReShade64" : "ReShade32";
@@ -833,9 +840,9 @@ namespace ReShade.Setup
 
 				currentInfo.modulePath = Path.Combine(basePath, currentInfo.modulePath);
 
-				if (currentOperation == InstallOperation.Install && ModuleExists(currentInfo.modulePath, out isReShade))
+				if (currentOperation == InstallOperation.Install && GetModuleProductName(currentInfo.modulePath) != null)
 				{
-					if (isReShade)
+					if (GetModuleProductName(currentInfo.modulePath) == "ReShade")
 					{
 						if (isHeadless)
 						{
@@ -860,7 +867,7 @@ namespace ReShade.Setup
 			{
 				string conflictingModulePath = Path.Combine(basePath, conflictingModuleName);
 
-				if (currentOperation == InstallOperation.Install && ModuleExists(conflictingModulePath, out isReShade) && isReShade)
+				if (currentOperation == InstallOperation.Install && GetModuleProductName(conflictingModulePath) == "ReShade")
 				{
 					if (isHeadless)
 					{
@@ -939,7 +946,7 @@ namespace ReShade.Setup
 
 				try
 				{
-					if (ModuleExists(conflictingModulePath, out bool isReShade) && isReShade)
+					if (GetModuleProductName(conflictingModulePath) == "ReShade")
 					{
 						File.Delete(conflictingModulePath);
 					}
@@ -1584,7 +1591,7 @@ namespace ReShade.Setup
 				{
 					string conflictingModulePath = Path.Combine(basePath, conflictingModuleName);
 
-					if (ModuleExists(conflictingModulePath, out bool isReShade) && isReShade)
+					if (GetModuleProductName(conflictingModulePath) == "ReShade")
 					{
 						File.Delete(conflictingModulePath);
 					}
@@ -2022,8 +2029,15 @@ namespace ReShade.Setup
 		}
 		void InstallStep_Finish()
 		{
-			UpdateStatusAndFinish(true, (currentOperation != InstallOperation.Uninstall ? "成功安装ReShade。" : "成功卸载ReShade。") +
-				(isHeadless ? string.Empty : "\n点击“完成”按钮退出安装程序。"));
+			if (currentOperation != InstallOperation.Uninstall)
+			{
+				UpdateStatusAndFinish(true, "成功安装ReShade。" +
+					(isHeadless ? string.Empty : "\n点击“完成”按钮退出安装程序。\n\n若需对某个应用程序卸载ReShade，重新运行安装工具，并再次选择该应用程序，将会显示卸载选项。"));
+			}
+			else
+			{
+				UpdateStatusAndFinish(true, "成功卸载ReShade。" + (isHeadless ? string.Empty : "\n点击“完成”按钮退出安装程序。"));
+			}
 		}
 
 		void OnWindowInit(object sender, EventArgs e)

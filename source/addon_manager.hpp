@@ -53,13 +53,13 @@ namespace reshade
 	/// <summary>
 	/// Gets the add-on that was loaded at the specified address.
 	/// </summary>
-	addon_info *find_addon(void *address);
+	addon_info *find_addon(const void *address);
 
 	/// <summary>
 	/// Checks whether any callbacks were registered for the specified <paramref name="ev"/>ent.
 	/// </summary>
 	template <addon_event ev>
-	__forceinline bool has_addon_event()
+	bool has_addon_event()
 	{
 		return !addon_event_list[static_cast<uint32_t>(ev)].empty();
 	}
@@ -68,7 +68,7 @@ namespace reshade
 	/// Invokes all registered callbacks for the specified <typeparamref name="ev"/>ent.
 	/// </summary>
 	template <addon_event ev, typename... Args>
-	__forceinline std::enable_if_t<std::is_same_v<typename addon_event_traits<ev>::type, void>, void> invoke_addon_event(Args &&... args)
+	std::enable_if_t<std::is_same_v<typename addon_event_traits<ev>::type, void>, void> invoke_addon_event(Args &&... args)
 	{
 #if RESHADE_ADDON == 1
 		// Ensure certain events are not compiled when only limited add-on support is enabled
@@ -115,7 +115,7 @@ namespace reshade
 		if (!addon_enabled)
 			return;
 #endif
-		std::vector<void *> &event_list = addon_event_list[static_cast<uint32_t>(ev)];
+		const std::vector<void *> &event_list = addon_event_list[static_cast<uint32_t>(ev)];
 		for (size_t cb = 0, count = event_list.size(); cb < count; ++cb) // Generates better code than ranged-based for loop
 		{
 			bool first_invocation = false;
@@ -150,7 +150,7 @@ namespace reshade
 	/// Invokes registered callbacks for the specified <typeparamref name="ev"/>ent until a callback reports back as having handled this event by returning <see langword="true"/>.
 	/// </summary>
 	template <addon_event ev, typename... Args>
-	__forceinline std::enable_if_t<std::is_same_v<typename addon_event_traits<ev>::type, bool>, bool> invoke_addon_event(Args &&... args)
+	std::enable_if_t<std::is_same_v<typename addon_event_traits<ev>::type, bool>, bool> invoke_addon_event(Args &&... args)
 	{
 #if RESHADE_ADDON == 1
 		static_assert(
@@ -179,7 +179,7 @@ namespace reshade
 			return false;
 #endif
 		bool skip = false;
-		std::vector<void *> &event_list = addon_event_list[static_cast<uint32_t>(ev)];
+		const std::vector<void *> &event_list = addon_event_list[static_cast<uint32_t>(ev)];
 		for (size_t cb = 0, count = event_list.size(); cb < count; ++cb)
 		{
 			bool first_invocation = false;
