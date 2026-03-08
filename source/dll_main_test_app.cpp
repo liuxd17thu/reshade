@@ -30,7 +30,7 @@ extern "C" PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice device, co
 extern "C" PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance instance, const char *pName);
 
 #define HR_CHECK(exp) { const HRESULT res = (exp); assert(SUCCEEDED(res)); }
-#define VK_CHECK(exp) { const VkResult res = (exp); assert(res == VK_SUCCESS); }
+#define VK_CHECK(exp) { const VkResult res = (exp); assert(res >= VK_SUCCESS); }
 
 struct scoped_module_handle
 {
@@ -145,6 +145,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int nCmdShow
 	if (strstr(lpCmdLine, "-vulkan"))
 		api = reshade::api::device_api::vulkan;
 
+	const bool validation = strstr(lpCmdLine, "-validation") != nullptr;
+	const bool vsync = strstr(lpCmdLine, "-vsync") != nullptr;
 	const bool multisample = strstr(lpCmdLine, "-multisample") != nullptr;
 
 	switch (api)
@@ -159,7 +161,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int nCmdShow
 		pp.hDeviceWindow = window_handle;
 		pp.Windowed = true;
 		pp.MultiSampleType = multisample ? D3DMULTISAMPLE_4_SAMPLES : D3DMULTISAMPLE_NONE;
-		pp.PresentationInterval = D3DPRESENT_INTERVAL_ONE;
+		pp.PresentationInterval = vsync ? D3DPRESENT_INTERVAL_ONE : D3DPRESENT_INTERVAL_IMMEDIATE;
 
 		// Initialize Direct3D 9
 		com_ptr<IDirect3D9> d3d = Direct3DCreate9(D3D_SDK_VERSION);
@@ -208,11 +210,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int nCmdShow
 			desc.Windowed = true;
 			desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
 
-#ifndef NDEBUG
-			const UINT flags = D3D11_CREATE_DEVICE_DEBUG;
-#else
-			const UINT flags = 0;
-#endif
+			const UINT flags = validation ? D3D10_CREATE_DEVICE_DEBUG : 0;
 			HR_CHECK(D3D10CreateDeviceAndSwapChain(nullptr, D3D10_DRIVER_TYPE_HARDWARE, nullptr, flags, D3D10_SDK_VERSION, &desc, &swapchain, &device));
 		}
 
@@ -244,7 +242,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int nCmdShow
 			const float color[4] = { 0.5f, 0.5f, 0.5f, 1.0f };
 			device->ClearRenderTargetView(back_buffer_rtv.get(), color);
 
-			HR_CHECK(swapchain->Present(1, 0));
+			HR_CHECK(swapchain->Present(vsync ? 1 : 0, 0));
 		}
 	}
 	#pragma endregion
@@ -269,11 +267,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int nCmdShow
 			desc.Windowed = true;
 			desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
 
-#ifndef NDEBUG
-			const UINT flags = D3D11_CREATE_DEVICE_DEBUG;
-#else
-			const UINT flags = 0;
-#endif
+			const UINT flags = validation ? D3D11_CREATE_DEVICE_DEBUG : 0;
 			HR_CHECK(D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags, nullptr, 0, D3D11_SDK_VERSION, &desc, &swapchain, &device, nullptr, &immediate_context));
 		}
 
@@ -305,7 +299,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int nCmdShow
 			const float color[4] = { 0.5f, 0.5f, 0.5f, 1.0f };
 			immediate_context->ClearRenderTargetView(back_buffer_rtv.get(), color);
 
-			HR_CHECK(swapchain->Present(1, 0));
+			HR_CHECK(swapchain->Present(vsync ? 1 : 0, 0));
 		}
 	}
 	#pragma endregion
@@ -316,13 +310,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int nCmdShow
 		const scoped_module_handle dxgi_module(L"dxgi.dll");
 		const scoped_module_handle d3d12_module(L"d3d12.dll");
 
-#ifndef NDEBUG
-		// Enable D3D debug layer if it is available
-		{   com_ptr<ID3D12Debug> debug_iface;
+		if (validation)
+		{
+			// Enable D3D debug layer if it is available
+			com_ptr<ID3D12Debug> debug_iface;
 			if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debug_iface))))
 				debug_iface->EnableDebugLayer();
 		}
-#endif
 
 		// Initialize Direct3D 12
 		com_ptr<ID3D12Device> device;
@@ -334,7 +328,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int nCmdShow
 		com_ptr<ID3D12CommandAllocator> cmd_alloc;
 		com_ptr<ID3D12GraphicsCommandList> cmd_lists[3];
 
-		HR_CHECK(CreateDXGIFactory2(DXGI_CREATE_FACTORY_DEBUG, IID_PPV_ARGS(&dxgi_factory)));
+		HR_CHECK(CreateDXGIFactory2(validation ? DXGI_CREATE_FACTORY_DEBUG : 0, IID_PPV_ARGS(&dxgi_factory)));
 
 		{	HRESULT hr = E_FAIL; com_ptr<IDXGIAdapter> adapter;
 			for (UINT i = 0; dxgi_factory->EnumAdapters(i, &adapter) != DXGI_ERROR_NOT_FOUND; i++, adapter.reset())
@@ -365,7 +359,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int nCmdShow
 			desc.BufferCount = num_buffers;
 			desc.Scaling = DXGI_SCALING_STRETCH;
 			desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-
+			desc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
 
 			com_ptr<IDXGISwapChain1> dxgi_swapchain;
 
@@ -469,12 +463,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int nCmdShow
 				HR_CHECK(command_queue->QueryInterface(&queue_downlevel));
 
 				// Windows 7 present path does not have a DXGI swap chain
-				HR_CHECK(queue_downlevel->Present(dummy_list.get(), back_buffers[swap_index].get(), window_handle, D3D12_DOWNLEVEL_PRESENT_FLAG_WAIT_FOR_VBLANK));
+				HR_CHECK(queue_downlevel->Present(dummy_list.get(), back_buffers[swap_index].get(), window_handle, vsync ? D3D12_DOWNLEVEL_PRESENT_FLAG_WAIT_FOR_VBLANK : D3D12_DOWNLEVEL_PRESENT_FLAG_NONE));
 			}
 			else
 			{
 				// Synchronization is handled in 'swapchain_impl::on_present'
-				HR_CHECK(swapchain->Present(1, 0));
+				HR_CHECK(swapchain->Present(vsync ? 1 : 0, vsync ? 0 : DXGI_PRESENT_ALLOW_TEARING));
 			}
 		}
 	}
@@ -559,6 +553,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int nCmdShow
 				}, opengl_module.module))
 			return 1;
 
+		wglSwapIntervalEXT(vsync ? 1 : 0);
+
 		while (true)
 		{
 			while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE) && msg.message != WM_QUIT)
@@ -629,10 +625,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int nCmdShow
 
 			VkInstanceCreateInfo create_info { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
 			create_info.pApplicationInfo = &app_info;
-#ifndef NDEBUG
-			create_info.enabledLayerCount = ARRAYSIZE(enabled_layers);
-			create_info.ppEnabledLayerNames = enabled_layers;
-#endif
+			if (validation)
+			{
+				create_info.enabledLayerCount = ARRAYSIZE(enabled_layers);
+				create_info.ppEnabledLayerNames = enabled_layers;
+			}
 			create_info.enabledExtensionCount = ARRAYSIZE(enabled_extensions);
 			create_info.ppEnabledExtensionNames = enabled_extensions;
 
@@ -705,10 +702,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int nCmdShow
 			VkDeviceCreateInfo create_info { VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
 			create_info.queueCreateInfoCount = 1;
 			create_info.pQueueCreateInfos = &queue_info;
-#ifndef NDEBUG
-			create_info.enabledLayerCount = ARRAYSIZE(enabled_layers);
-			create_info.ppEnabledLayerNames = enabled_layers;
-#endif
+			if (validation)
+			{
+				create_info.enabledLayerCount = ARRAYSIZE(enabled_layers);
+				create_info.ppEnabledLayerNames = enabled_layers;
+			}
 			create_info.enabledExtensionCount = ARRAYSIZE(enabled_extensions);
 			create_info.ppEnabledExtensionNames = enabled_extensions;
 
@@ -742,28 +740,21 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int nCmdShow
 		}
 
 		const auto resize_swapchain = [&](VkSwapchainKHR old_swapchain = VK_NULL_HANDLE) {
-			uint32_t num_present_modes = 0, num_surface_formats = 0;
-			vk.GetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &num_surface_formats, nullptr);
-			vk.GetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &num_present_modes, nullptr);
-			std::vector<VkPresentModeKHR> present_modes(num_present_modes);
-			std::vector<VkSurfaceFormatKHR> surface_formats(num_surface_formats);
-			vk.GetPhysicalDeviceSurfaceFormatsKHR(physical_device, surface, &num_surface_formats, surface_formats.data());
-			vk.GetPhysicalDeviceSurfacePresentModesKHR(physical_device, surface, &num_present_modes, present_modes.data());
 			VkSurfaceCapabilitiesKHR capabilities = {};
 			vk.GetPhysicalDeviceSurfaceCapabilitiesKHR(physical_device, surface, &capabilities);
 
 			VkSwapchainCreateInfoKHR create_info { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR };
 			create_info.surface = surface;
 			create_info.minImageCount = 3;
-			create_info.imageFormat = surface_formats[0].format;
-			create_info.imageColorSpace = surface_formats[0].colorSpace;
+			create_info.imageFormat = VK_FORMAT_R8G8B8A8_UNORM;
+			create_info.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 			create_info.imageExtent = capabilities.currentExtent;
 			create_info.imageArrayLayers = 1;
 			create_info.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 			create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 			create_info.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
 			create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-			create_info.presentMode = present_modes[0];
+			create_info.presentMode = vsync ? VK_PRESENT_MODE_FIFO_KHR : VK_PRESENT_MODE_IMMEDIATE_KHR;
 			create_info.clipped = VK_TRUE;
 			create_info.oldSwapchain = old_swapchain;
 
@@ -825,13 +816,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int nCmdShow
 
 		resize_swapchain();
 
-		uint32_t sem_index = 0;
-		std::vector<VkSemaphore> cmd_semaphores(4);
-		std::vector<VkSemaphore> acquire_semaphores(4);
+		size_t sem_index = 0;
+		VkSemaphore cmd_semaphores[8] = {}; // The size should match 'reshade::vulkan::command_list_immediate_impl::NUM_COMMAND_FRAMES'
+		VkSemaphore acquire_semaphores[8] = {};
 
-		for (size_t i = 0; i < cmd_semaphores.size(); ++i)
+		for (size_t i = 0; i < 8; ++i)
 		{
 			VkSemaphoreCreateInfo create_info { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+
 			VK_CHECK(vk.CreateSemaphore(device, &create_info, nullptr, &cmd_semaphores[i]));
 			VK_CHECK(vk.CreateSemaphore(device, &create_info, nullptr, &acquire_semaphores[i]));
 		}
@@ -851,15 +843,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int nCmdShow
 			}
 
 			uint32_t swapchain_image_index = 0;
-			sem_index = (sem_index + 1) % cmd_semaphores.size();
+			sem_index = (sem_index + 1) % std::size(cmd_semaphores);
 
 			VkResult present_res = vk.AcquireNextImageKHR(device, swapchain, UINT64_MAX, acquire_semaphores[sem_index], VK_NULL_HANDLE, &swapchain_image_index);
 			if (present_res == VK_SUCCESS)
 			{
+				const VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+
 				VkSubmitInfo submit_info { VK_STRUCTURE_TYPE_SUBMIT_INFO };
 				submit_info.waitSemaphoreCount = 1;
 				submit_info.pWaitSemaphores = &acquire_semaphores[sem_index];
-				const VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
 				submit_info.pWaitDstStageMask = &wait_stage;
 				submit_info.commandBufferCount = 1;
 				submit_info.pCommandBuffers = &cmd_buffers[swapchain_image_index];
@@ -886,11 +879,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR lpCmdLine, int nCmdShow
 		// Wait for all GPU work to finish before destroying objects
 		vk.DeviceWaitIdle(device);
 
-		for (size_t i = 0; i < cmd_semaphores.size(); ++i)
-		{
-			vk.DestroySemaphore(device, cmd_semaphores[i], nullptr);
-			vk.DestroySemaphore(device, acquire_semaphores[i], nullptr);
-		}
+		for (VkSemaphore semaphore : cmd_semaphores)
+			vk.DestroySemaphore(device, semaphore, nullptr);
+		for (VkSemaphore semaphore : acquire_semaphores)
+			vk.DestroySemaphore(device, semaphore, nullptr);
 		vk.FreeCommandBuffers(device, cmd_alloc, static_cast<uint32_t>(cmd_buffers.size()), cmd_buffers.data());
 		vk.DestroyCommandPool(device, cmd_alloc, nullptr);
 		vk.DestroySwapchainKHR(device, swapchain, nullptr);

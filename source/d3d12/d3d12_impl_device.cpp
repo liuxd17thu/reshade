@@ -27,13 +27,11 @@ constexpr size_t heap_index_start = 28;
 
 static auto adapter_from_device(ID3D12Device *device, DXGI_ADAPTER_DESC *adapter_desc) -> const com_ptr<IDXGIAdapter>
 {
-	const auto dxgi_module = GetModuleHandleW(L"dxgi.dll");
-	assert(dxgi_module != nullptr);
-	auto CreateDXGIFactory1_orig = reinterpret_cast<decltype(&CreateDXGIFactory1)>(GetProcAddress(dxgi_module, "CreateDXGIFactory1"));
+	auto CreateDXGIFactory1_orig = reinterpret_cast<decltype(&CreateDXGIFactory1)>(GetProcAddress(GetModuleHandleW(L"dxgi.dll"), "CreateDXGIFactory1"));
 	if (reshade::hooks::is_hooked(CreateDXGIFactory1_orig))
 		CreateDXGIFactory1_orig = reshade::hooks::call<decltype(&CreateDXGIFactory1)>(nullptr, CreateDXGIFactory1_orig);
 	assert(CreateDXGIFactory1_orig != nullptr);
-	auto CreateDXGIFactory2_orig = reinterpret_cast<decltype(&CreateDXGIFactory2)>(GetProcAddress(dxgi_module, "CreateDXGIFactory2"));
+	auto CreateDXGIFactory2_orig = reinterpret_cast<decltype(&CreateDXGIFactory2)>(GetProcAddress(GetModuleHandleW(L"dxgi.dll"), "CreateDXGIFactory2"));
 	if (reshade::hooks::is_hooked(CreateDXGIFactory2_orig))
 		CreateDXGIFactory2_orig = reshade::hooks::call<decltype(&CreateDXGIFactory2)>(nullptr, CreateDXGIFactory2_orig);
 	assert(CreateDXGIFactory2_orig != nullptr || is_windows7());
@@ -251,6 +249,12 @@ bool reshade::d3d12::device_impl::check_capability(api::device_caps capability) 
 		return false;
 	case api::device_caps::update_buffer_region_command:
 	case api::device_caps::update_texture_region_command:
+		return false;
+	case api::device_caps::gpu_upload_heap:
+		if (D3D12_FEATURE_DATA_D3D12_OPTIONS16 options;
+			SUCCEEDED(_orig->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS16, &options, sizeof(options))))
+			return options.GPUUploadHeapSupported;
+		return false;
 	default:
 		return false;
 	}
@@ -335,8 +339,7 @@ bool reshade::d3d12::device_impl::create_resource(const api::resource_desc &desc
 	D3D12_HEAP_PROPERTIES heap_props = {};
 	convert_resource_desc(desc, internal_desc, heap_props, heap_flags);
 
-	D3D12_SUBRESOURCE_FOOTPRINT footprint = {};
-
+	D3D12_PLACED_SUBRESOURCE_FOOTPRINT placed_footprint = {};
 	if (desc.type == api::resource_type::buffer)
 	{
 		internal_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
@@ -345,22 +348,12 @@ bool reshade::d3d12::device_impl::create_resource(const api::resource_desc &desc
 		if ((desc.usage & (api::resource_usage::constant_buffer)) != 0)
 			internal_desc.Width = (internal_desc.Width + D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT - 1u) & ~(D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT - 1u);
 	}
-	else if ((desc.heap == api::memory_heap::gpu_to_cpu || desc.heap == api::memory_heap::cpu_only) && desc.texture.levels == 1)
+	else if ((desc.heap == api::memory_heap::upload || desc.heap == api::memory_heap::readback || desc.heap == api::memory_heap::scratch) && desc.texture.levels == 1)
 	{
+		_orig->GetCopyableFootprints(&internal_desc, 0, 1, 0, &placed_footprint, nullptr, nullptr, &internal_desc.Width);
+
 		// Textures in the upload or readback heap are created as buffers, so that they can be mapped
 		internal_desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-
-		auto row_pitch = api::format_row_pitch(desc.texture.format, desc.texture.width);
-		row_pitch = (row_pitch + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1u) & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1u);
-		const auto slice_pitch = api::format_slice_pitch(desc.texture.format, row_pitch, desc.texture.height);
-
-		footprint.Format = internal_desc.Format;
-		footprint.Width = static_cast<UINT>(internal_desc.Width);
-		footprint.Height = internal_desc.Height;
-		footprint.Depth = internal_desc.DepthOrArraySize;
-		footprint.RowPitch = row_pitch;
-
-		internal_desc.Width = static_cast<UINT64>(slice_pitch) * desc.texture.depth_or_layers;
 		internal_desc.Height = 1;
 		internal_desc.DepthOrArraySize = 1;
 		internal_desc.Format = DXGI_FORMAT_UNKNOWN;
@@ -385,8 +378,8 @@ bool reshade::d3d12::device_impl::create_resource(const api::resource_desc &desc
 		if (is_shared && FAILED(_orig->CreateSharedHandle(object.get(), nullptr, GENERIC_ALL, nullptr, shared_handle)))
 			return false;
 
-		if (footprint.Format != DXGI_FORMAT_UNKNOWN)
-			object->SetPrivateData(extra_data_guid, sizeof(footprint), &footprint);
+		if (placed_footprint.Footprint.Format != DXGI_FORMAT_UNKNOWN)
+			object->SetPrivateData(extra_data_guid, sizeof(placed_footprint.Footprint), &placed_footprint.Footprint);
 
 		register_resource(object.get(), initial_state == api::resource_usage::acceleration_structure);
 
@@ -415,7 +408,7 @@ bool reshade::d3d12::device_impl::create_resource(const api::resource_desc &desc
 				const api::resource_usage states_finalize[2] = { api::resource_usage::copy_dest, initial_state };
 				immediate_command_list->barrier(1, out_resource, &states_finalize[0], &states_finalize[1]);
 
-				immediate_command_list->flush();
+				immediate_command_list->flush(true);
 			}
 		}
 
@@ -466,7 +459,7 @@ bool reshade::d3d12::device_impl::create_resource_view(api::resource resource, a
 	*out_view = { 0 };
 
 	// Cannot create a resource view with a typeless format
-	assert(desc.format != api::format_to_typeless(desc.format) || api::format_to_typeless(desc.format) == api::format_to_default_typed(desc.format));
+	assert(!api::format_is_typeless(desc.format));
 
 	switch (usage_type)
 	{
@@ -543,7 +536,7 @@ bool reshade::d3d12::device_impl::create_resource_view(api::resource resource, a
 			if (resource == 0)
 				break;
 
-			const D3D12_GPU_VIRTUAL_ADDRESS address = reinterpret_cast<ID3D12Resource *>(resource.handle)->GetGPUVirtualAddress() +
+			const D3D12_GPU_VIRTUAL_ADDRESS address = get_resource_gpu_address(resource) +
 				(desc.type == api::resource_view_type::buffer || desc.type == api::resource_view_type::acceleration_structure ? desc.buffer.offset : 0);
 
 			register_resource_view(
@@ -598,6 +591,13 @@ reshade::api::resource_view_desc reshade::d3d12::device_impl::get_resource_view_
 		return assert(false), api::resource_view_desc();
 }
 
+uint64_t reshade::d3d12::device_impl::get_resource_gpu_address(api::resource resource) const
+{
+	if (resource == 0)
+		return 0;
+
+	return reinterpret_cast<ID3D12Resource *>(resource.handle)->GetGPUVirtualAddress();
+}
 uint64_t reshade::d3d12::device_impl::get_resource_view_gpu_address(api::resource_view view) const
 {
 	D3D12_CPU_DESCRIPTOR_HANDLE descriptor_handle = { static_cast<SIZE_T>(view.handle) };
@@ -665,27 +665,27 @@ bool reshade::d3d12::device_impl::map_texture_region(api::resource resource, uin
 
 	const D3D12_RANGE no_read = { 0, 0 };
 
-	const D3D12_RESOURCE_DESC desc = reinterpret_cast<ID3D12Resource *>(resource.handle)->GetDesc();
+	const D3D12_RESOURCE_DESC internal_desc = reinterpret_cast<ID3D12Resource *>(resource.handle)->GetDesc();
 
-	D3D12_PLACED_SUBRESOURCE_FOOTPRINT layout;
-	if (desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER)
+	D3D12_PLACED_SUBRESOURCE_FOOTPRINT placed_footprint;
+	if (internal_desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER)
 	{
 		if (subresource != 0)
 			return false;
 
-		UINT extra_data_size = sizeof(layout.Footprint);
-		if (FAILED(reinterpret_cast<ID3D12Resource *>(resource.handle)->GetPrivateData(extra_data_guid, &extra_data_size, &layout.Footprint)))
+		UINT extra_data_size = sizeof(placed_footprint.Footprint);
+		if (FAILED(reinterpret_cast<ID3D12Resource *>(resource.handle)->GetPrivateData(extra_data_guid, &extra_data_size, &placed_footprint.Footprint)))
 			return false;
 
-		out_data->slice_pitch = layout.Footprint.Height;
+		out_data->slice_pitch = placed_footprint.Footprint.Height;
 	}
 	else
 	{
-		_orig->GetCopyableFootprints(&desc, subresource, 1, 0, &layout, &out_data->slice_pitch, nullptr, nullptr);
+		_orig->GetCopyableFootprints(&internal_desc, subresource, 1, 0, &placed_footprint, &out_data->slice_pitch, nullptr, nullptr);
 	}
 
-	out_data->row_pitch = layout.Footprint.RowPitch;
-	out_data->slice_pitch *= layout.Footprint.RowPitch;
+	out_data->row_pitch = placed_footprint.Footprint.RowPitch;
+	out_data->slice_pitch *= placed_footprint.Footprint.RowPitch;
 
 	return SUCCEEDED(ID3D12Resource_Map(reinterpret_cast<ID3D12Resource *>(resource.handle),
 		subresource, access == api::map_access::write_only || access == api::map_access::write_discard ? &no_read : nullptr, &out_data->data));
@@ -697,9 +697,9 @@ void reshade::d3d12::device_impl::unmap_texture_region(api::resource resource, u
 	ID3D12Resource_Unmap(reinterpret_cast<ID3D12Resource *>(resource.handle), subresource, nullptr);
 }
 
-void reshade::d3d12::device_impl::update_buffer_region(const void *data, api::resource resource, uint64_t offset, uint64_t size)
+void reshade::d3d12::device_impl::update_buffer_region(const void *data, api::resource dst, uint64_t dst_offset, uint64_t size)
 {
-	assert(resource != 0);
+	assert(dst != 0);
 
 	if (data == nullptr)
 		return;
@@ -708,127 +708,108 @@ void reshade::d3d12::device_impl::update_buffer_region(const void *data, api::re
 	if (immediate_command_list == nullptr)
 		return; // No point in creating upload buffer when it cannot be uploaded
 
+	if (UINT64_MAX == size)
+		size = reinterpret_cast<ID3D12Resource *>(dst.handle)->GetDesc().Width;
+
 	// Allocate host memory for upload
-	D3D12_RESOURCE_DESC intermediate_desc = { D3D12_RESOURCE_DIMENSION_BUFFER };
-	intermediate_desc.Width = size;
-	intermediate_desc.Height = 1;
-	intermediate_desc.DepthOrArraySize = 1;
-	intermediate_desc.MipLevels = 1;
-	intermediate_desc.SampleDesc = { 1, 0 };
-	intermediate_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-
-	const D3D12_HEAP_PROPERTIES upload_heap_props = { D3D12_HEAP_TYPE_UPLOAD };
-
-	com_ptr<ID3D12Resource> intermediate;
-	if (FAILED(_orig->CreateCommittedResource(&upload_heap_props, D3D12_HEAP_FLAG_NONE, &intermediate_desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&intermediate))))
+	api::resource intermediate;
+	if (!create_resource(api::resource_desc(size, api::memory_heap::upload, api::resource_usage::copy_source), nullptr, api::resource_usage::cpu_access, &intermediate))
 	{
-		log::message(log::level::error, "Failed to create upload buffer (width = %llu)!", intermediate_desc.Width);
+		log::message(log::level::error, "Failed to create upload buffer (width = %llu)!", size);
 		return;
 	}
-	intermediate->SetName(L"ReShade upload buffer");
+
+#ifndef NDEBUG
+	set_resource_name(intermediate, "ReShade upload buffer");
+#endif
 
 	// Fill upload buffer with pixel data
-	uint8_t *mapped_data;
-	if (FAILED(ID3D12Resource_Map(intermediate.get(), 0, nullptr, reinterpret_cast<void **>(&mapped_data))))
-		return;
+	if (void *mapped_data;
+		map_buffer_region(intermediate, 0, UINT64_MAX, api::map_access::write_only, &mapped_data))
+	{
+		std::memcpy(mapped_data, data, static_cast<size_t>(size));
 
-	std::memcpy(mapped_data, data, static_cast<size_t>(size));
+		unmap_buffer_region(intermediate);
 
-	ID3D12Resource_Unmap(intermediate.get(), 0, nullptr);
+		// Copy data from upload buffer into target texture using the first available immediate command list
+		immediate_command_list->copy_buffer_region(intermediate, 0, dst, dst_offset, size);
 
-	// Copy data from upload buffer into target texture using the first available immediate command list
-	immediate_command_list->copy_buffer_region(api::resource { reinterpret_cast<uintptr_t>(intermediate.get()) }, 0, resource, offset, size);
+		// Wait for command to finish executing before destroying the upload buffer
+		immediate_command_list->flush(true);
+	}
 
-	// Wait for command to finish executing before destroying the upload buffer
-	immediate_command_list->flush_and_wait();
+	destroy_resource(intermediate);
 }
-void reshade::d3d12::device_impl::update_texture_region(const api::subresource_data &data, api::resource resource, uint32_t subresource, const api::subresource_box *box)
+void reshade::d3d12::device_impl::update_texture_region(const api::subresource_data &data, api::resource dst, uint32_t dst_subresource, const api::subresource_box *dst_box)
 {
-	assert(resource != 0);
+	assert(dst != 0);
 
 	if (data.data == nullptr)
 		return;
-
-	const D3D12_RESOURCE_DESC desc = reinterpret_cast<ID3D12Resource *>(resource.handle)->GetDesc();
-	if (desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER)
-	{
-		if (subresource != 0 || box != nullptr)
-			return;
-
-		update_buffer_region(data.data, resource, 0, data.slice_pitch);
-		return;
-	}
 
 	const auto immediate_command_list = get_immediate_command_list();
 	if (immediate_command_list == nullptr)
 		return; // No point in creating upload buffer when it cannot be uploaded
 
-	UINT width = static_cast<UINT>(desc.Width);
-	UINT height = desc.Height;
-	UINT num_slices = desc.DepthOrArraySize;
-	if (box != nullptr)
+	D3D12_RESOURCE_DESC internal_desc = reinterpret_cast<ID3D12Resource *>(dst.handle)->GetDesc();
+	if (internal_desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER)
 	{
-		width = box->width();
-		height = box->height();
-		num_slices = box->depth();
-	}
-	else
-	{
-		width = std::max(1u, width >> (subresource % desc.MipLevels));
-		height = std::max(1u, height >> (subresource % desc.MipLevels));
+		if (dst_subresource == 0 && dst_box == nullptr)
+			update_buffer_region(data.data, dst, 0, data.slice_pitch);
+		return;
 	}
 
-	UINT row_pitch = api::format_row_pitch(convert_format(desc.Format), width);
-	row_pitch = (row_pitch + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1u) & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1u);
-	const UINT64 slice_pitch = api::format_slice_pitch(convert_format(desc.Format), row_pitch, height);
-	height = static_cast<UINT>(slice_pitch / row_pitch);
+	UINT width, height, depth;
+	convert_subresource_box(dst_box, internal_desc, dst_subresource, width, height, depth);
+	internal_desc.Width = width;
+	internal_desc.Height = height;
+	internal_desc.DepthOrArraySize = static_cast<UINT16>(depth);
+	internal_desc.MipLevels = 1;
+
+	D3D12_PLACED_SUBRESOURCE_FOOTPRINT placed_footprint;
+	_orig->GetCopyableFootprints(&internal_desc, 0, 1, 0, &placed_footprint, &height, nullptr, &internal_desc.Width);
 
 	// Allocate host memory for upload
-	D3D12_RESOURCE_DESC intermediate_desc = { D3D12_RESOURCE_DIMENSION_BUFFER };
-	intermediate_desc.Width = static_cast<UINT64>(num_slices) * slice_pitch;
-	intermediate_desc.Height = 1;
-	intermediate_desc.DepthOrArraySize = 1;
-	intermediate_desc.MipLevels = 1;
-	intermediate_desc.SampleDesc = { 1, 0 };
-	intermediate_desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-
-	const D3D12_HEAP_PROPERTIES upload_heap_props = { D3D12_HEAP_TYPE_UPLOAD };
-
-	com_ptr<ID3D12Resource> intermediate;
-	if (FAILED(_orig->CreateCommittedResource(&upload_heap_props, D3D12_HEAP_FLAG_NONE, &intermediate_desc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&intermediate))))
+	api::resource intermediate;
+	if (!create_resource(api::resource_desc(internal_desc.Width, api::memory_heap::upload, api::resource_usage::copy_source), nullptr, api::resource_usage::cpu_access, &intermediate))
 	{
-		log::message(log::level::error, "Failed to create upload buffer (width = %llu)!", intermediate_desc.Width);
+		log::message(log::level::error, "Failed to create upload buffer (width = %llu)!", internal_desc.Width);
 		return;
 	}
-	intermediate->SetName(L"ReShade upload buffer");
+
+#ifndef NDEBUG
+	set_resource_name(intermediate, "ReShade upload buffer");
+#endif
 
 	// Fill upload buffer with pixel data
-	uint8_t *mapped_data;
-	if (FAILED(ID3D12Resource_Map(intermediate.get(), 0, nullptr, reinterpret_cast<void **>(&mapped_data))))
-		return;
-
-	const size_t row_size = data.row_pitch < row_pitch ? data.row_pitch : static_cast<size_t>(row_pitch);
-
-	for (size_t z = 0; z < num_slices; ++z)
+	if (void *mapped_data;
+		map_buffer_region(intermediate, 0, UINT64_MAX, api::map_access::write_only, &mapped_data))
 	{
-		const auto dst_slice = mapped_data + z * slice_pitch;
-		const auto src_slice = static_cast<const uint8_t *>(data.data) + z * data.slice_pitch;
+		const size_t row_size = std::min(placed_footprint.Footprint.RowPitch, data.row_pitch);
 
-		for (size_t y = 0; y < height; ++y)
+		for (size_t z = 0; z < depth; ++z)
 		{
-			std::memcpy(
-				dst_slice + y * row_pitch,
-				src_slice + y * data.row_pitch, row_size);
+			const auto dst_slice = static_cast<uint8_t *>(mapped_data) + z * placed_footprint.Footprint.RowPitch * height;
+			const auto src_slice = static_cast<const uint8_t *>(data.data) + z * data.slice_pitch;
+
+			for (size_t y = 0; y < height; ++y)
+			{
+				std::memcpy(
+					dst_slice + y * placed_footprint.Footprint.RowPitch,
+					src_slice + y * data.row_pitch, row_size);
+			}
 		}
+
+		unmap_buffer_region(intermediate);
+
+		// Copy data from upload buffer into target texture using the first available immediate command list
+		immediate_command_list->copy_buffer_to_texture(intermediate, 0, 0, 0, dst, dst_subresource, dst_box);
+
+		// Wait for command to finish executing before destroying the upload buffer
+		immediate_command_list->flush(true);
 	}
 
-	ID3D12Resource_Unmap(intermediate.get(), 0, nullptr);
-
-	// Copy data from upload buffer into target texture using the first available immediate command list
-	immediate_command_list->copy_buffer_to_texture(api::resource { reinterpret_cast<uintptr_t>(intermediate.get()) }, 0, 0, 0, resource, subresource, box);
-
-	// Wait for command to finish executing before destroying the upload buffer
-	immediate_command_list->flush_and_wait();
+	destroy_resource(intermediate);
 }
 
 bool reshade::d3d12::device_impl::create_pipeline(api::pipeline_layout layout, uint32_t subobject_count, const api::pipeline_subobject *subobjects, api::pipeline *out_pipeline)
@@ -1475,10 +1456,9 @@ bool reshade::d3d12::device_impl::create_pipeline_layout(uint32_t param_count, c
 		}
 	}
 
-	const auto d3d12_module = GetModuleHandleW(L"d3d12.dll");
-	assert(d3d12_module != nullptr);
-	const auto D3D12SerializeRootSignature = reinterpret_cast<HRESULT(WINAPI *)(const D3D12_ROOT_SIGNATURE_DESC *pRootSignature, D3D_ROOT_SIGNATURE_VERSION Version, ID3DBlob **ppBlob, ID3DBlob **ppErrorBlob)>(GetProcAddress(d3d12_module, "D3D12SerializeRootSignature"));
-	assert(D3D12SerializeRootSignature != nullptr);
+	const auto D3D12SerializeRootSignature_orig = reinterpret_cast<decltype(&D3D12SerializeRootSignature)>(
+		GetProcAddress(GetModuleHandleW(L"d3d12.dll"), "D3D12SerializeRootSignature"));
+	assert(D3D12SerializeRootSignature_orig != nullptr);
 
 	D3D12_ROOT_SIGNATURE_DESC internal_desc = {};
 	internal_desc.NumParameters = static_cast<uint32_t>(internal_params.size());
@@ -1501,23 +1481,31 @@ bool reshade::d3d12::device_impl::create_pipeline_layout(uint32_t param_count, c
 			internal_desc.Flags |= D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 		if ((global_visibility_mask & api::shader_stage::pixel) == 0)
 			internal_desc.Flags |= D3D12_ROOT_SIGNATURE_FLAG_DENY_PIXEL_SHADER_ROOT_ACCESS;
-		if ((global_visibility_mask & api::shader_stage::amplification) == 0)
-			internal_desc.Flags |= D3D12_ROOT_SIGNATURE_FLAG_DENY_AMPLIFICATION_SHADER_ROOT_ACCESS;
-		if ((global_visibility_mask & api::shader_stage::mesh) == 0)
-			internal_desc.Flags |= D3D12_ROOT_SIGNATURE_FLAG_DENY_MESH_SHADER_ROOT_ACCESS;
 
-		if (std::pair<D3D12_FEATURE_DATA_SHADER_MODEL, D3D12_FEATURE_DATA_D3D12_OPTIONS> options = { { D3D_SHADER_MODEL_6_6 }, {} };
-			!has_descriptor_tables &&
-			SUCCEEDED(_orig->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &options.first, sizeof(options.first))) &&
-			SUCCEEDED(_orig->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &options.second, sizeof(options.second))) &&
-			options.first.HighestShaderModel >= D3D_SHADER_MODEL_6_6 &&
-			options.second.ResourceBindingTier >= D3D12_RESOURCE_BINDING_TIER_3)
-			internal_desc.Flags |= D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED | D3D12_ROOT_SIGNATURE_FLAG_SAMPLER_HEAP_DIRECTLY_INDEXED;
+		if (D3D12_FEATURE_DATA_D3D12_OPTIONS7 options;
+			SUCCEEDED(_orig->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS7, &options, sizeof(options))) &&
+			options.MeshShaderTier != D3D12_MESH_SHADER_TIER_NOT_SUPPORTED)
+		{
+			if ((global_visibility_mask & api::shader_stage::amplification) == 0)
+				internal_desc.Flags |= D3D12_ROOT_SIGNATURE_FLAG_DENY_AMPLIFICATION_SHADER_ROOT_ACCESS;
+			if ((global_visibility_mask & api::shader_stage::mesh) == 0)
+				internal_desc.Flags |= D3D12_ROOT_SIGNATURE_FLAG_DENY_MESH_SHADER_ROOT_ACCESS;
+		}
+
+		if (!has_descriptor_tables)
+		{
+			if (std::pair<D3D12_FEATURE_DATA_SHADER_MODEL, D3D12_FEATURE_DATA_D3D12_OPTIONS> options = { { D3D_SHADER_MODEL_6_6 }, {} };
+				SUCCEEDED(_orig->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &options.first, sizeof(options.first))) &&
+				SUCCEEDED(_orig->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS, &options.second, sizeof(options.second))) &&
+				options.first.HighestShaderModel >= D3D_SHADER_MODEL_6_6 &&
+				options.second.ResourceBindingTier >= D3D12_RESOURCE_BINDING_TIER_3)
+				internal_desc.Flags |= D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED | D3D12_ROOT_SIGNATURE_FLAG_SAMPLER_HEAP_DIRECTLY_INDEXED;
+		}
 	}
 
 	com_ptr<ID3DBlob> signature_blob, error_blob;
 	com_ptr<ID3D12RootSignature> signature;
-	if (SUCCEEDED(D3D12SerializeRootSignature(&internal_desc, D3D_ROOT_SIGNATURE_VERSION_1, &signature_blob, &error_blob)) &&
+	if (SUCCEEDED(D3D12SerializeRootSignature_orig(&internal_desc, D3D_ROOT_SIGNATURE_VERSION_1, &signature_blob, &error_blob)) &&
 		SUCCEEDED(_orig->CreateRootSignature(0, signature_blob->GetBufferPointer(), signature_blob->GetBufferSize(), IID_PPV_ARGS(&signature))))
 	{
 		pipeline_layout_extra_data extra_data;
@@ -1751,7 +1739,7 @@ void reshade::d3d12::device_impl::update_descriptor_tables(uint32_t count, const
 				const auto &view_range = static_cast<const api::buffer_range *>(update.descriptors)[k];
 
 				D3D12_CONSTANT_BUFFER_VIEW_DESC view_desc;
-				view_desc.BufferLocation = reinterpret_cast<ID3D12Resource *>(view_range.buffer.handle)->GetGPUVirtualAddress() + view_range.offset;
+				view_desc.BufferLocation = get_resource_gpu_address(view_range.buffer) + view_range.offset;
 				view_desc.SizeInBytes = static_cast<UINT>(view_range.size == UINT64_MAX ? reinterpret_cast<ID3D12Resource *>(view_range.buffer.handle)->GetDesc().Width - view_range.offset : view_range.size);
 
 				_orig->CreateConstantBufferView(&view_desc, dst_range_start);
@@ -2033,7 +2021,7 @@ void reshade::d3d12::device_impl::get_acceleration_structure_size(api::accelerat
 
 			desc.NumDescs = inputs->instances.count;
 			desc.DescsLayout = inputs->instances.array_of_pointers ? D3D12_ELEMENTS_LAYOUT_ARRAY_OF_POINTERS : D3D12_ELEMENTS_LAYOUT_ARRAY;
-			desc.InstanceDescs = (inputs->instances.buffer != 0 ? reinterpret_cast<ID3D12Resource *>(inputs->instances.buffer.handle)->GetGPUVirtualAddress() : 0) + inputs->instances.offset;
+			desc.InstanceDescs = get_resource_gpu_address(inputs->instances.buffer) + inputs->instances.offset;
 		}
 		else
 		{
@@ -2104,15 +2092,16 @@ void reshade::d3d12::device_impl::register_resource(ID3D12Resource *resource, [[
 	if (const D3D12_RESOURCE_DESC desc = resource->GetDesc();
 		desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER)
 	{
-		if (const D3D12_GPU_VIRTUAL_ADDRESS address = resource->GetGPUVirtualAddress())
-		{
-			const std::unique_lock<std::shared_mutex> lock(_resource_mutex);
+		const D3D12_GPU_VIRTUAL_ADDRESS start_address = resource->GetGPUVirtualAddress();
+		if (start_address == 0)
+			return;
 
-			// Placed resources may overwrite old resources
-			_buffer_gpu_addresses.insert_or_assign(
-				address,
-				std::tuple<UINT64, ID3D12Resource *, bool >({ desc.Width, resource, acceleration_structure }));
-		}
+		const std::unique_lock<std::shared_mutex> lock(_resource_mutex);
+
+		// Placed resources may overwrite old resources
+		_buffer_gpu_addresses.insert_or_assign(
+			start_address,
+			std::tuple<UINT64, ID3D12Resource *, bool >({ desc.Width, resource, acceleration_structure }));
 	}
 #endif
 }
@@ -2169,7 +2158,7 @@ void reshade::d3d12::device_impl::register_resource_view(D3D12_CPU_DESCRIPTOR_HA
 
 reshade::d3d12::command_list_immediate_impl *reshade::d3d12::device_impl::get_immediate_command_list()
 {
-	// Choosing the right queue is a delicate situation, since it is possible to deadlock when choosing a queue (and using 'flush_and_wait') that is waiting on a fence yet to be signaled by the current thread
+	// Choosing the right queue is a delicate situation, since it is possible to deadlock when choosing a queue (and using 'flush') that is waiting on a fence yet to be signaled by the current thread
 	// Alternatively could create a dedicated queue just for ReShade ...
 	// For now, prefer the last immediate command list used on this thread, as that is less likely to wait on another thread to signal
 	const auto last_immediate_command_list = command_list_immediate_impl::s_last_immediate_command_list;

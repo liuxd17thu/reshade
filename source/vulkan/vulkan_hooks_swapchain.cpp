@@ -34,10 +34,11 @@ VkResult VKAPI_CALL vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreat
 
 	assert(pCreateInfo != nullptr && pSwapchain != nullptr);
 
-	std::vector<VkFormat> format_list;
-	std::vector<uint32_t> queue_family_list;
 	VkSwapchainCreateInfoKHR create_info = *pCreateInfo;
+
+	std::vector<VkFormat> format_list;
 	VkImageFormatListCreateInfo format_list_info;
+	std::vector<uint32_t> queue_family_list;
 
 	// Only have to enable additional features if there is a graphics queue, since ReShade will not run otherwise
 	if (device_impl->_primary_graphics_queue != nullptr)
@@ -45,31 +46,28 @@ VkResult VKAPI_CALL vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreat
 		// Add required usage flags to create info
 		create_info.imageUsage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
 
-		// Add required format variants, so e.g. both linear and sRGB views can be created for the swap chain images
-		format_list.push_back(reshade::vulkan::convert_format(
-			reshade::api::format_to_default_typed(reshade::vulkan::convert_format(create_info.imageFormat), 0)));
-		format_list.push_back(reshade::vulkan::convert_format(
-			reshade::api::format_to_default_typed(reshade::vulkan::convert_format(create_info.imageFormat), 1)));
-
 #if VK_KHR_swapchain_mutable_format
+		// Add required format variants, so e.g. both linear and sRGB views can be created for the swap chain images
+		format_list.push_back(reshade::vulkan::convert_format(reshade::api::format_to_default_typed(reshade::vulkan::convert_format(create_info.imageFormat), 0)));
+		format_list.push_back(reshade::vulkan::convert_format(reshade::api::format_to_default_typed(reshade::vulkan::convert_format(create_info.imageFormat), 1)));
+
 		// Only have to make format mutable if they are actually different
 		if (format_list[0] != format_list[1])
 			create_info.flags |= VK_SWAPCHAIN_CREATE_MUTABLE_FORMAT_BIT_KHR;
 
 		// Patch the format list in the create info of the application
-		if (const auto format_list_info2 = find_in_structure_chain<VkImageFormatListCreateInfo>(
+		if (const auto existing_format_list_info = find_in_structure_chain<VkImageFormatListCreateInfo>(
 				pCreateInfo->pNext, VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO))
 		{
-			format_list.insert(format_list.end(),
-				format_list_info2->pViewFormats, format_list_info2->pViewFormats + format_list_info2->viewFormatCount);
+			format_list.insert(format_list.end(), existing_format_list_info->pViewFormats, existing_format_list_info->pViewFormats + existing_format_list_info->viewFormatCount);
 
 			// Remove duplicates from the list (since the new formats may have already been added by the application)
 			std::sort(format_list.begin(), format_list.end());
 			format_list.erase(std::unique(format_list.begin(), format_list.end()), format_list.end());
 
 			// This is evil, because writing into application memory, but eh =)
-			const_cast<VkImageFormatListCreateInfo *>(format_list_info2)->viewFormatCount = static_cast<uint32_t>(format_list.size());
-			const_cast<VkImageFormatListCreateInfo *>(format_list_info2)->pViewFormats = format_list.data();
+			const_cast<VkImageFormatListCreateInfo *>(existing_format_list_info)->viewFormatCount = static_cast<uint32_t>(format_list.size());
+			const_cast<VkImageFormatListCreateInfo *>(existing_format_list_info)->pViewFormats = format_list.data();
 		}
 		else if (format_list[0] != format_list[1])
 		{
@@ -194,7 +192,7 @@ VkResult VKAPI_CALL vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreat
 	desc.back_buffer.texture.levels = 1;
 	desc.back_buffer.texture.format = reshade::vulkan::convert_format(create_info.imageFormat);
 	desc.back_buffer.texture.samples = 1;
-	desc.back_buffer.heap = reshade::api::memory_heap::gpu_only;
+	desc.back_buffer.heap = reshade::api::memory_heap::default_;
 	reshade::vulkan::convert_image_usage_flags_to_usage(create_info.imageUsage, desc.back_buffer.usage);
 
 	desc.back_buffer_count = create_info.minImageCount;
@@ -470,7 +468,7 @@ VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPr
 	VkPresentInfoKHR present_info = *pPresentInfo;
 
 	reshade::vulkan::device_impl *const device_impl = g_vulkan_devices.at(dispatch_key_from_handle(queue));
-	reshade::vulkan::command_queue_impl *const queue_impl = device_impl->get_private_data_for_object<VK_OBJECT_TYPE_QUEUE>(queue);
+	reshade::vulkan::object_data<VK_OBJECT_TYPE_QUEUE> *const queue_impl = device_impl->get_private_data_for_object<VK_OBJECT_TYPE_QUEUE>(queue);
 
 	const bool present_from_secondary_queue = device_impl->_primary_graphics_queue != nullptr && device_impl->_primary_graphics_queue != queue_impl;
 	if (present_from_secondary_queue)
@@ -563,22 +561,42 @@ VkResult VKAPI_CALL vkQueuePresentKHR(VkQueue queue, const VkPresentInfoKHR *pPr
 		submit_info.pWaitSemaphores = present_info.pWaitSemaphores;
 		submit_info.pWaitDstStageMask = wait_stages.p;
 
-		queue_impl->flush_immediate_command_list(submit_info);
+		queue_impl->flush_immediate_command_list(&submit_info);
 
 		// If the application is presenting with a different queue than rendering, synchronize these two queues
 		if (present_from_secondary_queue)
 		{
-			queue_impl->wait_and_signal(submit_info);
+			if (const auto present_config = find_in_structure_chain<VkBaseInStructure>(
+					pPresentInfo, static_cast<VkStructureType>(1000613000) /* VK_STRUCTURE_TYPE_SET_PRESENT_CONFIG_NV */))
+			{
+				assert(queue_impl->present_batch <= 1);
+				queue_impl->present_batch = *reinterpret_cast<const uint32_t *>(present_config + 1);
+			}
+			else if (queue_impl->present_batch > 1)
+			{
+				queue_impl->present_batch--;
 
-			device_impl->_primary_graphics_queue->flush_immediate_command_list(submit_info);
+				if (submit_info.waitSemaphoreCount != 0)
+				{
+					// RTX Remix calls present with the same semaphores to wait on for all generated frames, which will already be signaled by the first present in the batch
+					// Signal them on the present queue again, so that the graphics queue waits for the generated frames too
+					submit_info.signalSemaphoreCount = submit_info.waitSemaphoreCount;
+					submit_info.pSignalSemaphores = submit_info.pWaitSemaphores;
+					device_impl->_dispatch_table.QueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+					submit_info.signalSemaphoreCount = 0;
+					submit_info.pSignalSemaphores = nullptr;
+				}
+			}
+
+			// This can deadlock on the GPU if the application submitted a semaphore wait to the graphics queue before this call, for which it submits the corresponding signal to the present queue only after this call
+			// E.g. happens with DLSS Frame Generation
+			device_impl->_primary_graphics_queue->flush_immediate_command_list(&submit_info);
 		}
 
 		// Override wait semaphores based on the last queue submit
 		present_info.waitSemaphoreCount = submit_info.waitSemaphoreCount;
 		present_info.pWaitSemaphores = submit_info.pWaitSemaphores;
 	}
-
-	device_impl->advance_transient_descriptor_pool();
 
 	RESHADE_VULKAN_GET_DEVICE_DISPATCH_PTR(QueuePresentKHR, device_impl);
 	assert(!g_in_dxgi_runtime);

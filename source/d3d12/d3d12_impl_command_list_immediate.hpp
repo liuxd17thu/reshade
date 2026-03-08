@@ -11,7 +11,7 @@ namespace reshade::d3d12
 {
 	class command_list_immediate_impl : public command_list_impl
 	{
-		static constexpr uint32_t NUM_COMMAND_FRAMES = 4; // Use power of two so that modulo can be replaced with bitwise operation
+		static constexpr uint32_t NUM_COMMAND_FRAMES = 8; // Use power of two so that modulo can be replaced with bitwise operation
 
 	public:
 		static thread_local command_list_immediate_impl *s_last_immediate_command_list;
@@ -22,8 +22,10 @@ namespace reshade::d3d12
 		void end_query(api::query_heap heap, api::query_type type, uint32_t index) final;
 		void query_acceleration_structures(uint32_t count, const api::resource_view *acceleration_structures, api::query_heap heap, api::query_type type, uint32_t first) final;
 
-		bool flush();
-		bool flush_and_wait();
+		void update_buffer_region(const void *data, api::resource dest, uint64_t dest_offset, uint64_t size) final;
+		void update_texture_region(const api::subresource_data &data, api::resource dest, uint32_t dest_subresource, const api::subresource_box *dest_box) final;
+
+		bool flush(bool wait);
 
 	private:
 		ID3D12CommandQueue *const _parent_queue;

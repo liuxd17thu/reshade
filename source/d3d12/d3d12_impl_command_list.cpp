@@ -247,7 +247,12 @@ void reshade::d3d12::command_list_impl::bind_pipeline_states(uint32_t count, con
 			break;
 		case api::dynamic_state::blend_constant:
 			{
-				const float blend_constant[4] = { ((values[i]) & 0xFF) / 255.0f, ((values[i] >> 4) & 0xFF) / 255.0f, ((values[i] >> 8) & 0xFF) / 255.0f, ((values[i] >> 12) & 0xFF) / 255.0f };
+				const float blend_constant[4] = {
+					((values[i]      ) & 0xFF) / 255.0f,
+					((values[i] >>  4) & 0xFF) / 255.0f,
+					((values[i] >>  8) & 0xFF) / 255.0f,
+					((values[i] >> 12) & 0xFF) / 255.0f
+				};
 				_orig->OMSetBlendFactor(blend_constant);
 			}
 			break;
@@ -381,7 +386,7 @@ void reshade::d3d12::command_list_impl::push_descriptors(api::shader_stage stage
 		{
 			const auto &view_range = *static_cast<const api::buffer_range *>(update.descriptors);
 
-			const D3D12_GPU_VIRTUAL_ADDRESS view_address = reinterpret_cast<ID3D12Resource *>(view_range.buffer.handle)->GetGPUVirtualAddress() + view_range.offset;
+			const D3D12_GPU_VIRTUAL_ADDRESS view_address = _device_impl->get_resource_gpu_address(view_range.buffer) + view_range.offset;
 			assert(view_address != 0);
 
 			if ((stages & (api::shader_stage::all_compute | api::shader_stage::all_ray_tracing)) != 0)
@@ -432,7 +437,7 @@ void reshade::d3d12::command_list_impl::push_descriptors(api::shader_stage stage
 			const auto &view_range = static_cast<const api::buffer_range *>(update.descriptors)[k];
 
 			D3D12_CONSTANT_BUFFER_VIEW_DESC view_desc;
-			view_desc.BufferLocation = reinterpret_cast<ID3D12Resource *>(view_range.buffer.handle)->GetGPUVirtualAddress() + view_range.offset;
+			view_desc.BufferLocation = _device_impl->get_resource_gpu_address(view_range.buffer) + view_range.offset;
 			view_desc.SizeInBytes = static_cast<UINT>(view_range.size == UINT64_MAX ? reinterpret_cast<ID3D12Resource *>(view_range.buffer.handle)->GetDesc().Width - view_range.offset : view_range.size);
 
 			_device_impl->_orig->CreateConstantBufferView(&view_desc, base_handle);
@@ -596,12 +601,10 @@ void reshade::d3d12::command_list_impl::bind_index_buffer(api::resource buffer, 
 	{
 		assert(index_size == 2 || index_size == 4);
 
-		const auto buffer_resource = reinterpret_cast<ID3D12Resource *>(buffer.handle);
-
 		D3D12_INDEX_BUFFER_VIEW view;
-		view.BufferLocation = buffer_resource->GetGPUVirtualAddress() + offset;
+		view.BufferLocation = _device_impl->get_resource_gpu_address(buffer) + offset;
 		view.Format = (index_size == 2) ? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT;
-		view.SizeInBytes = static_cast<UINT>(buffer_resource->GetDesc().Width - offset);
+		view.SizeInBytes = static_cast<UINT>(reinterpret_cast<ID3D12Resource *>(buffer.handle)->GetDesc().Width - offset);
 
 		_orig->IASetIndexBuffer(&view);
 	}
@@ -617,11 +620,10 @@ void reshade::d3d12::command_list_impl::bind_vertex_buffers(uint32_t first, uint
 	temp_mem<D3D12_VERTEX_BUFFER_VIEW, D3D12_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT> views(count);
 	for (uint32_t i = 0; i < count; ++i)
 	{
-		const auto buffer_resource = reinterpret_cast<ID3D12Resource *>(buffers[i].handle);
-		const auto offset = (offsets != nullptr ? offsets[i] : 0);
+		const uint64_t offset = (offsets != nullptr ? offsets[i] : 0);
 
-		views[i].BufferLocation = buffer_resource->GetGPUVirtualAddress() + offset;
-		views[i].SizeInBytes = static_cast<UINT>(buffer_resource->GetDesc().Width - offset);
+		views[i].BufferLocation = _device_impl->get_resource_gpu_address(buffers[i]) + offset;
+		views[i].SizeInBytes = static_cast<UINT>(reinterpret_cast<ID3D12Resource *>(buffers[i].handle)->GetDesc().Width - offset);
 		views[i].StrideInBytes = strides[i];
 	}
 
@@ -634,14 +636,12 @@ void reshade::d3d12::command_list_impl::bind_stream_output_buffers(uint32_t firs
 	temp_mem<D3D12_STREAM_OUTPUT_BUFFER_VIEW, D3D12_SO_BUFFER_SLOT_COUNT> views(count);
 	for (uint32_t i = 0; i < count; ++i)
 	{
-		const auto buffer_resource = reinterpret_cast<ID3D12Resource *>(buffers[i].handle);
-		const auto offset = (offsets != nullptr) ? offsets[i] : 0;
-		const auto counter_buffer_resource = reinterpret_cast<ID3D12Resource *>(counter_buffers[i].handle);
-		const auto counter_offset = (counter_offsets != nullptr) ? counter_offsets[i] : 0;
+		const uint64_t offset = (offsets != nullptr) ? offsets[i] : 0;
+		const uint64_t counter_offset = (counter_offsets != nullptr) ? counter_offsets[i] : 0;
 
-		views[i].BufferLocation = buffer_resource->GetGPUVirtualAddress() + offset;
+		views[i].BufferLocation = _device_impl->get_resource_gpu_address(buffers[i]) + offset;
 		views[i].SizeInBytes = (max_sizes != nullptr && max_sizes[i] != UINT64_MAX) ? max_sizes[0] : 0;
-		views[i].BufferFilledSizeLocation = counter_buffer_resource->GetGPUVirtualAddress() + counter_offset;
+		views[i].BufferFilledSizeLocation = _device_impl->get_resource_gpu_address(counter_buffers[i]) + counter_offset;
 	}
 
 	_orig->SOSetTargets(first, count, views.p);
@@ -682,15 +682,15 @@ void reshade::d3d12::command_list_impl::dispatch_rays(api::resource raygen, uint
 	if (_supports_ray_tracing)
 	{
 		D3D12_DISPATCH_RAYS_DESC desc;
-		desc.RayGenerationShaderRecord.StartAddress = (raygen != 0 ? reinterpret_cast<ID3D12Resource *>(raygen.handle)->GetGPUVirtualAddress() : 0) + raygen_offset;
+		desc.RayGenerationShaderRecord.StartAddress = _device_impl->get_resource_gpu_address(raygen) + raygen_offset;
 		desc.RayGenerationShaderRecord.SizeInBytes = raygen_size;
-		desc.MissShaderTable.StartAddress = (miss != 0 ? reinterpret_cast<ID3D12Resource *>(miss.handle)->GetGPUVirtualAddress() : 0) + miss_offset;
+		desc.MissShaderTable.StartAddress = _device_impl->get_resource_gpu_address(miss) + miss_offset;
 		desc.MissShaderTable.SizeInBytes = miss_size;
 		desc.MissShaderTable.StrideInBytes = miss_stride;
-		desc.HitGroupTable.StartAddress = (hit_group != 0 ? reinterpret_cast<ID3D12Resource *>(hit_group.handle)->GetGPUVirtualAddress() : 0) + hit_group_offset;
+		desc.HitGroupTable.StartAddress = _device_impl->get_resource_gpu_address(hit_group) + hit_group_offset;
 		desc.HitGroupTable.SizeInBytes = hit_group_size;
 		desc.HitGroupTable.StrideInBytes = hit_group_stride;
-		desc.CallableShaderTable.StartAddress = (callable != 0 ? reinterpret_cast<ID3D12Resource *>(callable.handle)->GetGPUVirtualAddress() : 0) + callable_offset;
+		desc.CallableShaderTable.StartAddress = _device_impl->get_resource_gpu_address(callable) + callable_offset;
 		desc.CallableShaderTable.SizeInBytes = callable_size;
 		desc.CallableShaderTable.StrideInBytes = callable_stride;
 		desc.Width = width;
@@ -742,36 +742,19 @@ void reshade::d3d12::command_list_impl::copy_buffer_to_texture(api::resource src
 
 	assert(src != 0 && dst != 0);
 
-	D3D12_RESOURCE_DESC const res_desc = reinterpret_cast<ID3D12Resource *>(dst.handle)->GetDesc();
+	D3D12_RESOURCE_DESC internal_desc = reinterpret_cast<ID3D12Resource *>(dst.handle)->GetDesc();
 
 	D3D12_BOX src_box = {};
-	if (dst_box != nullptr)
-	{
-		src_box.right = src_box.left + dst_box->width();
-		src_box.bottom = src_box.top + dst_box->height();
-		src_box.back = src_box.front + dst_box->depth();
-	}
-	else
-	{
-		src_box.right = src_box.left + std::max(1u, static_cast<UINT>(res_desc.Width) >> (dst_subresource % res_desc.MipLevels));
-		src_box.bottom = src_box.top + std::max(1u, res_desc.Height >> (dst_subresource % res_desc.MipLevels));
-		src_box.back = src_box.front + (res_desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D ? std::max(1u, static_cast<UINT>(res_desc.DepthOrArraySize) >> (dst_subresource % res_desc.MipLevels)) : 1u);
-	}
+	convert_subresource_box(dst_box, internal_desc, dst_subresource, src_box.right, src_box.bottom, src_box.back);
+	internal_desc.Width = (row_length != 0) ? row_length : src_box.right;
+	internal_desc.Height = (slice_height != 0) ? slice_height : src_box.bottom;
+	internal_desc.DepthOrArraySize = static_cast<UINT16>(src_box.back);
+	internal_desc.MipLevels = 1;
 
 	D3D12_TEXTURE_COPY_LOCATION src_copy_location;
 	src_copy_location.pResource = reinterpret_cast<ID3D12Resource *>(src.handle);
 	src_copy_location.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-	src_copy_location.PlacedFootprint.Offset = src_offset;
-	src_copy_location.PlacedFootprint.Footprint.Format = res_desc.Format;
-	src_copy_location.PlacedFootprint.Footprint.Width =
-		row_length != 0 ? row_length :
-		src_box.right - src_box.left;
-	src_copy_location.PlacedFootprint.Footprint.Height =
-		slice_height != 0 ? slice_height :
-		src_box.bottom - src_box.top;
-	src_copy_location.PlacedFootprint.Footprint.Depth = src_box.back - src_box.front;
-	src_copy_location.PlacedFootprint.Footprint.RowPitch = api::format_row_pitch(convert_format(res_desc.Format), src_copy_location.PlacedFootprint.Footprint.Width);
-	src_copy_location.PlacedFootprint.Footprint.RowPitch = (src_copy_location.PlacedFootprint.Footprint.RowPitch + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1u) & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1u);
+	_device_impl->_orig->GetCopyableFootprints(&internal_desc, 0, 1, src_offset, &src_copy_location.PlacedFootprint, nullptr, nullptr, nullptr);
 
 	D3D12_TEXTURE_COPY_LOCATION dst_copy_location;
 	dst_copy_location.pResource = reinterpret_cast<ID3D12Resource *>(dst.handle);
@@ -790,22 +773,26 @@ void reshade::d3d12::command_list_impl::copy_texture_region(api::resource src, u
 	// Blit between different region dimensions is not supported
 	assert(dst_box == nullptr || (src_box != nullptr && dst_box != nullptr && dst_box->width() == src_box->width() && dst_box->height() == src_box->height() && dst_box->depth() == src_box->depth()));
 
-	D3D12_RESOURCE_DESC src_desc = reinterpret_cast<ID3D12Resource *>(src.handle)->GetDesc();
-	D3D12_RESOURCE_DESC dst_desc = reinterpret_cast<ID3D12Resource *>(dst.handle)->GetDesc();
+	const D3D12_RESOURCE_DESC src_desc = reinterpret_cast<ID3D12Resource *>(src.handle)->GetDesc();
 
 	D3D12_TEXTURE_COPY_LOCATION src_copy_location;
 	src_copy_location.pResource = reinterpret_cast<ID3D12Resource *>(src.handle);
 	if (src_desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER)
 	{
 		src_copy_location.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-		src_copy_location.PlacedFootprint.Offset = 0;
 
 		UINT extra_data_size = sizeof(src_copy_location.PlacedFootprint.Footprint);
-		if (FAILED(src_copy_location.pResource->GetPrivateData(extra_data_guid, &extra_data_size, &src_copy_location.PlacedFootprint.Footprint)))
+		if (SUCCEEDED(src_copy_location.pResource->GetPrivateData(extra_data_guid, &extra_data_size, &src_copy_location.PlacedFootprint.Footprint)))
 		{
-			assert(dst_desc.Dimension != D3D12_RESOURCE_DIMENSION_BUFFER);
+			assert(src_subresource == 0);
 
-			_device_impl->_orig->GetCopyableFootprints(&dst_desc, dst_subresource, 1, 0, &src_copy_location.PlacedFootprint, nullptr, nullptr, nullptr);
+			src_copy_location.PlacedFootprint.Offset = 0;
+		}
+		else
+		{
+			assert(src_desc.Dimension != D3D12_RESOURCE_DIMENSION_BUFFER);
+
+			_device_impl->_orig->GetCopyableFootprints(&src_desc, src_subresource, 1, 0, &src_copy_location.PlacedFootprint, nullptr, nullptr, nullptr);
 		}
 	}
 	else
@@ -814,19 +801,26 @@ void reshade::d3d12::command_list_impl::copy_texture_region(api::resource src, u
 		src_copy_location.SubresourceIndex = src_subresource;
 	}
 
+	const D3D12_RESOURCE_DESC dst_desc = reinterpret_cast<ID3D12Resource *>(dst.handle)->GetDesc();
+
 	D3D12_TEXTURE_COPY_LOCATION dst_copy_location;
 	dst_copy_location.pResource = reinterpret_cast<ID3D12Resource *>(dst.handle);
 	if (dst_desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER)
 	{
 		dst_copy_location.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-		dst_copy_location.PlacedFootprint.Offset = 0;
 
 		UINT extra_data_size = sizeof(dst_copy_location.PlacedFootprint.Footprint);
-		if (FAILED(dst_copy_location.pResource->GetPrivateData(extra_data_guid, &extra_data_size, &dst_copy_location.PlacedFootprint.Footprint)))
+		if (SUCCEEDED(dst_copy_location.pResource->GetPrivateData(extra_data_guid, &extra_data_size, &dst_copy_location.PlacedFootprint.Footprint)))
 		{
-			assert(src_desc.Dimension != D3D12_RESOURCE_DIMENSION_BUFFER);
+			assert(dst_subresource == 0);
 
-			_device_impl->_orig->GetCopyableFootprints(&src_desc, src_subresource, 1, 0, &dst_copy_location.PlacedFootprint, nullptr, nullptr, nullptr);
+			dst_copy_location.PlacedFootprint.Offset = 0;
+		}
+		else
+		{
+			assert(dst_desc.Dimension != D3D12_RESOURCE_DIMENSION_BUFFER);
+
+			_device_impl->_orig->GetCopyableFootprints(&dst_desc, dst_subresource, 1, 0, &dst_copy_location.PlacedFootprint, nullptr, nullptr, nullptr);
 		}
 	}
 	else
@@ -845,7 +839,14 @@ void reshade::d3d12::command_list_impl::copy_texture_to_buffer(api::resource src
 
 	assert(src != 0 && dst != 0);
 
-	D3D12_RESOURCE_DESC const res_desc = reinterpret_cast<ID3D12Resource *>(src.handle)->GetDesc();
+	D3D12_RESOURCE_DESC internal_desc = reinterpret_cast<ID3D12Resource *>(src.handle)->GetDesc();
+
+	D3D12_BOX dst_box = {};
+	convert_subresource_box(src_box, internal_desc, src_subresource, dst_box.right, dst_box.bottom, dst_box.back);
+	internal_desc.Width = (row_length != 0) ? row_length : dst_box.right;
+	internal_desc.Height = (slice_height != 0) ? slice_height : dst_box.bottom;
+	internal_desc.DepthOrArraySize = static_cast<UINT16>(dst_box.back);
+	internal_desc.MipLevels = 1;
 
 	D3D12_TEXTURE_COPY_LOCATION src_copy_location;
 	src_copy_location.pResource = reinterpret_cast<ID3D12Resource *>(src.handle);
@@ -855,21 +856,7 @@ void reshade::d3d12::command_list_impl::copy_texture_to_buffer(api::resource src
 	D3D12_TEXTURE_COPY_LOCATION dst_copy_location;
 	dst_copy_location.pResource = reinterpret_cast<ID3D12Resource *>(dst.handle);
 	dst_copy_location.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-	dst_copy_location.PlacedFootprint.Offset = dst_offset;
-	dst_copy_location.PlacedFootprint.Footprint.Format = res_desc.Format;
-	dst_copy_location.PlacedFootprint.Footprint.Width =
-		row_length != 0 ? row_length :
-		src_box != nullptr ? src_box->right - src_box->left :
-		std::max(1u, static_cast<UINT>(res_desc.Width) >> (src_subresource % res_desc.MipLevels));
-	dst_copy_location.PlacedFootprint.Footprint.Height =
-		slice_height != 0 ? slice_height :
-		src_box != nullptr ? src_box->bottom - src_box->top :
-		std::max(1u, res_desc.Height >> (src_subresource % res_desc.MipLevels));
-	dst_copy_location.PlacedFootprint.Footprint.Depth =
-		src_box != nullptr ? src_box->back - src_box->front :
-		(res_desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D ? std::max(1u, static_cast<UINT>(res_desc.DepthOrArraySize) >> (src_subresource % res_desc.MipLevels)) : 1u);
-	dst_copy_location.PlacedFootprint.Footprint.RowPitch = api::format_row_pitch(convert_format(res_desc.Format), dst_copy_location.PlacedFootprint.Footprint.Width);
-	dst_copy_location.PlacedFootprint.Footprint.RowPitch = (dst_copy_location.PlacedFootprint.Footprint.RowPitch + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1u) & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1u);
+	_device_impl->_orig->GetCopyableFootprints(&internal_desc, 0, 1, dst_offset, &dst_copy_location.PlacedFootprint, nullptr, nullptr, nullptr);
 
 	_orig->CopyTextureRegion(
 		&dst_copy_location, 0, 0, 0,
@@ -1103,7 +1090,6 @@ void reshade::d3d12::command_list_impl::generate_mipmaps(api::resource_view srv)
 		const uint32_t height = std::max(1u, desc.Height >> (view_desc.texture.first_level + level));
 
 		_orig->SetComputeRoot32BitConstant(0, level_count - level, 0);
-
 		_orig->SetComputeRootDescriptorTable(1, _device_impl->offset_descriptor_handle(base_handle_gpu, level, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV));
 
 		_orig->Dispatch(((width - 1) / 64) + 1, ((height - 1) / 64) + 1, desc.DepthOrArraySize);
@@ -1185,7 +1171,7 @@ void reshade::d3d12::command_list_impl::build_acceleration_structure(api::accele
 		desc.Inputs.Flags = convert_acceleration_structure_build_flags(flags, mode);
 		desc.Inputs.DescsLayout = D3D12_ELEMENTS_LAYOUT_ARRAY;
 		desc.SourceAccelerationStructureData = source.handle;
-		desc.ScratchAccelerationStructureData = (scratch != 0 ? reinterpret_cast<ID3D12Resource *>(scratch.handle)->GetGPUVirtualAddress() : 0) + scratch_offset;
+		desc.ScratchAccelerationStructureData = _device_impl->get_resource_gpu_address(scratch) + scratch_offset;
 
 		std::vector<D3D12_RAYTRACING_GEOMETRY_DESC> geometries(input_count);
 
@@ -1195,7 +1181,7 @@ void reshade::d3d12::command_list_impl::build_acceleration_structure(api::accele
 
 			desc.Inputs.NumDescs = inputs->instances.count;
 			desc.Inputs.DescsLayout = inputs->instances.array_of_pointers ? D3D12_ELEMENTS_LAYOUT_ARRAY_OF_POINTERS : D3D12_ELEMENTS_LAYOUT_ARRAY;
-			desc.Inputs.InstanceDescs = (inputs->instances.buffer != 0 ? reinterpret_cast<ID3D12Resource *>(inputs->instances.buffer.handle)->GetGPUVirtualAddress() : 0) + inputs->instances.offset;
+			desc.Inputs.InstanceDescs = _device_impl->get_resource_gpu_address(inputs->instances.buffer) + inputs->instances.offset;
 		}
 		else
 		{

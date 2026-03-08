@@ -61,6 +61,7 @@ namespace reshade::vulkan
 		api::resource get_resource_from_view(api::resource_view view) const final;
 		api::resource_view_desc get_resource_view_desc(api::resource_view view) const final;
 
+		uint64_t get_resource_gpu_address(api::resource resource) const;
 		uint64_t get_resource_view_gpu_address(api::resource_view view) const final;
 
 		bool map_buffer_region(api::resource resource, uint64_t offset, uint64_t size, api::map_access access, void **out_data) final;
@@ -68,8 +69,8 @@ namespace reshade::vulkan
 		bool map_texture_region(api::resource resource, uint32_t subresource, const api::subresource_box *box, api::map_access access, api::subresource_data *out_data) final;
 		void unmap_texture_region(api::resource resource, uint32_t subresource) final;
 
-		void update_buffer_region(const void *data, api::resource resource, uint64_t offset, uint64_t size) final;
-		void update_texture_region(const api::subresource_data &data, api::resource resource, uint32_t subresource, const api::subresource_box *box) final;
+		void update_buffer_region(const void *data, api::resource dest, uint64_t dest_offset, uint64_t size) final;
+		void update_texture_region(const api::subresource_data &data, api::resource dest, uint32_t dest_subresource, const api::subresource_box *dest_box) final;
 
 		bool create_pipeline(api::pipeline_layout layout, uint32_t subobject_count, const api::pipeline_subobject *subobjects, api::pipeline *out_pipeline) final;
 		void destroy_pipeline(api::pipeline pipeline) final;
@@ -104,8 +105,6 @@ namespace reshade::vulkan
 		void get_acceleration_structure_size(api::acceleration_structure_type type, api::acceleration_structure_build_flags flags, uint32_t input_count, const api::acceleration_structure_build_input *inputs, uint64_t *out_size, uint64_t *out_build_scratch_size, uint64_t *out_update_scratch_size) const final;
 
 		bool get_pipeline_shader_group_handles(api::pipeline pipeline, uint32_t first, uint32_t count, void *out_handles) final;
-
-		void advance_transient_descriptor_pool();
 
 		command_list_immediate_impl *get_immediate_command_list();
 
@@ -150,9 +149,9 @@ namespace reshade::vulkan
 		}
 
 		const VkPhysicalDevice _physical_device;
+		std::vector<command_queue_impl *> _queues;
 		command_queue_impl *_primary_graphics_queue = nullptr;
 		uint32_t _primary_graphics_queue_family_index = std::numeric_limits<uint32_t>::max();
-		std::vector<command_queue_impl *> _queues;
 
 		const GladVulkanContext _dispatch_table;
 		const VkPhysicalDeviceFeatures _enabled_features;
@@ -162,9 +161,6 @@ namespace reshade::vulkan
 
 		VmaAllocator _alloc = nullptr;
 		VkDescriptorPool _descriptor_pool = VK_NULL_HANDLE;
-		VkDescriptorPool _transient_descriptor_pool[4] = {};
-		uint32_t _transient_index = 0;
-
 		VkPrivateDataSlot _private_data_slot = VK_NULL_HANDLE;
 
 		std::shared_mutex _mutex;

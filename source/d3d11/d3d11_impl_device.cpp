@@ -156,6 +156,11 @@ bool reshade::d3d11::device_impl::check_capability(api::device_caps capability) 
 	case api::device_caps::update_buffer_region_command:
 	case api::device_caps::update_texture_region_command:
 		return true;
+	case api::device_caps::gpu_upload_heap:
+		if (D3D11_FEATURE_DATA_D3D11_OPTIONS2 options;
+			SUCCEEDED(_orig->CheckFeatureSupport(D3D11_FEATURE_D3D11_OPTIONS2, &options, sizeof(options))))
+			return options.MapOnDefaultTextures;
+		return false;
 	default:
 		return false;
 	}
@@ -421,7 +426,7 @@ bool reshade::d3d11::device_impl::create_resource_view(api::resource resource, a
 		return false;
 
 	// Cannot create a resource view with a typeless format
-	assert(desc.format != api::format_to_typeless(desc.format) || api::format_to_typeless(desc.format) == api::format_to_default_typed(desc.format));
+	assert(!api::format_is_typeless(desc.format));
 
 	switch (usage_type)
 	{
@@ -677,10 +682,18 @@ void reshade::d3d11::device_impl::unmap_texture_region(api::resource resource, u
 	immediate_context->Unmap(reinterpret_cast<ID3D11Resource *>(resource.handle), subresource);
 }
 
-void reshade::d3d11::device_impl::update_buffer_region(const void *data, api::resource resource, uint64_t offset, uint64_t size)
+void reshade::d3d11::device_impl::update_buffer_region(const void *data, api::resource dst, uint64_t dst_offset, uint64_t size)
 {
-	assert(resource != 0);
-	assert(offset <= std::numeric_limits<UINT>::max() && size <= std::numeric_limits<UINT>::max());
+	assert(dst != 0);
+
+	if (UINT64_MAX == size)
+	{
+		D3D11_BUFFER_DESC desc;
+		reinterpret_cast<ID3D11Buffer *>(dst.handle)->GetDesc(&desc);
+		size = desc.ByteWidth;
+	}
+
+	assert(dst_offset <= std::numeric_limits<UINT>::max() && size <= std::numeric_limits<UINT>::max());
 
 	if (data == nullptr)
 		return;
@@ -688,13 +701,13 @@ void reshade::d3d11::device_impl::update_buffer_region(const void *data, api::re
 	com_ptr<ID3D11DeviceContext> immediate_context;
 	_orig->GetImmediateContext(&immediate_context);
 
-	const D3D11_BOX box = { static_cast<UINT>(offset), 0, 0, static_cast<UINT>(offset + size), 1, 1 };
+	const D3D11_BOX box = { static_cast<UINT>(dst_offset), 0, 0, static_cast<UINT>(dst_offset + size), 1, 1 };
 
-	immediate_context->UpdateSubresource(reinterpret_cast<ID3D11Resource *>(resource.handle), 0, offset != 0 ? &box : nullptr, data, static_cast<UINT>(size), 0);
+	immediate_context->UpdateSubresource(reinterpret_cast<ID3D11Resource *>(dst.handle), 0, dst_offset != 0 ? &box : nullptr, data, static_cast<UINT>(size), 0);
 }
-void reshade::d3d11::device_impl::update_texture_region(const api::subresource_data &data, api::resource resource, uint32_t subresource, const api::subresource_box *box)
+void reshade::d3d11::device_impl::update_texture_region(const api::subresource_data &data, api::resource dst, uint32_t dst_subresource, const api::subresource_box *dst_box)
 {
-	assert(resource != 0);
+	assert(dst != 0);
 
 	if (data.data == nullptr)
 		return;
@@ -702,7 +715,7 @@ void reshade::d3d11::device_impl::update_texture_region(const api::subresource_d
 	com_ptr<ID3D11DeviceContext> immediate_context;
 	_orig->GetImmediateContext(&immediate_context);
 
-	immediate_context->UpdateSubresource(reinterpret_cast<ID3D11Resource *>(resource.handle), subresource, reinterpret_cast<const D3D11_BOX *>(box), data.data, data.row_pitch, data.slice_pitch);
+	immediate_context->UpdateSubresource(reinterpret_cast<ID3D11Resource *>(dst.handle), dst_subresource, reinterpret_cast<const D3D11_BOX *>(dst_box), data.data, data.row_pitch, data.slice_pitch);
 }
 
 bool reshade::d3d11::device_impl::create_input_layout(uint32_t count, const api::input_element *desc, const api::shader_desc &signature, api::pipeline *out_pipeline)

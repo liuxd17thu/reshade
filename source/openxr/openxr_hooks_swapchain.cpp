@@ -184,7 +184,25 @@ XrResult XRAPI_CALL xrCreateSwapchain(XrSession session, const XrSwapchainCreate
 
 	XrSwapchainCreateInfo create_info = *pCreateInfo;
 	// Add required usage flags to create info
-	create_info.usageFlags |= XR_SWAPCHAIN_USAGE_TRANSFER_SRC_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
+	create_info.usageFlags |= XR_SWAPCHAIN_USAGE_TRANSFER_SRC_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT | XR_SWAPCHAIN_USAGE_MUTABLE_FORMAT_BIT;
+
+	// Dump swap chain description
+	{
+		reshade::log::message(reshade::log::level::info, "> Dumping swap chain description:");
+		reshade::log::message(reshade::log::level::info, "  +-----------------------------------------+-----------------------------------------+");
+		reshade::log::message(reshade::log::level::info, "  | Parameter                               | Value                                   |");
+		reshade::log::message(reshade::log::level::info, "  +-----------------------------------------+-----------------------------------------+");
+		reshade::log::message(reshade::log::level::info, "  | createFlags                             |"                               " %-#39x |", static_cast<unsigned int>(create_info.createFlags));
+		reshade::log::message(reshade::log::level::info, "  | usageFlags                              |"                               " %-#39x |", static_cast<unsigned int>(create_info.usageFlags));
+		reshade::log::message(reshade::log::level::info, "  | format                                  |"                              " %-39lld |", create_info.format);
+		reshade::log::message(reshade::log::level::info, "  | sampleCount                             |"                                " %-39u |", create_info.sampleCount);
+		reshade::log::message(reshade::log::level::info, "  | width                                   |"                                " %-39u |", create_info.width);
+		reshade::log::message(reshade::log::level::info, "  | height                                  |"                                " %-39u |", create_info.height);
+		reshade::log::message(reshade::log::level::info, "  | faceCount                               |"                                " %-39u |", create_info.faceCount);
+		reshade::log::message(reshade::log::level::info, "  | arraySize                               |"                                " %-39u |", create_info.arraySize);
+		reshade::log::message(reshade::log::level::info, "  | mipCount                                |"                                " %-39u |", create_info.mipCount);
+		reshade::log::message(reshade::log::level::info, "  +-----------------------------------------+-----------------------------------------+");
+	}
 
 	const XrResult result = trampoline(session, &create_info, pSwapchain);
 	if (XR_FAILED(result))

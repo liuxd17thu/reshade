@@ -86,12 +86,20 @@ IDirectInputDevice8_GetDeviceData_Impl(10, W)
 		{ \
 			const LPDIRECTINPUTDEVICE8##encoding device = *lplpDirectInputDevice; \
 			\
-			DIDEVCAPS caps = { sizeof(caps) }; \
-			device->GetCapabilities(&caps); \
-			g_dinput_device_type.emplace(device, GET_DIDEVICE_TYPE(caps.dwDevType)); \
+			/* DIDEVICEINSTANCE##encoding instance = { sizeof(instance) }; \
+			   device->GetDeviceInfo(&instance); \
+			   const BYTE device_type = GET_DIDEVICE_TYPE(instance.dwDevType); */ \
+			const BYTE device_type = \
+				(rguid == GUID_SysMouse) ? DI8DEVTYPE_MOUSE : \
+				(rguid == GUID_SysKeyboard) ? DI8DEVTYPE_KEYBOARD : 0; \
+			g_dinput_device_type.emplace(device, device_type); \
 			\
-			reshade::hooks::install("IDirectInputDevice8" #encoding "::GetDeviceState", reshade::hooks::vtable_from_instance(device), 9, &IDirectInputDevice8##encoding##_GetDeviceState); \
-			reshade::hooks::install("IDirectInputDevice8" #encoding "::GetDeviceData", reshade::hooks::vtable_from_instance(device), 10, &IDirectInputDevice8##encoding##_GetDeviceData); \
+			/* Only install vtable hooks for mouse and keyboard devices, since others are not all proxied by the Steam overlay and thus would hook both Steam overlay and the original DirectInput entries. */ \
+			if (device_type == DI8DEVTYPE_MOUSE || device_type == DI8DEVTYPE_KEYBOARD) \
+			{ \
+				reshade::hooks::install("IDirectInputDevice8" #encoding "::GetDeviceState", reshade::hooks::vtable_from_instance(device), 9, &IDirectInputDevice8##encoding##_GetDeviceState); \
+				reshade::hooks::install("IDirectInputDevice8" #encoding "::GetDeviceData", reshade::hooks::vtable_from_instance(device), 10, &IDirectInputDevice8##encoding##_GetDeviceData); \
+			} \
 		} \
 		else \
 		{ \

@@ -718,7 +718,7 @@ void    STDMETHODCALLTYPE D3D11DeviceContext::UpdateSubresource(ID3D11Resource *
 						pSrcData,
 						to_handle(pDstResource),
 						pDstBox != nullptr ? pDstBox->left : 0,
-						pDstBox != nullptr ? pDstBox->right - pDstBox->left : SrcRowPitch))
+						pDstBox != nullptr ? pDstBox->right - pDstBox->left : UINT64_MAX))
 					return;
 			}
 			else
@@ -750,7 +750,7 @@ void    STDMETHODCALLTYPE D3D11DeviceContext::UpdateSubresource(ID3D11Resource *
 						pSrcData,
 						to_handle(pDstResource),
 						pDstBox != nullptr ? pDstBox->left : 0,
-						pDstBox != nullptr ? pDstBox->right - pDstBox->left : SrcRowPitch))
+						pDstBox != nullptr ? pDstBox->right - pDstBox->left : UINT64_MAX))
 					return;
 			}
 			else
@@ -1187,7 +1187,7 @@ void    STDMETHODCALLTYPE D3D11DeviceContext::CopySubresourceRegion1(ID3D11Resou
 					pSrcBox != nullptr ? pSrcBox->left : 0,
 					to_handle(pDstResource),
 					DstX,
-					pSrcBox != nullptr ? pSrcBox->right - pSrcBox->left : ~0ull))
+					pSrcBox != nullptr ? pSrcBox->right - pSrcBox->left : UINT64_MAX))
 				return;
 		}
 		else
@@ -1286,7 +1286,7 @@ void    STDMETHODCALLTYPE D3D11DeviceContext::UpdateSubresource1(ID3D11Resource 
 						pSrcData,
 						to_handle(pDstResource),
 						pDstBox != nullptr ? pDstBox->left : 0,
-						pDstBox != nullptr ? pDstBox->right - pDstBox->left : SrcRowPitch))
+						pDstBox != nullptr ? pDstBox->right - pDstBox->left : UINT64_MAX))
 					return;
 			}
 			else
@@ -1318,7 +1318,7 @@ void    STDMETHODCALLTYPE D3D11DeviceContext::UpdateSubresource1(ID3D11Resource 
 						pSrcData,
 						to_handle(pDstResource),
 						pDstBox != nullptr ? pDstBox->left : 0,
-						pDstBox != nullptr ? pDstBox->right - pDstBox->left : SrcRowPitch))
+						pDstBox != nullptr ? pDstBox->right - pDstBox->left : UINT64_MAX))
 					return;
 			}
 			else

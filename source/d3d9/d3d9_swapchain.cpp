@@ -33,6 +33,12 @@ Direct3DSwapChain9::Direct3DSwapChain9(Direct3DDevice9 *device, IDirect3DSwapCha
 
 	reshade::create_effect_runtime(this, device);
 	on_init(false);
+
+	if (device->_implicit_swapchain != nullptr)
+		return;
+
+	// Update auto depth-stencil now that implicit swap chain proxy was created and back buffer render target views are known
+	device->init_auto_depth_stencil();
 }
 Direct3DSwapChain9::Direct3DSwapChain9(Direct3DDevice9 *device, IDirect3DSwapChain9Ex *original) :
 	Direct3DSwapChain9(device, static_cast<IDirect3DSwapChain9 *>(original))

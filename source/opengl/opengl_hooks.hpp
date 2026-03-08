@@ -15,6 +15,8 @@
 #undef wglDestroyPbufferARB
 #undef wglGetPbufferDCARB
 #undef wglReleasePbufferDCARB
+#undef wglSwapIntervalEXT
+#undef wglGetSwapIntervalEXT
 
 extern "C" void APIENTRY glBindBuffer(GLenum target, GLuint buffer);
 extern "C" void APIENTRY glBindBufferBase(GLenum target, GLuint index, GLuint buffer);

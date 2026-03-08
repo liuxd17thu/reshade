@@ -190,6 +190,8 @@ void reshade::opengl::device_context_impl::bind_framebuffer_with_resource(GLenum
 	case GL_TEXTURE_2D_ARRAY:
 	case GL_TEXTURE_2D_MULTISAMPLE_ARRAY:
 	case GL_TEXTURE_3D:
+	case GL_TEXTURE_CUBE_MAP:
+	case GL_TEXTURE_CUBE_MAP_ARRAY:
 		gl.FramebufferTextureLayer(target, attachment, dst_object, dst_subresource % dst_desc.texture.levels, dst_subresource / dst_desc.texture.levels);
 		break;
 	case GL_RENDERBUFFER:
@@ -692,7 +694,11 @@ void reshade::opengl::device_context_impl::bind_pipeline_states(uint32_t count, 
 			gl.LogicOp(convert_logic_op(static_cast<api::logic_op>(values[i])));
 			break;
 		case api::dynamic_state::blend_constant:
-			gl.BlendColor(((values[i]) & 0xFF) / 255.0f, ((values[i] >> 4) & 0xFF) / 255.0f, ((values[i] >> 8) & 0xFF) / 255.0f, ((values[i] >> 12) & 0xFF) / 255.0f);
+			gl.BlendColor(
+				((values[i]      ) & 0xFF) / 255.0f,
+				((values[i] >>  4) & 0xFF) / 255.0f,
+				((values[i] >>  8) & 0xFF) / 255.0f,
+				((values[i] >> 12) & 0xFF) / 255.0f);
 			break;
 		case api::dynamic_state::render_target_write_mask:
 			gl.ColorMask(values[i] & 0x1, (values[i] >> 1) & 0x1, (values[i] >> 2) & 0x1, (values[i] >> 3) & 0x1);

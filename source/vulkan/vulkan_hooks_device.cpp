@@ -207,6 +207,7 @@ VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDevi
 			return false;
 		};
 
+		#pragma region Enable features and extensions
 		// Enable features that ReShade requires
 		enabled_features.samplerAnisotropy = VK_TRUE;
 		enabled_features.shaderImageGatherExtended = VK_TRUE;
@@ -279,6 +280,7 @@ VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDevi
 			add_extension(VK_KHR_RAY_TRACING_MAINTENANCE_1_EXTENSION_NAME, false);
 		buffer_device_address_ext = ray_tracing_ext && add_extension(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME, false);
 #endif
+		#pragma endregion
 
 		// Check if the device is used for presenting
 		if (std::find_if(enabled_extensions.cbegin(), enabled_extensions.cend(),
@@ -577,6 +579,7 @@ VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDevi
 			return reinterpret_cast<GLADapiproc>(device_proc_address);
 		}, &device);
 
+	#pragma region Initialize features and extensions
 #if VK_KHR_buffer_device_address
 	device.dispatch_table.KHR_buffer_device_address &= buffer_device_address_ext ? 1 : 0;
 #endif
@@ -696,6 +699,7 @@ VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDevi
 		device.dispatch_table.TransitionImageLayout = device.dispatch_table.TransitionImageLayoutEXT;
 #endif
 	}
+	#pragma endregion
 
 	// Initialize per-device data
 	const auto device_impl = new reshade::vulkan::device_impl(
@@ -750,7 +754,9 @@ VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice physicalDevice, const VkDevi
 			reshade::invoke_addon_event<reshade::addon_event::init_command_queue>(queue_impl);
 #endif
 
-			if (queue_create_info.queueFamilyIndex == graphics_queue_family_index && queue_index == 0)
+			if (queue_create_info.queueFamilyIndex == graphics_queue_family_index &&
+				// The last queue is most likely the one used by DLSS Frame Generation, so prefer it to avoid queue synchronization issues
+				queue_index == (queue_create_info.queueCount - 1))
 			{
 				device_impl->_primary_graphics_queue = queue_impl;
 				device_impl->_primary_graphics_queue_family_index = graphics_queue_family_index;
@@ -825,7 +831,7 @@ VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue, uint32_t submitCount, const VkS
 			reshade::invoke_addon_event<reshade::addon_event::execute_command_list>(queue_impl, cmd_impl);
 		}
 
-		queue_impl->flush_immediate_command_list(const_cast<VkSubmitInfo &>(submit_info));
+		queue_impl->flush_immediate_command_list(const_cast<VkSubmitInfo *>(&submit_info));
 	}
 #endif
 
@@ -1265,12 +1271,12 @@ VkResult VKAPI_CALL vkCreateImageView(VkDevice device, const VkImageViewCreateIn
 	data.create_info.pNext = nullptr; // Clear out structure chain pointer, since it becomes invalid once leaving the current scope
 
 	const auto resource_data = device_impl->get_private_data_for_object<VK_OBJECT_TYPE_IMAGE>(create_info.image);
-	data.image_extent = resource_data->create_info.extent;
 	// Update subresource range to the actual dimensions of the image
-	if (VK_REMAINING_MIP_LEVELS == data.create_info.subresourceRange.levelCount)
+	if (create_info.subresourceRange.levelCount == VK_REMAINING_MIP_LEVELS)
 		data.create_info.subresourceRange.levelCount = resource_data->create_info.mipLevels;
-	if (VK_REMAINING_ARRAY_LAYERS == data.create_info.subresourceRange.layerCount)
+	if (create_info.subresourceRange.layerCount == VK_REMAINING_ARRAY_LAYERS)
 		data.create_info.subresourceRange.layerCount = resource_data->create_info.arrayLayers;
+	data.image_extent = resource_data->create_info.extent;
 
 	reshade::invoke_addon_event<reshade::addon_event::init_resource_view>(
 		device_impl, reshade::api::resource { (uint64_t)create_info.image }, reshade::api::resource_usage::undefined, desc, reshade::api::resource_view { (uint64_t)*pView });

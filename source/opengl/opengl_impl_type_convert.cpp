@@ -101,10 +101,24 @@ auto reshade::opengl::convert_format(api::format format, GLint swizzle_mask[4]) 
 	case api::format::r8g8b8x8_unorm:
 	case api::format::b8g8r8x8_typeless:
 	case api::format::b8g8r8x8_unorm:
-		return GL_RGB8;
+		if (swizzle_mask != nullptr)
+		{
+			swizzle_mask[0] = GL_RED;
+			swizzle_mask[1] = GL_GREEN;
+			swizzle_mask[2] = GL_BLUE;
+			swizzle_mask[3] = GL_ONE;
+		}
+		return GL_RGBA8;
 	case api::format::r8g8b8x8_unorm_srgb:
 	case api::format::b8g8r8x8_unorm_srgb:
-		return GL_SRGB8;
+		if (swizzle_mask != nullptr)
+		{
+			swizzle_mask[0] = GL_RED;
+			swizzle_mask[1] = GL_GREEN;
+			swizzle_mask[2] = GL_BLUE;
+			swizzle_mask[3] = GL_ONE;
+		}
+		return GL_SRGB8_ALPHA8;
 
 	case api::format::r10g10b10a2_typeless:
 	case api::format::r10g10b10a2_unorm:
@@ -1614,20 +1628,21 @@ void reshade::opengl::convert_resource_desc(const api::resource_desc &desc, GLsi
 
 	switch (desc.heap)
 	{
-	case api::memory_heap::gpu_only:
+	case api::memory_heap::default_:
 		storage_flags = 0;
 		break;
-	case api::memory_heap::cpu_to_gpu:
+	case api::memory_heap::upload:
 		storage_flags = GL_MAP_WRITE_BIT;
 		break;
-	case api::memory_heap::gpu_to_cpu:
+	case api::memory_heap::readback:
 		storage_flags = GL_MAP_READ_BIT;
 		break;
-	case api::memory_heap::cpu_only:
+	case api::memory_heap::scratch:
 		storage_flags = GL_MAP_READ_BIT | GL_MAP_WRITE_BIT | GL_CLIENT_STORAGE_BIT;
 		break;
 	default:
 	case api::memory_heap::custom:
+	case api::memory_heap::gpu_upload:
 		storage_flags = GL_MAP_READ_BIT | GL_MAP_WRITE_BIT;
 		break;
 	}
@@ -1704,13 +1719,13 @@ reshade::api::resource_desc reshade::opengl::convert_resource_desc(GLenum target
 	switch (storage_flags & (GL_MAP_READ_BIT | GL_MAP_WRITE_BIT))
 	{
 	case 0:
-		desc.heap = api::memory_heap::gpu_only;
+		desc.heap = api::memory_heap::default_;
 		break;
 	case GL_MAP_WRITE_BIT:
-		desc.heap = api::memory_heap::cpu_to_gpu;
+		desc.heap = api::memory_heap::upload;
 		break;
 	case GL_MAP_READ_BIT:
-		desc.heap = api::memory_heap::gpu_to_cpu;
+		desc.heap = api::memory_heap::readback;
 		break;
 	case GL_MAP_READ_BIT | GL_MAP_WRITE_BIT:
 		desc.heap = api::memory_heap::custom;
@@ -1748,7 +1763,7 @@ reshade::api::resource_desc reshade::opengl::convert_resource_desc(GLenum target
 	desc.texture.levels = static_cast<uint16_t>(levels);
 	desc.texture.format = convert_format(internal_format, swizzle_mask);
 	desc.texture.samples = static_cast<uint16_t>(samples);
-	desc.heap = api::memory_heap::gpu_only;
+	desc.heap = api::memory_heap::default_;
 
 	desc.usage = api::resource_usage::copy_dest | api::resource_usage::copy_source | api::resource_usage::resolve_dest;
 	if (desc.texture.samples >= 2)

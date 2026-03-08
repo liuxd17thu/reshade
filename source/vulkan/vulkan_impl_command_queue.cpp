@@ -31,20 +31,9 @@ reshade::vulkan::command_queue_impl::command_queue_impl(device_impl *device, uin
 			_immediate_cmd_list = nullptr;
 		}
 	}
-
-	for (int i = 0; i < std::size(_signal_semaphores); ++i)
-	{
-		VkSemaphoreCreateInfo sem_create_info { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
-
-		if (vk.CreateSemaphore(_device_impl->_orig, &sem_create_info, nullptr, &_signal_semaphores[i]) != VK_SUCCESS)
-			return;
-	}
 }
 reshade::vulkan::command_queue_impl::~command_queue_impl()
 {
-	for (VkSemaphore semaphore : _signal_semaphores)
-		vk.DestroySemaphore(_device_impl->_orig, semaphore, nullptr);
-
 	delete _immediate_cmd_list;
 
 	// Unregister queue from device
@@ -75,10 +64,11 @@ void reshade::vulkan::command_queue_impl::wait_idle() const
 
 void reshade::vulkan::command_queue_impl::flush_immediate_command_list() const
 {
+	// Flush, but do not wait
 	VkSubmitInfo empty_semaphore_info { VK_STRUCTURE_TYPE_SUBMIT_INFO };
-	flush_immediate_command_list(empty_semaphore_info);
+	flush_immediate_command_list(&empty_semaphore_info);
 }
-void reshade::vulkan::command_queue_impl::flush_immediate_command_list(VkSubmitInfo &semaphore_info) const
+void reshade::vulkan::command_queue_impl::flush_immediate_command_list(VkSubmitInfo *semaphore_info) const
 {
 	if (_immediate_cmd_list != nullptr)
 		_immediate_cmd_list->flush(semaphore_info);
@@ -143,6 +133,8 @@ bool reshade::vulkan::command_queue_impl::wait(api::fence fence, uint64_t value)
 {
 	const VkSemaphore wait_semaphore = (VkSemaphore)fence.handle;
 
+	const VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+
 	VkTimelineSemaphoreSubmitInfo wait_semaphore_info { VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO };
 	wait_semaphore_info.waitSemaphoreValueCount = 1;
 	wait_semaphore_info.pWaitSemaphoreValues = &value;
@@ -150,7 +142,6 @@ bool reshade::vulkan::command_queue_impl::wait(api::fence fence, uint64_t value)
 	VkSubmitInfo submit_info { VK_STRUCTURE_TYPE_SUBMIT_INFO, &wait_semaphore_info };
 	submit_info.waitSemaphoreCount = 1;
 	submit_info.pWaitSemaphores = &wait_semaphore;
-	static const VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
 	submit_info.pWaitDstStageMask = &wait_stage;
 
 	return vk.QueueSubmit(_orig, 1, &submit_info, VK_NULL_HANDLE) == VK_SUCCESS;
@@ -159,40 +150,20 @@ bool reshade::vulkan::command_queue_impl::signal(api::fence fence, uint64_t valu
 {
 	const VkSemaphore signal_semaphore = (VkSemaphore)fence.handle;
 
+	const VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+
 	VkTimelineSemaphoreSubmitInfo signal_semaphore_info { VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO };
 	signal_semaphore_info.signalSemaphoreValueCount = 1;
 	signal_semaphore_info.pSignalSemaphoreValues = &value;
 
 	VkSubmitInfo submit_info { VK_STRUCTURE_TYPE_SUBMIT_INFO, &signal_semaphore_info };
+	submit_info.pWaitDstStageMask = &wait_stage;
 	submit_info.signalSemaphoreCount = 1;
 	submit_info.pSignalSemaphores = &signal_semaphore;
 
-	flush_immediate_command_list(submit_info);
+	flush_immediate_command_list(&submit_info);
 
 	return vk.QueueSubmit(_orig, 1, &submit_info, VK_NULL_HANDLE) == VK_SUCCESS;
-}
-bool reshade::vulkan::command_queue_impl::wait_and_signal(VkSubmitInfo &semaphore_info)
-{
-	assert(semaphore_info.waitSemaphoreCount != 0);
-
-	VkSubmitInfo submit_info { VK_STRUCTURE_TYPE_SUBMIT_INFO };
-	submit_info.waitSemaphoreCount = semaphore_info.waitSemaphoreCount;
-	submit_info.pWaitSemaphores = semaphore_info.pWaitSemaphores;
-	submit_info.pWaitDstStageMask = semaphore_info.pWaitDstStageMask;
-	submit_info.signalSemaphoreCount = 1;
-	submit_info.pSignalSemaphores = &_signal_semaphores[_signal_index];
-
-	if (vk.QueueSubmit(_orig, 1, &submit_info, VK_NULL_HANDLE) != VK_SUCCESS)
-		return false;
-
-	semaphore_info.waitSemaphoreCount = submit_info.signalSemaphoreCount;
-	semaphore_info.pWaitSemaphores = submit_info.pSignalSemaphores;
-	static const VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
-	semaphore_info.pWaitDstStageMask = &wait_stage;
-
-	_signal_index = (_signal_index + 1) % std::size(_signal_semaphores);
-
-	return true;
 }
 
 uint64_t reshade::vulkan::command_queue_impl::get_timestamp_frequency() const

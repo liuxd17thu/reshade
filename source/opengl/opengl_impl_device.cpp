@@ -197,7 +197,7 @@ reshade::opengl::device_impl::device_impl(HDC initial_hdc, HGLRC shared_hglrc, c
 	_default_fbo_desc.texture.levels = 1;
 	_default_fbo_desc.texture.format = convert_pixel_format(pfd);
 	_default_fbo_desc.texture.samples = 1;
-	_default_fbo_desc.heap = reshade::api::memory_heap::gpu_only;
+	_default_fbo_desc.heap = reshade::api::memory_heap::default_;
 	_default_fbo_desc.usage = reshade::api::resource_usage::render_target | reshade::api::resource_usage::copy_dest | reshade::api::resource_usage::copy_source | reshade::api::resource_usage::resolve_dest;
 
 	if (pfd.dwFlags & PFD_STEREO)
@@ -391,6 +391,7 @@ bool reshade::opengl::device_impl::check_capability(api::device_caps capability)
 	case api::device_caps::update_buffer_region_command:
 	case api::device_caps::update_texture_region_command:
 		return true;
+	case api::device_caps::gpu_upload_heap:
 	default:
 		return false;
 	}
@@ -552,9 +553,9 @@ bool reshade::opengl::device_impl::create_resource(const api::resource_desc &des
 			break;
 		default:
 			target = GL_COPY_WRITE_BUFFER;
-			if (desc.heap == api::memory_heap::gpu_to_cpu)
+			if (desc.heap == api::memory_heap::readback)
 				target = GL_PIXEL_PACK_BUFFER;
-			else if (desc.heap == api::memory_heap::cpu_to_gpu)
+			else if (desc.heap == api::memory_heap::upload)
 				target = GL_PIXEL_UNPACK_BUFFER;
 			break;
 		}
@@ -1800,19 +1801,31 @@ void reshade::opengl::device_impl::unmap_texture_region(api::resource resource, 
 	}
 }
 
-void reshade::opengl::device_impl::update_buffer_region(const void *data, api::resource resource, uint64_t offset, uint64_t size)
+void reshade::opengl::device_impl::update_buffer_region(const void *data, api::resource dest, uint64_t dest_offset, uint64_t size)
 {
-	assert(resource != 0 && (resource.handle >> 40) == GL_BUFFER);
-	assert(offset <= static_cast<uint64_t>(std::numeric_limits<GLintptr>::max()) && size <= static_cast<uint64_t>(std::numeric_limits<GLsizeiptr>::max()));
+	assert(dest != 0 && (dest.handle >> 40) == GL_BUFFER);
+	assert(dest_offset <= static_cast<uint64_t>(std::numeric_limits<GLintptr>::max()) && (size == UINT64_MAX || size <= static_cast<uint64_t>(std::numeric_limits<GLsizeiptr>::max())));
 
 	if (data == nullptr)
 		return;
 
-	const GLuint object = resource.handle & 0xFFFFFFFF;
+	const GLuint object = dest.handle & 0xFFFFFFFF;
 
 	if (gl.VERSION_4_5)
 	{
-		gl.NamedBufferSubData(object, static_cast<GLintptr>(offset), static_cast<GLsizeiptr>(size), data);
+		if (UINT64_MAX == size)
+		{
+#ifndef _WIN64
+			GLint max_size = 0;
+			gl.GetNamedBufferParameteriv(object, GL_BUFFER_SIZE, &max_size);
+#else
+			GLint64 max_size = 0;
+			gl.GetNamedBufferParameteri64v(object, GL_BUFFER_SIZE, &max_size);
+#endif
+			size = max_size;
+		}
+
+		gl.NamedBufferSubData(object, static_cast<GLintptr>(dest_offset), static_cast<GLsizeiptr>(size), data);
 	}
 	else
 	{
@@ -1821,20 +1834,32 @@ void reshade::opengl::device_impl::update_buffer_region(const void *data, api::r
 		if (object != prev_binding)
 			gl.BindBuffer(GL_COPY_WRITE_BUFFER, object);
 
-		gl.BufferSubData(GL_COPY_WRITE_BUFFER, static_cast<GLintptr>(offset), static_cast<GLsizeiptr>(size), data);
+		if (UINT64_MAX == size)
+		{
+#ifndef _WIN64
+			GLint max_size = 0;
+			gl.GetBufferParameteriv(GL_COPY_READ_BUFFER, GL_BUFFER_SIZE, &max_size);
+#else
+			GLint64 max_size = 0;
+			gl.GetBufferParameteri64v(GL_COPY_READ_BUFFER, GL_BUFFER_SIZE, &max_size);
+#endif
+			size = max_size;
+		}
+
+		gl.BufferSubData(GL_COPY_WRITE_BUFFER, static_cast<GLintptr>(dest_offset), static_cast<GLsizeiptr>(size), data);
 
 		// The 'GL_COPY_WRITE_BUFFER' target does not affect other OpenGL state, so should be fine to leave it bound
 	}
 }
-void reshade::opengl::device_impl::update_texture_region(const api::subresource_data &data, api::resource resource, uint32_t subresource, const api::subresource_box *box)
+void reshade::opengl::device_impl::update_texture_region(const api::subresource_data &data, api::resource dst, uint32_t dst_subresource, const api::subresource_box *dst_box)
 {
-	assert(resource != 0);
+	assert(dst != 0);
 
 	if (data.data == nullptr)
 		return;
 
-	const GLenum target = resource.handle >> 40;
-	const GLuint object = resource.handle & 0xFFFFFFFF;
+	const GLenum target = dst.handle >> 40;
+	const GLuint object = dst.handle & 0xFFFFFFFF;
 
 	// Get current state
 	GLint prev_unpack_lsb = GL_FALSE;
@@ -1878,20 +1903,20 @@ void reshade::opengl::device_impl::update_texture_region(const api::subresource_
 	if (object != prev_binding)
 		gl.BindTexture(target, object);
 
-	const api::resource_desc desc = get_resource_desc(resource);
+	const api::resource_desc desc = get_resource_desc(dst);
 
-	const GLuint level = subresource % desc.texture.levels;
-	      GLuint layer = subresource / desc.texture.levels;
+	const GLuint level = dst_subresource % desc.texture.levels;
+	      GLuint layer = dst_subresource / desc.texture.levels;
 
 	GLuint xoffset, yoffset, zoffset, width, height, depth;
-	if (box != nullptr)
+	if (dst_box != nullptr)
 	{
-		xoffset = box->left;
-		yoffset = box->top;
-		zoffset = box->front;
-		width   = box->width();
-		height  = box->height();
-		depth   = box->depth();
+		xoffset = dst_box->left;
+		yoffset = dst_box->top;
+		zoffset = dst_box->front;
+		width   = dst_box->width();
+		height  = dst_box->height();
+		depth   = dst_box->depth();
 	}
 	else
 	{
@@ -1913,15 +1938,18 @@ void reshade::opengl::device_impl::update_texture_region(const api::subresource_
 
 	const auto row_pitch = api::format_row_pitch(desc.texture.format, width);
 	const auto slice_pitch = api::format_slice_pitch(desc.texture.format, row_pitch, height);
-	const auto total_image_size = depth * static_cast<size_t>(slice_pitch);
+	const auto total_image_size = static_cast<size_t>(depth) * static_cast<size_t>(slice_pitch);
+
+	const bool packed_data_layout =
+		(row_pitch == data.row_pitch || height == 1) &&
+		(slice_pitch == data.slice_pitch || depth == 1);
 
 	assert(total_image_size <= static_cast<size_t>(std::numeric_limits<GLsizei>::max()));
 
 	std::vector<uint8_t> temp_pixels;
 	const uint8_t *pixels = static_cast<const uint8_t *>(data.data);
 
-	if ((row_pitch != data.row_pitch && height == 1) ||
-		(slice_pitch != data.slice_pitch && depth == 1))
+	if (!packed_data_layout)
 	{
 		temp_pixels.resize(total_image_size);
 		uint8_t *dst_pixels = temp_pixels.data();

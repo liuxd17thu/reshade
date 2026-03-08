@@ -573,7 +573,7 @@ void    STDMETHODCALLTYPE D3D10Device::UpdateSubresource(ID3D10Resource *pDstRes
 					pSrcData,
 					to_handle(pDstResource),
 					pDstBox != nullptr ? pDstBox->left : 0,
-					pDstBox != nullptr ? pDstBox->right - pDstBox->left : SrcRowPitch))
+					pDstBox != nullptr ? pDstBox->right - pDstBox->left : UINT64_MAX))
 				return;
 		}
 		else
