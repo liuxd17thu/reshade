@@ -8,7 +8,7 @@ Param(
 )
 
 $exists = Test-Path $path
-$version = 6,7,1,0
+$version = 6,7,3,0
 
 # Get version from existing file
 # if ($exists -and $(Get-Content $path | Out-String) -match "VERSION_FULL (\d+).(\d+).(\d+).(\d+)") {
@@ -19,8 +19,8 @@ $version = 6,7,1,0
 # }
 
 $build = $(git rev-parse --short HEAD)
-$cn2 = "Alpha 13.0"
-$cn2_pro = "Delta 13.0"
+$cn2 = "Alpha 13.2"
+$cn2_pro = "Delta 13.2"
 
 $global:ReShadeVersion = $version
 
