@@ -2342,7 +2342,7 @@ void reshade::runtime::draw_gui_home()
 
 		float bottom_height = _variable_editor_height;
 		bottom_height = std::max(bottom_height, 20.0f);
-		bottom_height = ImGui::GetFrameHeightWithSpacing() + _imgui_context->Style.ItemSpacing.y + (
+		bottom_height = ImGui::GetFrameHeightWithSpacing() * 2.0f /* Group buttons */ + _imgui_context->Style.ItemSpacing.y + (
 			_performance_mode ? 0 : (17 /* splitter */ + (bottom_height + (_tutorial_index == 3 ? 175 : 0))));
 		bottom_height = std::min(bottom_height, ImGui::GetContentRegionAvail().y - 20.0f);
 
