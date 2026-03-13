@@ -372,6 +372,7 @@ namespace reshade
 		std::filesystem::path _screenshot_sound_path;
 		std::filesystem::path _screenshot_path;
 		std::string _screenshot_name;
+		bool _screenshot_post_save_command_enable;
 		std::filesystem::path _screenshot_post_save_command;
 		std::string _screenshot_post_save_command_arguments;
 		std::filesystem::path _screenshot_post_save_command_working_directory;

@@ -2471,15 +2471,45 @@ void reshade::runtime::draw_gui_home()
 
 		ImGui::SetItemTooltip(_("Reload all effects (can hold 'Ctrl' while clicking to clear the effect cache before loading)."));
 
-		ImGui::SameLine();
+		const float button_height = ImGui::GetFrameHeight();
+		const float button_spacing = _imgui_context->Style.ItemInnerSpacing.x;
 
-		if (ImGui::Checkbox(_("Performance Mode"), &_performance_mode))
+		ImGui::SameLine(0.0f, button_width - 3.0f * button_height - 2.0f * button_spacing);
+
+		if (ImGui::Button("A", ImVec2(button_height, 0.0f)))
+		{
+			_screenshot_clear_alpha = !_screenshot_clear_alpha;
+		}
+		ImGui::SetItemTooltip(_("Clear alpha channel"));
+		if(_screenshot_clear_alpha)
+		{
+			const ImVec2 button_lt = ImGui::GetItemRectMin();
+			const ImVec2 button_rd = ImGui::GetItemRectMax();
+			ImDrawList *draw_list = ImGui::GetWindowDrawList();
+			draw_list->AddLine(ImVec2(button_lt.x + button_spacing, button_rd.y - button_spacing), ImVec2(button_rd.x - button_spacing, button_lt.y + button_spacing),
+				ImGui::GetColorU32(ImGuiCol_Text), _font_size / 13.0f);
+		}
+
+		ImGui::SameLine(0.0f, button_spacing);
+
+		if (ImGui::Button(_screenshot_save_before ? ICON_FK_CLONE : ICON_FK_SQUARE_EMPTY, ImVec2(button_height, 0.0f)))
+		{
+			_screenshot_save_before = !_screenshot_save_before;
+		}
+		ImGui::SetItemTooltip(_("Save before and after images"));
+
+		ImGui::SameLine(0.0f, button_spacing);
+
+		ImGui::BeginDisabled(!_imgui_context->IO.KeyShift && !_imgui_context->IO.KeyCtrl);
+		if (imgui::toggle_button(ICON_FK_DASHBOARD, _performance_mode, ImGui::GetFrameHeight()))
 		{
 			save_config();
 			reload_effects(); // Reload effects after switching
 		}
-
-		ImGui::SetItemTooltip(_("Reload all effects into a more optimal representation that can give a performance boost, but disables variable tweaking."));
+		auto performance_mode_text = (_("Performance Mode") + "\n");
+		performance_mode_text = performance_mode_text + _("Reload all effects into a more optimal representation that can give a performance boost, but disables variable tweaking.");
+		ImGui::SetItemTooltip(performance_mode_text);
+		ImGui::EndDisabled();
 	}
 	else
 	{
@@ -2680,6 +2710,8 @@ void reshade::runtime::draw_gui_settings()
 		modified |= imgui::file_input_box(_("Screenshot sound"), "sound.wav", _screenshot_sound_path, _file_selection_path, { L".wav" });
 		ImGui::SetItemTooltip(_("Audio file that is played when taking a screenshot."));
 
+		modified |= ImGui::Checkbox(_("Post-save command") + "##enable", &_screenshot_post_save_command_enable);
+		ImGui::BeginDisabled(!_screenshot_post_save_command_enable);
 		modified |= imgui::file_input_box(_("Post-save command"), "command.bat", _screenshot_post_save_command, _file_selection_path, { L".exe", L".bat", L".cmd", L".ps1", L".py" });
 		ImGui::SetItemTooltip(_(
 			"Executable or script that is called after saving a screenshot.\n"
@@ -2745,6 +2777,7 @@ void reshade::runtime::draw_gui_settings()
 
 		modified |= imgui::directory_input_box(_("Post-save command working directory"), _screenshot_post_save_command_working_directory, _file_selection_path);
 		modified |= ImGui::Checkbox(_("Hide post-save command window"), &_screenshot_post_save_command_hide_window);
+		ImGui::EndDisabled();
 	}
 
 	if (ImGui::CollapsingHeader(_("Overlay & Styling"), ImGuiTreeNodeFlags_DefaultOpen))
@@ -2869,7 +2902,7 @@ void reshade::runtime::draw_gui_settings()
 		if (_style_index == 6) // Custom Advanced
 		{
 			const auto height = 20.0f * _imgui_context->Style.FramePadding.y + 10.0f * ImGui::GetFontSize() + 12.0f * _imgui_context->Style.ItemSpacing.y;
-			if (ImGui::BeginChild("##colors", ImVec2(0, height), ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_AlwaysVerticalScrollbar))
+			if (ImGui::BeginChild("##colors", ImVec2(0, height), ImGuiChildFlags_Borders | ImGuiChildFlags_NavFlattened, ImGuiWindowFlags_AlwaysVerticalScrollbar))
 			{
 				ImGui::PushItemWidth(-160);
 				for (ImGuiCol i = 0; i < ImGuiCol_COUNT; i++)
