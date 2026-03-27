@@ -5328,6 +5328,12 @@ void reshade::runtime::draw_technique_editor()
 						_preset_is_modified = true;
 				}
 
+				if (ImGui::Button(ICON_FK_REFRESH "##reload_effect", ImVec2(18.0f * ImGui::GetFontSize(), 0)))
+				{
+					reload_effect(tech.effect_index);
+					ImGui::CloseCurrentPopup();
+				}
+
 				const bool is_not_top = index > 0;
 				const bool is_not_bottom = index < _technique_sorting.size() - 1;
 
