@@ -3792,12 +3792,6 @@ This Font Software is licensed under the SIL Open Font License, Version 1.1. (ht
 		const resources::data_resource resource = resources::load_data_resource(IDR_LICENSE_S_JXL);
 		ImGui::TextUnformatted(static_cast<const char *>(resource.data), static_cast<const char *>(resource.data) + resource.data_size);
 	}
-	if (ImGui::CollapsingHeader("libjxl simple lossless encoder"))
-	{
-		const resources::data_resource resource = resources::load_data_resource(IDR_LICENSE_S_JXL);
-		ImGui::TextUnformatted(static_cast<const char *>(resource.data), static_cast<const char *>(resource.data) + resource.data_size);
-	}
-
 	ImGui::PopTextWrapPos();
 }
 #if RESHADE_ADDON
