@@ -166,7 +166,7 @@ void reshade::runtime::build_font_atlas()
 	if (language.empty())
 		language = resources::get_current_language();
 
-	if (language.find("bg") == 0 || language.find("ru") == 0 || language.find("sl") == 0 || language.find("tr") == 0 || language.find("th") == 0)
+	if (language.find("bg") == 0 || language.find("pl") == 0 || language.find("ru") == 0 || language.find("sl") == 0 || language.find("tr") == 0 || language.find("th") == 0)
 	{
 		// Microsoft Sans Serif
 		_default_font_path = L"C:\\Windows\\Fonts\\micross.ttf";
@@ -5810,7 +5810,7 @@ void reshade::runtime::draw_code_editor(editor_instance &instance)
 bool reshade::runtime::init_imgui_resources()
 {
 	// Adjust default font size based on the vertical resolution
-	if (_font_size == 0)
+	if (_font_size == 13.0f)
 		_imgui_context->Style.FontScaleMain = _height >= 2160 ? 2.0f : _height >= 1440 ? 1.5f : 1.0f;
 
 	const bool has_combined_sampler_and_view = _device->check_capability(api::device_caps::sampler_with_resource_view);

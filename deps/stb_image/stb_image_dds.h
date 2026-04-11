@@ -368,7 +368,9 @@ static stbi_uc *stbi__dds_load(stbi__context *s, int *x, int *y, int *z, int *co
 
 		//	passed all the tests, get the RAM for decoding
 		sz = (s->img_x) * (s->img_y) * 4 * cubemap_faces;
-		dds_data = (stbi_uc *)stbi__malloc(sz);
+		dds_data = (stbi_uc *)stbi__malloc_mad4(s->img_x, s->img_y, 4, cubemap_faces, 0);
+		if (!dds_data)
+			return NULL;
 
 		//	do this once for each face
 		for (cf = 0; cf < cubemap_faces; ++cf)
@@ -417,7 +419,7 @@ static stbi_uc *stbi__dds_load(stbi__context *s, int *x, int *y, int *z, int *co
 				//	now drop our decompressed data into the buffer
 				for (by = 0; by < bh; ++by)
 				{
-					int idx = 4 * ((ref_y + by + cf * s->img_x) * s->img_x + ref_x);
+					int idx = 4 * ((ref_y + by + cf * s->img_y) * s->img_x + ref_x);
 					for (bx = 0; bx < bw * 4; ++bx)
 					{
 						dds_data[idx + bx] = block[by * 16 + bx];
@@ -468,7 +470,9 @@ static stbi_uc *stbi__dds_load(stbi__context *s, int *x, int *y, int *z, int *co
 		*comp = s->img_n;
 
 		sz = (s->img_x) * (s->img_y) * s->img_n * cubemap_faces;
-		dds_data = (stbi_uc *)stbi__malloc(sz);
+		dds_data = (stbi_uc *)stbi__malloc_mad4(s->img_x, s->img_y, s->img_n, cubemap_faces, 0);
+		if (!dds_data)
+			return NULL;
 
 		//	do this once for each face
 		for (cf = 0; cf < cubemap_faces; ++cf)

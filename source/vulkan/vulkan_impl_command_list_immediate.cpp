@@ -80,7 +80,7 @@ reshade::vulkan::command_list_immediate_impl::command_list_immediate_impl(device
 
 			VkDescriptorPoolCreateInfo create_info { VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO };
 			create_info.maxSets = 32;
-			create_info.poolSizeCount = static_cast<uint32_t>(std::size(pool_sizes));
+			create_info.poolSizeCount = std::size(pool_sizes);
 			create_info.pPoolSizes = pool_sizes;
 
 			if (vk.CreateDescriptorPool(_device_impl->_orig, &create_info, nullptr, &_transient_descriptor_pool[i]) != VK_SUCCESS)
@@ -180,6 +180,8 @@ void reshade::vulkan::command_list_immediate_impl::push_descriptors(api::shader_
 		break;
 	case api::descriptor_type::constant_buffer:
 	case api::descriptor_type::shader_storage_buffer:
+	case static_cast<api::descriptor_type>(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC):
+	case static_cast<api::descriptor_type>(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC):
 		write.pBufferInfo = reinterpret_cast<const VkDescriptorBufferInfo *>(update.descriptors);
 		break;
 	default:

@@ -5,8 +5,9 @@
 
 #include <imgui.h>
 #include <reshade.hpp>
-#include <vector>
+#include <mutex>
 #include <shared_mutex>
+#include <vector>
 #include <algorithm> // std::remove
 #include "localization.hpp"
 #include <Windows.h>
