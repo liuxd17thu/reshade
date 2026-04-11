@@ -2473,8 +2473,11 @@ void reshade::runtime::draw_gui_home()
 
 		const float button_height = ImGui::GetFrameHeight();
 		const float button_spacing = _imgui_context->Style.ItemInnerSpacing.x;
-
+#ifdef AURORA_PRO
+		ImGui::SameLine(0.0f, button_width - 4.0f * button_height - 3.0f * button_spacing);
+#else
 		ImGui::SameLine(0.0f, button_width - 3.0f * button_height - 2.0f * button_spacing);
+#endif
 
 		if (ImGui::Button("A", ImVec2(button_height, 0.0f)))
 		{
@@ -2499,6 +2502,12 @@ void reshade::runtime::draw_gui_home()
 		ImGui::SetItemTooltip(_("Save before and after images"));
 
 		ImGui::SameLine(0.0f, button_spacing);
+#ifdef AURORA_PRO
+		imgui::toggle_button(ICON_FK_TERMINAL, _screenshot_post_save_command_enable, button_height);
+		ImGui::SetItemTooltip(_("Post-save command"));
+
+		ImGui::SameLine(0.0f, button_spacing);
+#endif
 
 		ImGui::BeginDisabled(!_imgui_context->IO.KeyShift && !_imgui_context->IO.KeyCtrl);
 		if (imgui::toggle_button(ICON_FK_DASHBOARD, _performance_mode, ImGui::GetFrameHeight()))
