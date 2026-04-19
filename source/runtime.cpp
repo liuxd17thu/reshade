@@ -5636,7 +5636,7 @@ void reshade::runtime::save_screenshot(const char *postfix_in)
 }
 bool reshade::runtime::execute_screenshot_post_save_command(const std::filesystem::path &screenshot_path, unsigned int screenshot_count, std::string_view postfix)
 {
-	if (_screenshot_post_save_command.empty())
+	if (!_screenshot_post_save_command_enable || _screenshot_post_save_command.empty())
 		return false;
 
 	const std::wstring ext = _screenshot_post_save_command.extension().wstring();
