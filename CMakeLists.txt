@@ -69,6 +69,8 @@ set(RESHADE_SOURCE
   source/ini_file.hpp
   source/input.cpp
   source/input.hpp
+  source/input_ime.cpp
+  source/input_ime.hpp
   source/input_gamepad.cpp
   source/input_gamepad.hpp
   source/platform_utils.cpp

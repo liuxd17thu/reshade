@@ -9,6 +9,8 @@
 #include <memory>
 #include <string>
 
+#include "input_ime.hpp"
+
 namespace reshade
 {
 	class input
@@ -76,6 +78,17 @@ namespace reshade
 		const std::wstring &text_input() const { return _text_input; }
 
 		/// <summary>
+		/// Gets the IME state for this input manager.
+		/// </summary>
+		input_ime &ime_state() { return _ime_state; }
+		const input_ime &ime_state() const { return _ime_state; }
+
+		/// <summary>
+		/// Gets the raw window handle for this input manager.
+		/// </summary>
+		window_handle get_window_handle() const { return _window; }
+
+		/// <summary>
 		/// Set to <see langword="true"/> to prevent mouse input window messages from reaching the application.
 		/// </summary>
 		void block_mouse_input(bool enable);
@@ -124,6 +137,14 @@ namespace reshade
 		/// <returns><see langword="true"/> if the called should ignore this message, or <see langword="false"/> if it should pass it on to the application.</returns>
 		static bool handle_window_message(const void *message_data);
 
+		/// <summary>
+		/// Controls whether TranslateMessage should be called for blocked keyboard messages.
+		/// Set to <see langword="true"/> only when a text input control is focused (ImGui WantTextInput)
+		/// or IME is actively composing, to prevent IME from intercepting shortcut keys.
+		/// </summary>
+		static void set_translate_message_enabled(bool enabled) { s_translate_message_enabled = enabled; }
+		static bool is_translate_message_enabled() { return s_translate_message_enabled; }
+
 	private:
 		std::recursive_mutex _mutex;
 		window_handle _window;
@@ -138,5 +159,8 @@ namespace reshade
 		unsigned int _last_mouse_position[2] = {};
 		uint64_t _frame_count = 0; // Keep track of frame count to identify windows with a lot of rendering
 		std::wstring _text_input;
+		input_ime _ime_state;
+
+		static inline bool s_translate_message_enabled = true;
 	};
 }

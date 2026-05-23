@@ -91,8 +91,24 @@ bool reshade::input::handle_window_message(const void *message_data)
 	bool is_mouse_message = details.message >= WM_MOUSEFIRST && details.message <= WM_MOUSELAST;
 	bool is_keyboard_message = details.message >= WM_KEYFIRST && details.message <= WM_KEYLAST;
 
-	// Ignore messages that are not related to mouse or keyboard input
-	if (details.message != WM_INPUT && !is_mouse_message && !is_keyboard_message)
+	// Check for IME-related messages
+	bool is_ime_message = false;
+	switch (details.message)
+	{
+	case WM_IME_STARTCOMPOSITION:
+	case WM_IME_COMPOSITION:
+	case WM_IME_ENDCOMPOSITION:
+	case WM_IME_NOTIFY:
+	case WM_IME_SETCONTEXT:
+	case WM_IME_SELECT:
+	case WM_IME_CHAR:
+	case WM_INPUTLANGCHANGE:
+		is_ime_message = true;
+		break;
+	}
+
+	// Ignore messages that are not related to mouse, keyboard or IME input
+	if (details.message != WM_INPUT && !is_mouse_message && !is_keyboard_message && !is_ime_message)
 		return false;
 
 	// Guard access to windows list against race conditions
@@ -151,6 +167,50 @@ bool reshade::input::handle_window_message(const void *message_data)
 
 	input->_mouse_position[0] = details.pt.x;
 	input->_mouse_position[1] = details.pt.y;
+
+	// Handle IME messages (track composition state and capture committed text)
+	// This runs under the input lock to ensure thread safety
+	if (is_ime_message)
+	{
+		if (details.message == WM_IME_CHAR)
+		{
+			// WM_IME_CHAR is intentionally NOT extracted to _text_input here.
+			// Committed IME text is captured exclusively via poll() → GCS_RESULTSTR.
+			// When keyboard is blocked (overlay active), block WM_IME_CHAR from reaching
+			// DefWindowProc so it does not generate a spurious WM_CHAR that would
+			// otherwise be captured by our WM_CHAR handler and cause double-input.
+			// When keyboard is not blocked, let it pass through for the game to handle.
+			if (input->is_blocking_keyboard_input())
+				is_keyboard_message = true;
+			else
+				return false; // Let the game handle WM_IME_CHAR normally
+		}
+		else if (details.message == WM_IME_COMPOSITION)
+		{
+			// Update candidate list via TSF when composition changes.
+			// Let the message pass through so the IME window procedure can update its state
+			// (especially important for TSF-based IMEs like Microsoft Pinyin).
+			input->_ime_state.handle_ime_message(
+				static_cast<HWND>(input->_window), details.message, details.wParam, details.lParam);
+		}
+		else if (details.message == WM_INPUTLANGCHANGE)
+		{
+			// IME language changed; clear stale state without touching COM/TSF.
+			input->_ime_state.clear_composing_state();
+		}
+		else
+		{
+			// Route other IME messages (STARTCOMPOSITION, ENDCOMPOSITION, NOTIFY, SETCONTEXT, SELECT)
+			// to the IME state tracker and let them pass through to the window procedure.
+			input->_ime_state.handle_ime_message(
+				static_cast<HWND>(input->_window), details.message, details.wParam, details.lParam);
+		}
+
+		// Non-WM_IME_CHAR IME messages: let them through so the IME functions correctly.
+		// WM_IME_CHAR marked as keyboard_message will be blocked below if appropriate.
+		if (details.message != WM_IME_CHAR)
+			return false;
+	}
 
 	switch (details.message)
 	{
@@ -659,13 +719,17 @@ extern "C" BOOL WINAPI HookPeekMessageA(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterM
 	if (!trampoline(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg) || lpMsg == nullptr)
 		return FALSE;
 
-	if (lpMsg->hwnd != nullptr && (wRemoveMsg & PM_REMOVE) != 0 && reshade::input::handle_window_message(lpMsg))
+	if (lpMsg->hwnd != nullptr && (wRemoveMsg & PM_REMOVE) != 0)
 	{
-		// We still want 'WM_CHAR' messages, so translate message
-		TranslateMessage(lpMsg);
+		if (reshade::input::handle_window_message(lpMsg))
+		{
+			// Only call TranslateMessage when a text input is focused or IME is composing
+			if (reshade::input::is_translate_message_enabled())
+				TranslateMessage(lpMsg);
 
-		// Change message so it is ignored by the recipient window
-		lpMsg->message = WM_NULL;
+			// Change message so it is ignored by the recipient window
+			lpMsg->message = WM_NULL;
+		}
 	}
 
 	return TRUE;
@@ -676,13 +740,17 @@ extern "C" BOOL WINAPI HookPeekMessageW(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterM
 	if (!trampoline(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg) || lpMsg == nullptr)
 		return FALSE;
 
-	if (lpMsg->hwnd != nullptr && (wRemoveMsg & PM_REMOVE) != 0 && reshade::input::handle_window_message(lpMsg))
+	if (lpMsg->hwnd != nullptr && (wRemoveMsg & PM_REMOVE) != 0)
 	{
-		// We still want 'WM_CHAR' messages, so translate message
-		TranslateMessage(lpMsg);
+		if (reshade::input::handle_window_message(lpMsg))
+		{
+			// Only call TranslateMessage when a text input is focused or IME is composing
+			if (reshade::input::is_translate_message_enabled())
+				TranslateMessage(lpMsg);
 
-		// Change message so it is ignored by the recipient window
-		lpMsg->message = WM_NULL;
+			// Change message so it is ignored by the recipient window
+			lpMsg->message = WM_NULL;
+		}
 	}
 
 	return TRUE;

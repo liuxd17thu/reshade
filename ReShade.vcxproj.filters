@@ -336,6 +336,9 @@
     <ClCompile Include="source\input.cpp">
       <Filter>core\runtime</Filter>
     </ClCompile>
+    <ClCompile Include="source\input_ime.cpp">
+      <Filter>core\runtime</Filter>
+    </ClCompile>
     <ClCompile Include="source\input_gamepad.cpp">
       <Filter>core\runtime</Filter>
     </ClCompile>
@@ -693,6 +696,9 @@
       <Filter>core</Filter>
     </ClInclude>
     <ClInclude Include="source\input.hpp">
+      <Filter>core\runtime</Filter>
+    </ClInclude>
+    <ClInclude Include="source\input_ime.hpp">
       <Filter>core\runtime</Filter>
     </ClInclude>
     <ClInclude Include="source\input_gamepad.hpp">

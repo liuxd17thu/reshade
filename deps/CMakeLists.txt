@@ -344,6 +344,7 @@ if(WIN32)
       d3dcompiler.lib
       dwmapi.lib
       dxguid.lib
+      imm32.lib
       ShLwApi.lib
       wininet.lib
       WS2_32.lib
