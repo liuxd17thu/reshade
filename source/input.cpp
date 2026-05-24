@@ -174,12 +174,12 @@ bool reshade::input::handle_window_message(const void *message_data)
 	{
 		if (!reshade::input::is_ime_enabled())
 		{
-			// Overlay not visible: let IME messages pass through to the game without any processing.
+			// Custom IME not active: let IME messages pass through to the game without any processing.
 			// This avoids touching IMM32 (and thus D3D resources) inside the message hook.
 			return false;
 		}
 
-		// Overlay visible: ReShade handles IME via poll() in on_present() (which runs before
+		// Custom IME active: ReShade handles IME via poll() in on_present() (which runs before
 		// the D3D lock). Block IME messages from reaching the game to avoid nested D3D
 		// resource destruction callbacks (ID3DDestructionNotifier) while the D3D11 internal
 		// critical section is held.

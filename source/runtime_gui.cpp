@@ -309,6 +309,7 @@ void reshade::runtime::load_config_gui(const ini_file &config)
 	config_get("INPUT", "KeyFPS", _fps_key_data);
 	config_get("INPUT", "KeyFrameTime", _frametime_key_data);
 	config_get("INPUT", "InputProcessing", _input_processing_mode);
+	config_get("INPUT", "IMEMode", _ime_mode);
 
 #if RESHADE_LOCALIZATION
 	config_get("OVERLAY", "Language", _selected_language);
@@ -413,6 +414,7 @@ void reshade::runtime::save_config_gui(ini_file &config) const
 	config.set("INPUT", "KeyFPS", _fps_key_data);
 	config.set("INPUT", "KeyFrametime", _frametime_key_data);
 	config.set("INPUT", "InputProcessing", _input_processing_mode);
+	config.set("INPUT", "IMEMode", _ime_mode);
 
 #if RESHADE_LOCALIZATION
 	config.set("OVERLAY", "Language", _selected_language);
@@ -1002,9 +1004,9 @@ void reshade::runtime::draw_gui()
 	if (show_overlay != _show_overlay)
 		open_overlay(show_overlay, show_overlay_source);
 
-	// Enable IME interception only when overlay is visible.
-	// When hidden, IME messages go directly to the game to avoid D3D lock issues.
-	reshade::input::set_ime_enabled(_show_overlay);
+	// Enable IME interception only when overlay is visible and custom IME mode is selected.
+	// In original mode (mode 0), IME messages pass through to the game.
+	reshade::input::set_ime_enabled(_show_overlay && _ime_mode == 1);
 
 	const bool show_splash_window = _show_splash && (is_loading() || (_reload_count <= 1 && (_last_present_time - _last_reload_time) < std::chrono::seconds(5)) || (!_show_overlay && _tutorial_index == 0 && _input != nullptr));
 
@@ -1736,7 +1738,7 @@ void reshade::runtime::draw_gui()
 	}
 
 	// Draw IME composition and candidate window using ImGui
-	if (_input != nullptr && imgui_io.WantTextInput)
+	if (_ime_mode == 1 && _input != nullptr && imgui_io.WantTextInput)
 	{
 		const input_ime &ime = _input->ime_state();
 		if (ime.is_composing())
@@ -2700,6 +2702,13 @@ void reshade::runtime::draw_gui_settings()
 				"Block all input when overlay is visible\n");
 			std::replace(input_processing_mode_items.begin(), input_processing_mode_items.end(), '\n', '\0');
 			modified |= ImGui::Combo(_("Input processing"), reinterpret_cast<int *>(&_input_processing_mode), input_processing_mode_items.c_str());
+
+			const char ime_mode_items[] = "Native\0Custom\0";
+			modified |= ImGui::Combo("IME Mode [Unstable]", reinterpret_cast<int *>(&_ime_mode), ime_mode_items);
+			ImGui::SetItemTooltip(
+				"[Experimental]\n"
+				"Native:     Vanilla ReShade\n"
+				"Custom IME: Works in some games, allowing you to use IME in search box, etc.\n");
 
 			modified |= imgui::key_input_box(_("Overlay key"), _overlay_key_data, *_input);
 

@@ -720,7 +720,8 @@ void reshade::runtime::on_present()
 	// Poll IME state early, before the unique_direct3d_device_lock is acquired by dxgi_swapchain::on_present().
 	// This avoids nested Windows message processing (via Imm* APIs) from triggering D3D resource destruction
 	// callbacks (ID3DDestructionNotifier) while the D3D11 internal critical section is held.
-	if (_input != nullptr)
+	// Only poll in custom IME mode (mode 1).
+	if (_input != nullptr && _ime_mode == 1)
 		_input->ime_state().poll(_input->get_window_handle());
 
 	api::command_list *const cmd_list = _graphics_queue->get_immediate_command_list();

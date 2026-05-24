@@ -147,8 +147,8 @@ namespace reshade
 
 		/// <summary>
 		/// Controls whether ReShade should intercept and process IME messages.
-		/// Set to <see langword="true"/> when the overlay is visible (ReShade handles IME for its text input).
-		/// Set to <see langword="false"/> when the overlay is hidden (IME messages pass through to the game).
+		/// Set to <see langword="true"/> when the overlay is visible and custom IME is selected.
+		/// Set to <see langword="false"/> otherwise (IME messages pass through to the game).
 		/// </summary>
 		static void set_ime_enabled(bool enabled) { s_ime_enabled = enabled; }
 		static bool is_ime_enabled() { return s_ime_enabled; }
