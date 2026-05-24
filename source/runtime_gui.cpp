@@ -1002,6 +1002,10 @@ void reshade::runtime::draw_gui()
 	if (show_overlay != _show_overlay)
 		open_overlay(show_overlay, show_overlay_source);
 
+	// Enable IME interception only when overlay is visible.
+	// When hidden, IME messages go directly to the game to avoid D3D lock issues.
+	reshade::input::set_ime_enabled(_show_overlay);
+
 	const bool show_splash_window = _show_splash && (is_loading() || (_reload_count <= 1 && (_last_present_time - _last_reload_time) < std::chrono::seconds(5)) || (!_show_overlay && _tutorial_index == 0 && _input != nullptr));
 
 	// Do not show this message in the same frame the screenshot is taken (so that it won't show up on the GUI screenshot)
@@ -1059,9 +1063,6 @@ void reshade::runtime::draw_gui()
 
 	if (_input != nullptr)
 	{
-		// Poll IME state early so has_committed_text() is valid when _text_input is processed below.
-		_input->ime_state().poll(_input->get_window_handle());
-
 		imgui_io.MouseDrawCursor = _show_overlay && (_show_imgui_cursor || (ImGui::GetMouseCursor() > ImGuiMouseCursor_Arrow)) && (!_should_save_screenshot || !_screenshot_save_gui);
 
 		// Scale mouse position in case render resolution does not match the window size

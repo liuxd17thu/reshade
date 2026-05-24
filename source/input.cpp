@@ -172,44 +172,24 @@ bool reshade::input::handle_window_message(const void *message_data)
 	// This runs under the input lock to ensure thread safety
 	if (is_ime_message)
 	{
-		if (details.message == WM_IME_CHAR)
+		if (!reshade::input::is_ime_enabled())
 		{
-			// WM_IME_CHAR is intentionally NOT extracted to _text_input here.
-			// Committed IME text is captured exclusively via poll() → GCS_RESULTSTR.
-			// When keyboard is blocked (overlay active), block WM_IME_CHAR from reaching
-			// DefWindowProc so it does not generate a spurious WM_CHAR that would
-			// otherwise be captured by our WM_CHAR handler and cause double-input.
-			// When keyboard is not blocked, let it pass through for the game to handle.
-			if (input->is_blocking_keyboard_input())
-				is_keyboard_message = true;
-			else
-				return false; // Let the game handle WM_IME_CHAR normally
-		}
-		else if (details.message == WM_IME_COMPOSITION)
-		{
-			// Update candidate list via TSF when composition changes.
-			// Let the message pass through so the IME window procedure can update its state
-			// (especially important for TSF-based IMEs like Microsoft Pinyin).
-			input->_ime_state.handle_ime_message(
-				static_cast<HWND>(input->_window), details.message, details.wParam, details.lParam);
-		}
-		else if (details.message == WM_INPUTLANGCHANGE)
-		{
-			// IME language changed; clear stale state without touching COM/TSF.
-			input->_ime_state.clear_composing_state();
-		}
-		else
-		{
-			// Route other IME messages (STARTCOMPOSITION, ENDCOMPOSITION, NOTIFY, SETCONTEXT, SELECT)
-			// to the IME state tracker and let them pass through to the window procedure.
-			input->_ime_state.handle_ime_message(
-				static_cast<HWND>(input->_window), details.message, details.wParam, details.lParam);
+			// Overlay not visible: let IME messages pass through to the game without any processing.
+			// This avoids touching IMM32 (and thus D3D resources) inside the message hook.
+			return false;
 		}
 
-		// Non-WM_IME_CHAR IME messages: let them through so the IME functions correctly.
-		// WM_IME_CHAR marked as keyboard_message will be blocked below if appropriate.
-		if (details.message != WM_IME_CHAR)
-			return false;
+		// Overlay visible: ReShade handles IME via poll() in on_present() (which runs before
+		// the D3D lock). Block IME messages from reaching the game to avoid nested D3D
+		// resource destruction callbacks (ID3DDestructionNotifier) while the D3D11 internal
+		// critical section is held.
+		if (details.message == WM_INPUTLANGCHANGE)
+		{
+			// IME language changed; clear stale state (safe, local state only).
+			input->_ime_state.clear_composing_state();
+		}
+
+		return true; // Block message from reaching the game
 	}
 
 	switch (details.message)
@@ -721,6 +701,7 @@ __declspec(noinline) static BOOL call_peek_message_with_seh(
 {
 	__try
 	{
+		lpMsg->time;
 		return fn(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg);
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER)

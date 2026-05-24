@@ -49,7 +49,13 @@ namespace reshade
 		_committed_text.clear();
 		_result_consumed_in_poll = false;
 	}
-	
+
+	void input_ime::set_committed_text(const std::wstring &text)
+	{
+		_committed_text = text;
+		_result_consumed_in_poll = true;
+	}
+
 	void input_ime::poll(void *hwnd)
 	{
 		if (hwnd == nullptr)
@@ -167,6 +173,10 @@ namespace reshade
 			_candidate_selection = 0;
 			_candidate_page_start = 0;
 			_candidate_page_size = 0;
+			// Reset extraction flag for the new composition cycle, so poll() can
+			// extract GCS_RESULTSTR when this new composition ends (or the message
+			// handler extracts it from WM_IME_COMPOSITION and sets the flag again).
+			_result_consumed_in_poll = false;
 			break;
 		}
 		case WM_IME_ENDCOMPOSITION:

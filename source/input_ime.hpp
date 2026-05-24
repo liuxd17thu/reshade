@@ -36,6 +36,12 @@ namespace reshade
 		void poll(void *hwnd);
 
 		/// <summary>
+		/// Sets committed text from outside (e.g. from WM_IME_COMPOSITION GCS_RESULTSTR).
+		/// Also marks result as consumed so poll() does not re-extract.
+		/// </summary>
+		void set_committed_text(const std::wstring &text);
+
+		/// <summary>
 		/// Clears all IME state without touching COM/TSF.
 		/// Safe to call from message handler context.
 		/// </summary>

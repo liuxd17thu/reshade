@@ -145,6 +145,14 @@ namespace reshade
 		static void set_translate_message_enabled(bool enabled) { s_translate_message_enabled = enabled; }
 		static bool is_translate_message_enabled() { return s_translate_message_enabled; }
 
+		/// <summary>
+		/// Controls whether ReShade should intercept and process IME messages.
+		/// Set to <see langword="true"/> when the overlay is visible (ReShade handles IME for its text input).
+		/// Set to <see langword="false"/> when the overlay is hidden (IME messages pass through to the game).
+		/// </summary>
+		static void set_ime_enabled(bool enabled) { s_ime_enabled = enabled; }
+		static bool is_ime_enabled() { return s_ime_enabled; }
+
 	private:
 		std::recursive_mutex _mutex;
 		window_handle _window;
@@ -162,5 +170,6 @@ namespace reshade
 		input_ime _ime_state;
 
 		static inline bool s_translate_message_enabled = true;
+		static inline bool s_ime_enabled = false;
 	};
 }
