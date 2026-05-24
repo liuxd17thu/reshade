@@ -713,47 +713,54 @@ extern "C" BOOL WINAPI HookGetMessageW(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMi
 
 	return lpMsg->message != WM_QUIT;
 }
+// Must be a standalone non-inline function because __try/__except cannot coexist
+// with C++ objects requiring unwinding (MSVC C2712).
+__declspec(noinline) static BOOL call_peek_message_with_seh(
+	BOOL(WINAPI *fn)(LPMSG, HWND, UINT, UINT, UINT),
+	LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax, UINT wRemoveMsg)
+{
+	__try
+	{
+		return fn(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		return FALSE;
+	}
+}
 extern "C" BOOL WINAPI HookPeekMessageA(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax, UINT wRemoveMsg)
 {
 	static const auto trampoline = reshade::hooks::call(HookPeekMessageA);
-	if (!trampoline(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg) || lpMsg == nullptr)
-		return FALSE;
+	const BOOL trampoline_result = call_peek_message_with_seh(trampoline, lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg);
 
-	if (lpMsg->hwnd != nullptr && (wRemoveMsg & PM_REMOVE) != 0)
+	if (trampoline_result && lpMsg != nullptr &&
+		lpMsg->hwnd != nullptr && (wRemoveMsg & PM_REMOVE) != 0 &&
+		reshade::input::handle_window_message(lpMsg))
 	{
-		if (reshade::input::handle_window_message(lpMsg))
-		{
-			// Only call TranslateMessage when a text input is focused or IME is composing
-			if (reshade::input::is_translate_message_enabled())
-				TranslateMessage(lpMsg);
+		if (reshade::input::is_translate_message_enabled())
+			TranslateMessage(lpMsg);
 
-			// Change message so it is ignored by the recipient window
-			lpMsg->message = WM_NULL;
-		}
+		lpMsg->message = WM_NULL;
 	}
 
-	return TRUE;
+	return trampoline_result;
 }
 extern "C" BOOL WINAPI HookPeekMessageW(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax, UINT wRemoveMsg)
 {
 	static const auto trampoline = reshade::hooks::call(HookPeekMessageW);
-	if (!trampoline(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg) || lpMsg == nullptr)
-		return FALSE;
+	const BOOL trampoline_result = call_peek_message_with_seh(trampoline, lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg);
 
-	if (lpMsg->hwnd != nullptr && (wRemoveMsg & PM_REMOVE) != 0)
+	if (trampoline_result && lpMsg != nullptr &&
+		lpMsg->hwnd != nullptr && (wRemoveMsg & PM_REMOVE) != 0 &&
+		reshade::input::handle_window_message(lpMsg))
 	{
-		if (reshade::input::handle_window_message(lpMsg))
-		{
-			// Only call TranslateMessage when a text input is focused or IME is composing
-			if (reshade::input::is_translate_message_enabled())
-				TranslateMessage(lpMsg);
+		if (reshade::input::is_translate_message_enabled())
+			TranslateMessage(lpMsg);
 
-			// Change message so it is ignored by the recipient window
-			lpMsg->message = WM_NULL;
-		}
+		lpMsg->message = WM_NULL;
 	}
 
-	return TRUE;
+	return trampoline_result;
 }
 
 extern "C" BOOL WINAPI HookPostMessageA(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)

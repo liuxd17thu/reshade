@@ -1042,13 +1042,14 @@ HRESULT STDMETHODCALLTYPE D3D11Device::CreateBlendState(const D3D11_BLEND_DESC *
 #if RESHADE_ADDON
 		ID3D11BlendState *const pipeline = *ppBlendState;
 
+		const auto debugDesc = *pBlendStateDesc;
 		reshade::invoke_addon_event<reshade::addon_event::init_pipeline>(this, _global_pipeline_layout, static_cast<uint32_t>(std::size(subobjects)), subobjects, to_handle(pipeline));
 
 		if (reshade::has_addon_event<reshade::addon_event::destroy_pipeline>() &&
 			// Do not register destruction callback for default blend state, since it is only destroyed during final device release, after 'destroy_device' event has already been called
 			std::memcmp(pBlendStateDesc, &default_blend_desc, sizeof(D3D11_BLEND_DESC)) != 0)
 		{
-			register_destruction_callback_d3dx(pipeline, [this, pipeline]() {
+			register_destruction_callback_d3dx(pipeline, [this, pipeline, debugDesc]() {
 				reshade::invoke_addon_event<reshade::addon_event::destroy_pipeline>(this, to_handle(pipeline));
 			});
 		}
@@ -1110,6 +1111,7 @@ HRESULT STDMETHODCALLTYPE D3D11Device::CreateDepthStencilState(const D3D11_DEPTH
 	{
 #if RESHADE_ADDON
 		ID3D11DepthStencilState *const pipeline = *ppDepthStencilState;
+		const auto debugDesc = *pDepthStencilDesc;
 
 		reshade::invoke_addon_event<reshade::addon_event::init_pipeline>(this, _global_pipeline_layout, static_cast<uint32_t>(std::size(subobjects)), subobjects, to_handle(pipeline));
 
@@ -1117,7 +1119,7 @@ HRESULT STDMETHODCALLTYPE D3D11Device::CreateDepthStencilState(const D3D11_DEPTH
 			// Do not register destruction callback for default blend state, since it is only destroyed during final device release, after 'destroy_device' event has already been called
 			std::memcmp(pDepthStencilDesc, &default_depth_stencil_desc, sizeof(D3D11_DEPTH_STENCIL_DESC)) != 0)
 		{
-			register_destruction_callback_d3dx(pipeline, [this, pipeline]() {
+			register_destruction_callback_d3dx(pipeline, [this, pipeline, debugDesc]() {
 				reshade::invoke_addon_event<reshade::addon_event::destroy_pipeline>(this, to_handle(pipeline));
 			});
 		}
