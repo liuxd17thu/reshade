@@ -183,7 +183,16 @@ bool reshade::input::handle_window_message(const void *message_data)
 		// the D3D lock). Block IME messages from reaching the game to avoid nested D3D
 		// resource destruction callbacks (ID3DDestructionNotifier) while the D3D11 internal
 		// critical section is held.
-		if (details.message == WM_INPUTLANGCHANGE)
+		//
+		// Still route IME state messages to the state tracker so it can update internal
+		// state and reset GCS_RESULTSTR extraction flags. Without this, RIME standalone
+		// punctuation (which does not always send STARTCOMPOSITION) would be missed.
+		if (details.message != WM_INPUTLANGCHANGE)
+		{
+			input->_ime_state.handle_ime_message(
+				static_cast<HWND>(input->_window), details.message, details.wParam, details.lParam);
+		}
+		else
 		{
 			// IME language changed; clear stale state (safe, local state only).
 			input->_ime_state.clear_composing_state();
@@ -260,7 +269,13 @@ bool reshade::input::handle_window_message(const void *message_data)
 		}
 		break;
 	case WM_CHAR:
-		input->_text_input += static_cast<wchar_t>(details.wParam);
+		// When keyboard input is blocked (overlay is consuming input), skip characters
+		// that arrive while Ctrl or Alt are held down. These are keyboard shortcuts
+		// (e.g. Ctrl+C/V/X/A/Z) that ImGui handles via its key event system, not via
+		// character input.
+		if (!input->is_blocking_keyboard_input() ||
+			(!input->is_key_down(VK_CONTROL) && !input->is_key_down(VK_MENU)))
+			input->_text_input += static_cast<wchar_t>(details.wParam);
 		break;
 	case WM_KEYDOWN:
 	case WM_SYSKEYDOWN:
@@ -269,6 +284,33 @@ bool reshade::input::handle_window_message(const void *message_data)
 		input->_keys_time[details.wParam] = details.time;
 		if (input->is_blocking_keyboard_input())
 			input->_keys[details.wParam] |= 0x04;
+		// Signal that a key was pressed while IME is active, so poll() can
+		// attempt GCS_RESULTSTR extraction on the next frame.
+		// Exclude keys that never produce IME output and would trigger
+		// re-extraction of stale GCS_RESULTSTR data from the IMM32 context:
+		// modifiers, navigation, editing, and "action" keys (space, enter, tab).
+		if (reshade::input::is_ime_enabled() &&
+			details.wParam != VK_SHIFT &&
+			details.wParam != VK_CONTROL &&
+			details.wParam != VK_MENU &&
+			details.wParam != VK_BACK &&
+			details.wParam != VK_DELETE &&
+			details.wParam != VK_LEFT &&
+			details.wParam != VK_RIGHT &&
+			details.wParam != VK_UP &&
+			details.wParam != VK_DOWN &&
+			details.wParam != VK_HOME &&
+			details.wParam != VK_END &&
+			details.wParam != VK_PRIOR &&
+			details.wParam != VK_NEXT &&
+			details.wParam != VK_SPACE &&
+			details.wParam != VK_RETURN &&
+			details.wParam != VK_TAB &&
+			details.wParam != VK_LWIN &&
+			details.wParam != VK_RWIN)
+		{
+			input->_ime_state.mark_pending_event();
+		}
 		break;
 	case WM_KEYUP:
 	case WM_SYSKEYUP:

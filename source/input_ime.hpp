@@ -42,6 +42,14 @@ namespace reshade
 		void set_committed_text(const std::wstring &text);
 
 		/// <summary>
+		/// Marks that a key press has occurred while IME is enabled.
+		/// poll() checks this flag (see it consumes a new IME event) and
+		/// attempts GCS_RESULTSTR extraction. This is needed for IMEs like
+		/// RIME Weasel that don't post WM_IME_* messages.
+		/// </summary>
+		void mark_pending_event() { _pending_ime_event = true; }
+
+		/// <summary>
 		/// Clears all IME state without touching COM/TSF.
 		/// Safe to call from message handler context.
 		/// </summary>
@@ -118,7 +126,7 @@ namespace reshade
 		int _candidate_selection = 0;
 		int _candidate_page_start = 0;
 		int _candidate_page_size = 0;
-		bool _result_consumed_in_poll = false;
+		bool _pending_ime_event = false;
 
 		/// <summary>
 		/// Clear all IME state.
