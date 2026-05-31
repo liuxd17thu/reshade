@@ -10,6 +10,7 @@
 #include <cstring>
 #include <algorithm>
 #include "dll_log.hpp"
+#include "utf8.h"
 
 using namespace reshade;
 
@@ -24,7 +25,7 @@ namespace reshade
 
 	input_ime::~input_ime()
 	{
-		clear_composing_state();
+		clear();
 	}
 
 	void input_ime::clear()
@@ -37,25 +38,18 @@ namespace reshade
 		_candidate_page_start = 0;
 		_candidate_page_size = 0;
 		_committed_text.clear();
-		_pending_ime_event = false;
-	}
-
-	void input_ime::clear_composing_state()
-	{
-		_composing = false;
-		_composition_str.clear();
-		_composition_cursor = 0;
-		_candidates.clear();
-		_candidate_selection = 0;
-		_candidate_page_start = 0;
-		_candidate_page_size = 0;
-		_committed_text.clear();
-		_pending_ime_event = false;
+		_extracted_by_poll = false;
+		_composition_ended = false;
 	}
 
 	void input_ime::set_committed_text(const std::wstring &text)
 	{
 		_committed_text = text;
+	}
+
+	void input_ime::append_committed_text(const std::wstring &text)
+	{
+		_committed_text += text;
 	}
 
 	void input_ime::poll(void *hwnd)
@@ -80,35 +74,42 @@ namespace reshade
 		
 		if (!is_comp_active)
 		{
-			// On each key press while IME is enabled, input.cpp's WM_KEYDOWN handler
-			// sets _pending_ime_event = true. We consume it here unconditionally on
-			// the first poll() after the event, regardless of whether we extract.
-			// If the message handler (WM_IME_COMPOSITION) already filled _committed_text,
-			// we skip extraction — the text is already captured.
-			if (_pending_ime_event)
-			{
-				_pending_ime_event = false;
-				if (_committed_text.empty())
-				{
-					const LONG result_size = ImmGetCompositionStringW(himc, GCS_RESULTSTR, nullptr, 0);
-					if (result_size > 0)
-					{
-						_committed_text.resize(result_size / sizeof(wchar_t));
-						log::message(log::level::debug, "IME extract via POLL: %ls", _committed_text.c_str());
-						ImmGetCompositionStringW(himc, GCS_RESULTSTR, &_committed_text[0], result_size);
-						while (!_committed_text.empty() && _committed_text.back() == L'\0')
-							_committed_text.pop_back();
-					}
-				}
-			}
+			// Reset per-frame flags at the start of every poll() call.
+			_extracted_by_poll = false;
 
-			_composing = false;
-			_composition_str.clear();
-			_composition_cursor = 0;
-			_candidates.clear();
-			_candidate_selection = 0;
-			_candidate_page_start = 0;
-			_candidate_page_size = 0;
+			// Extract GCS_RESULTSTR only when a composition just ended, not while
+			// composition is still active. Polling during an active composition
+			// risks reading an intermediate GCS_RESULTSTR value that doesn't
+			// reflect the final committed text (e.g. "，" before shift is processed
+			// into "《"). The ENDCOMPOSITION handler has the definitive extraction.
+			// This poll() fallback is needed for RIME which doesn't send
+			// WM_IME_ENDCOMPOSITION at all.
+			if (_composition_ended)
+			{
+				const LONG result_size = ImmGetCompositionStringW(himc, GCS_RESULTSTR, nullptr, 0);
+				if (result_size > 0)
+				{
+					std::string mbs{};
+					_committed_text.resize(result_size / sizeof(wchar_t));
+					ImmGetCompositionStringW(himc, GCS_RESULTSTR, &_committed_text[0], result_size);
+					while (!_committed_text.empty() && _committed_text.back() == L'\0')
+						_committed_text.pop_back();
+					_extracted_by_poll = true;
+					utf8::unchecked::utf16to8(_committed_text.begin(), _committed_text.end(), std::back_inserter(mbs));
+					log::message(log::level::debug, "POLL: [%s]", mbs.c_str());
+				}
+				_composition_ended = false;
+
+				_composing = false;
+				_composition_str.clear();
+				_composition_cursor = 0;
+				_candidates.clear();
+				_candidate_selection = 0;
+				_candidate_page_start = 0;
+				_candidate_page_size = 0;
+			}
+			// Always consume the flag to prevent false triggers on subsequent frames.
+
 			ImmReleaseContext(hw, himc);
 			return;
 		}
@@ -184,13 +185,42 @@ namespace reshade
 		{
 			if (lParam & GCS_RESULTSTR)
 			{
-				// Consume the pending event. If poll() already extracted this commit,
-				// _pending_ime_event is already false here. If poll() ran before the
-				// IME messages were processed, this is where the event is consumed.
-				// Either way, only one extraction path fires per key press.
-				_pending_ime_event = false;
-				// Immediate extraction of committed text, following the same approach
-				// as Dalamud: consume GCS_RESULTSTR right in the message handler.
+				const HWND hw = static_cast<HWND>(hwnd);
+				const HIMC himc = ImmGetContext(hw);
+				if (himc != nullptr)
+				{
+					// Skip extraction if poll() already did it this frame via
+					// composition-end detection. We check _extracted_by_poll
+					// instead of _committed_text.empty() because draw_gui()
+					// may have already consumed _committed_text by now.
+					if (!_extracted_by_poll)
+					{
+						//const LONG result_size = ImmGetCompositionStringW(himc, GCS_RESULTSTR, nullptr, 0);
+						//if (result_size > 0)
+						//{
+						//	_committed_text.resize(result_size / sizeof(wchar_t));
+						//	ImmGetCompositionStringW(himc, GCS_RESULTSTR, &_committed_text[0], result_size);
+						//	while (!_committed_text.empty() && _committed_text.back() == L'\0')
+						//		_committed_text.pop_back();
+						//	_extracted_by_poll = true;
+						//	log::message(log::level::debug, "IME extract via MSG");
+						//}
+					}
+					log::message(log::level::debug, "WM_IME_COMPOSITION: NOTHING");
+					ImmReleaseContext(hw, himc);
+				}
+			}
+			break;
+		}
+		case WM_IME_ENDCOMPOSITION:
+		{
+			// Extract committed text here instead of relying on poll() because
+			// for fast composition cycles (e.g. Shift+, → "《" in Microsoft
+			// Pinyin), poll() runs between START and END when GCS_RESULTSTR is
+			// still empty. The data only becomes available by END time.
+			std::string mbs("");
+			if (_composing && _committed_text.empty())
+			{
 				const HWND hw = static_cast<HWND>(hwnd);
 				const HIMC himc = ImmGetContext(hw);
 				if (himc != nullptr)
@@ -199,18 +229,15 @@ namespace reshade
 					if (result_size > 0)
 					{
 						_committed_text.resize(result_size / sizeof(wchar_t));
-						log::message(log::level::debug, "IME extract via MSG: %ls", _committed_text.c_str());
 						ImmGetCompositionStringW(himc, GCS_RESULTSTR, &_committed_text[0], result_size);
 						while (!_committed_text.empty() && _committed_text.back() == L'\0')
 							_committed_text.pop_back();
+						utf8::unchecked::utf16to8(_committed_text.begin(), _committed_text.end(), std::back_inserter(mbs));
 					}
 					ImmReleaseContext(hw, himc);
 				}
 			}
-			break;
-		}
-		case WM_IME_ENDCOMPOSITION:
-		{
+			_composition_ended = _composing;
 			_composing = false;
 			_composition_str.clear();
 			_composition_cursor = 0;
@@ -219,20 +246,40 @@ namespace reshade
 			_candidate_page_start = 0;
 			_candidate_page_size = 0;
 
-			reshade::log::message(reshade::log::level::debug, "WM_IME_ENDCOMPOSITION");
+			log::message(log::level::debug, "WM_IME_ENDCOMPOSITION, RESULTSTR [%s]", mbs.c_str());
 			break;
 		}
 		case WM_IME_CHAR:
 		{
-			reshade::log::message(reshade::log::level::debug, "WM_IME_CHAR: %s", reinterpret_cast<char *>(wParam));
+			reshade::log::message(reshade::log::level::debug, "WM_IME_CHAR: [0x%x] [0x%x]", wParam, lParam);
 			break;
 		}
 		case WM_IME_SELECT:
 		{
 			if (lParam == 0)
-			clear();
+				clear();
 			break;
 		}
+		case WM_INPUTLANGCHANGE:
+		{
+			reshade::log::message(reshade::log::level::debug, "WM_INPUTLANGCHANGE");
+			this->clear();
+			break;
+		}
+		case WM_IME_NOTIFY:
+		{
+			reshade::log::message(reshade::log::level::debug, "WM_IME_NOTIFY: [0x%x] [0x%x]", wParam, lParam);
+			if (wParam == 0x10)
+				_composition_ended = true;
+			break;
+		}
+		case WM_IME_KEYDOWN:
+		{
+			reshade::log::message(reshade::log::level::debug, "WM_IME_KEYDOWN: [0x%x] [0x%x]", wParam, lParam);
+			break;
+		}
+		default:
+			reshade::log::message(reshade::log::level::debug, "WM_UNKNOWN[0x%x]: [0x%x] [0x%x]", msg, wParam, lParam);
 		}
 	}
 }

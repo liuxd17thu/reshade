@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Copyright (C) 2014 Patrick Mours
  * SPDX-License-Identifier: BSD-3-Clause
  */
@@ -108,7 +108,7 @@ bool reshade::input::handle_window_message(const void *message_data)
 	}
 
 	// Ignore messages that are not related to mouse, keyboard or IME input
-	if (details.message != WM_INPUT && !is_mouse_message && !is_keyboard_message && !is_ime_message)
+	if (details.message != WM_INPUT && !is_mouse_message && !is_keyboard_message && !(is_ime_message))
 		return false;
 
 	// Guard access to windows list against race conditions
@@ -195,7 +195,7 @@ bool reshade::input::handle_window_message(const void *message_data)
 		else
 		{
 			// IME language changed; clear stale state (safe, local state only).
-			input->_ime_state.clear_composing_state();
+			input->_ime_state.clear();
 		}
 
 		return true; // Block message from reaching the game
@@ -276,6 +276,9 @@ bool reshade::input::handle_window_message(const void *message_data)
 		if (!input->is_blocking_keyboard_input() ||
 			(!input->is_key_down(VK_CONTROL) && !input->is_key_down(VK_MENU)))
 			input->_text_input += static_cast<wchar_t>(details.wParam);
+		reshade::log::message(reshade::log::level::debug, "WM_CHAR: [0x%04x]", details.wParam);
+		if (is_ime_enabled && input->ime_state().is_composing())
+			input->ime_state().append_committed_text(std::wstring(1, static_cast<wchar_t>(details.wParam)));
 		break;
 	case WM_KEYDOWN:
 	case WM_SYSKEYDOWN:
@@ -284,33 +287,7 @@ bool reshade::input::handle_window_message(const void *message_data)
 		input->_keys_time[details.wParam] = details.time;
 		if (input->is_blocking_keyboard_input())
 			input->_keys[details.wParam] |= 0x04;
-		// Signal that a key was pressed while IME is active, so poll() can
-		// attempt GCS_RESULTSTR extraction on the next frame.
-		// Exclude keys that never produce IME output and would trigger
-		// re-extraction of stale GCS_RESULTSTR data from the IMM32 context:
-		// modifiers, navigation, editing, and "action" keys (space, enter, tab).
-		if (reshade::input::is_ime_enabled() &&
-			details.wParam != VK_SHIFT &&
-			details.wParam != VK_CONTROL &&
-			details.wParam != VK_MENU &&
-			details.wParam != VK_BACK &&
-			details.wParam != VK_DELETE &&
-			details.wParam != VK_LEFT &&
-			details.wParam != VK_RIGHT &&
-			details.wParam != VK_UP &&
-			details.wParam != VK_DOWN &&
-			details.wParam != VK_HOME &&
-			details.wParam != VK_END &&
-			details.wParam != VK_PRIOR &&
-			details.wParam != VK_NEXT &&
-			details.wParam != VK_SPACE &&
-			details.wParam != VK_RETURN &&
-			details.wParam != VK_TAB &&
-			details.wParam != VK_LWIN &&
-			details.wParam != VK_RWIN)
-		{
-			input->_ime_state.mark_pending_event();
-		}
+		reshade::log::message(reshade::log::level::debug, "WM_/sys/KEYDOWN: [0x%02x] [0x%02x]", details.wParam, input->_keys[details.wParam]);
 		break;
 	case WM_KEYUP:
 	case WM_SYSKEYUP:
@@ -320,6 +297,7 @@ bool reshade::input::handle_window_message(const void *message_data)
 			is_keyboard_message = false;
 		input->_keys[details.wParam] = 0x08;
 		input->_keys_time[details.wParam] = details.time;
+		reshade::log::message(reshade::log::level::debug, "WM_/sys/KEYUP: [0x%02x] [0x%02x]", details.wParam, input->_keys[details.wParam]);
 		break;
 	case WM_LBUTTONDOWN:
 	case WM_LBUTTONDBLCLK: // Double clicking generates this sequence: WM_LBUTTONDOWN -> WM_LBUTTONUP -> WM_LBUTTONDBLCLK -> WM_LBUTTONUP, so handle it like a normal down

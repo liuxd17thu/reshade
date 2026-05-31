@@ -211,8 +211,8 @@ void reshade::imgui::code_editor::render(const char *title, const uint32_t palet
 				insert_character('\n', true);
 			else
 				for (ImWchar c : io.InputQueueCharacters)
-					if (c != 0 && (isprint(c) || isspace(c)))
-						insert_character(static_cast<char>(c), true);
+					if (c != 0 && (iswprint(c) || iswspace(c)))
+						insert_character(c, true);
 	}
 
 	// Handle mouse input

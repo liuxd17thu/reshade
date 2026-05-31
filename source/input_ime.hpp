@@ -41,19 +41,7 @@ namespace reshade
 		/// </summary>
 		void set_committed_text(const std::wstring &text);
 
-		/// <summary>
-		/// Marks that a key press has occurred while IME is enabled.
-		/// poll() checks this flag (see it consumes a new IME event) and
-		/// attempts GCS_RESULTSTR extraction. This is needed for IMEs like
-		/// RIME Weasel that don't post WM_IME_* messages.
-		/// </summary>
-		void mark_pending_event() { _pending_ime_event = true; }
-
-		/// <summary>
-		/// Clears all IME state without touching COM/TSF.
-		/// Safe to call from message handler context.
-		/// </summary>
-		void clear_composing_state();
+		void append_committed_text(const std::wstring &text);
 
 		/// <summary>
 		/// Whether the IME is currently in composing state.
@@ -116,6 +104,11 @@ namespace reshade
 		/// </summary>
 		int candidate_page_start() const { return _candidate_page_start; }
 
+		/// <summary>
+		/// Clear all IME state.
+		/// </summary>
+		void clear();
+
 	private:
 		bool _composing = false;
 		std::wstring _composition_str;
@@ -126,11 +119,20 @@ namespace reshade
 		int _candidate_selection = 0;
 		int _candidate_page_start = 0;
 		int _candidate_page_size = 0;
-		bool _pending_ime_event = false;
-
 		/// <summary>
-		/// Clear all IME state.
+		/// Set by poll() when it extracts via composition-end detection.
+		/// Cleared by poll() at the beginning of every call.
+		/// MSG handler checks this flag to skip extraction when poll
+		/// already consumed GCS_RESULTSTR this cycle.
 		/// </summary>
-		void clear();
+		bool _extracted_by_poll = false;
+		/// <summary>
+		/// Set by handle_ime_message() on WM_IME_ENDCOMPOSITION when a
+		/// composition cycle completed. Consumed by poll() to trigger
+		/// GCS_RESULTSTR extraction even when START/END arrive before
+		/// poll() runs (common for fast composition cycles like
+		/// punctuation conversion in Microsoft Pinyin).
+		/// </summary>
+		bool _composition_ended = false;
 	};
 }
