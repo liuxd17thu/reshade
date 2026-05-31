@@ -26,6 +26,7 @@
 #include <cstring> // std::memcmp, std::memcpy
 #include <algorithm> // std::any_of, std::count_if, std::find, std::find_if, std::max, std::min, std::replace, std::rotate, std::search, std::swap, std::transform
 #include <stb_image.h>
+#include <utf8.h>
 
 extern bool resolve_path(std::filesystem::path &path, std::error_code &ec, const std::filesystem::path &base = g_reshade_base_path);
 
@@ -307,6 +308,7 @@ void reshade::runtime::load_config_gui(const ini_file &config)
 	config_get("INPUT", "KeyFPS", _fps_key_data);
 	config_get("INPUT", "KeyFrameTime", _frametime_key_data);
 	config_get("INPUT", "InputProcessing", _input_processing_mode);
+	config_get("INPUT", "IMEMode", _ime_mode);
 
 #if RESHADE_LOCALIZATION
 	config_get("OVERLAY", "Language", _selected_language);
@@ -411,6 +413,7 @@ void reshade::runtime::save_config_gui(ini_file &config) const
 	config.set("INPUT", "KeyFPS", _fps_key_data);
 	config.set("INPUT", "KeyFrametime", _frametime_key_data);
 	config.set("INPUT", "InputProcessing", _input_processing_mode);
+	config.set("INPUT", "IMEMode", _ime_mode);
 
 #if RESHADE_LOCALIZATION
 	config.set("OVERLAY", "Language", _selected_language);
@@ -1697,6 +1700,68 @@ void reshade::runtime::draw_gui()
 	// Disable keyboard shortcuts while typing into input boxes
 	_ignore_shortcuts |= ImGui::IsAnyItemActive();
 
+	if (_ime_mode == 1 && _input != nullptr && imgui_io.WantTextInput)
+	{
+		if (true) // Temporary front-end
+		{
+			ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 4.0f);
+			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 6));
+			ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, _font_size / 13.0f);
+			// Position near where text input is active (from ImGui IME data, updated each frame)
+			const ImVec2 ime_pos = _imgui_context->PlatformImeData.InputPos;
+			ImGui::SetNextWindowPos(
+				ImVec2(ime_pos.x, ime_pos.y + 20.0f),
+				ImGuiCond_Always);
+			ImGui::SetNextWindowSizeConstraints(
+				ImVec2(_font_size * 5.0f, 0.0f),
+				ImVec2(_font_size * 40.0f, 14 * _font_size)
+			);
+
+			if (ImGui::Begin("##IMECandidateWindow", nullptr,
+				ImGuiWindowFlags_NoTitleBar |
+				ImGuiWindowFlags_AlwaysAutoResize |
+				ImGuiWindowFlags_NoMove |
+				ImGuiWindowFlags_NoSavedSettings |
+				ImGuiWindowFlags_NoFocusOnAppearing |
+				ImGuiWindowFlags_NoNav))
+			{
+				// Draw composition string
+				//if (!ime.composition().empty())
+				//{
+				//	const std::string comp_utf8 = to_utf8(ime.composition());
+				//	ImGui::TextUnformatted(comp_utf8.c_str());
+				//}
+				ImGui::TextUnformatted("test'dummy'for'ime'composing");
+
+				// Draw candidate list
+				if (true)
+				{
+					if (true)
+						ImGui::Separator();
+
+					const int page_size = 5;
+					const int selection = 3;
+					const int start = 0;
+
+					std::string dummy_cand[5] = {"一", "二", "三", "四", "五"};
+
+					for (int i = 0; i < 5; ++i)
+					{
+						const int index = start + i;
+						const bool is_selected = (index == selection);
+						char buf[128] = "";
+						ImFormatString(buf, 128, "%2d| %s", i+1, dummy_cand[i].c_str());
+
+						ImGui::Selectable(buf, is_selected);
+					}
+				}
+			}
+			ImGui::End();
+
+			ImGui::PopStyleVar(3);
+		}
+	}
+
 	// Render ImGui widgets and windows
 	ImGui::Render();
 
@@ -2593,6 +2658,13 @@ void reshade::runtime::draw_gui_settings()
 				"Block all input when overlay is visible\n");
 			std::replace(input_processing_mode_items.begin(), input_processing_mode_items.end(), '\n', '\0');
 			modified |= ImGui::Combo(_("Input processing"), reinterpret_cast<int *>(&_input_processing_mode), input_processing_mode_items.c_str());
+
+			const char ime_mode_items[] = "Native\0Custom\0";
+			modified |= ImGui::Combo("IME Mode [Experimental]", reinterpret_cast<int *>(&_ime_mode), ime_mode_items);
+			ImGui::SetItemTooltip(
+				"[Experimental]\n"
+				"Native:     Vanilla ReShade\n"
+				"Custom IME: Works in some games, allowing you to use IME in search box, etc.\n");
 
 			modified |= imgui::key_input_box(_("Overlay key"), _overlay_key_data, *_input);
 
