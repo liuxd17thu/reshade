@@ -91,6 +91,64 @@ bool reshade::input::handle_window_message(const void *message_data)
 	bool is_mouse_message = details.message >= WM_MOUSEFIRST && details.message <= WM_MOUSELAST;
 	bool is_keyboard_message = details.message >= WM_KEYFIRST && details.message <= WM_KEYLAST;
 
+	bool is_ime_message = false;
+#if RESHADE_VERBOSE_LOG
+	switch (details.message)
+	{
+	case WM_IME_STARTCOMPOSITION:
+		reshade::log::message(reshade::log::level::debug, "WM_IME_STARTCOMPOSITION: [0x%x] [0x%x]", details.wParam, details.lParam);
+		is_ime_message = true;
+		break;
+	case WM_IME_COMPOSITION:
+		reshade::log::message(reshade::log::level::debug, "WM_IME_COMPOSITION: [0x%x] [0x%x]", details.wParam, details.lParam);
+		is_ime_message = true;
+		break;
+	case WM_IME_ENDCOMPOSITION:
+		reshade::log::message(reshade::log::level::debug, "WM_IME_ENDCOMPOSITION: [0x%x] [0x%x]", details.wParam, details.lParam);
+		is_ime_message = true;
+		break;
+	case WM_IME_SETCONTEXT:
+		reshade::log::message(reshade::log::level::debug, "WM_IME_STARTCOMPOSITION: [0x%x] [0x%x]", details.wParam, details.lParam);
+		is_ime_message = true;
+		break;
+	case WM_IME_NOTIFY:
+		reshade::log::message(reshade::log::level::debug, "WM_IME_NOTIFY: [0x%x] [0x%x]", details.wParam, details.lParam);
+		is_ime_message = true;
+		break;
+	case WM_IME_CONTROL:
+		reshade::log::message(reshade::log::level::debug, "WM_IME_CONTROL: [0x%x] [0x%x]", details.wParam, details.lParam);
+		is_ime_message = true;
+		break;
+	case WM_IME_SELECT:
+		reshade::log::message(reshade::log::level::debug, "WM_IME_SELECT: [0x%x] [0x%x]", details.wParam, details.lParam);
+		is_ime_message = true;
+		break;
+	case WM_IME_CHAR:
+		reshade::log::message(reshade::log::level::debug, "WM_IME_CHAR: [0x%x] [0x%x]", details.wParam, details.lParam);
+		is_ime_message = true;
+		break;
+	}
+#else
+	switch (details.message)
+	{
+	case WM_IME_STARTCOMPOSITION:
+
+	case WM_IME_COMPOSITION:
+	case WM_IME_ENDCOMPOSITION:
+	case WM_IME_SETCONTEXT:
+	case WM_IME_NOTIFY:
+	case WM_IME_CONTROL:
+		//case WM_IME_COMPOSITIONFULL:
+	case WM_IME_SELECT:
+	case WM_IME_CHAR:
+		//case WM_IME_REQUEST:
+		//case WM_IME_KEYDOWN:
+		//case WM_IME_KEYUP:
+		is_ime_message = true;
+		break;
+	}
+#endif
+
 	// Ignore messages that are not related to mouse or keyboard input
 	if (details.message != WM_INPUT && !is_mouse_message && !is_keyboard_message)
 		return false;
@@ -229,6 +287,9 @@ bool reshade::input::handle_window_message(const void *message_data)
 		input->_keys_time[details.wParam] = details.time;
 		if (input->is_blocking_keyboard_input())
 			input->_keys[details.wParam] |= 0x04;
+#if RESHADE_VERBOSE_LOG
+		reshade::log::message(reshade::log::level::debug, "WM_/sys/KEYDOWN: [0x%02x]", details.wParam);
+#endif
 		break;
 	case WM_KEYUP:
 	case WM_SYSKEYUP:
@@ -238,6 +299,9 @@ bool reshade::input::handle_window_message(const void *message_data)
 			is_keyboard_message = false;
 		input->_keys[details.wParam] = 0x08;
 		input->_keys_time[details.wParam] = details.time;
+#if RESHADE_VERBOSE_LOG
+		reshade::log::message(reshade::log::level::debug, "WM_/sys/KEYUP: [0x%02x]", details.wParam);
+#endif
 		break;
 	case WM_LBUTTONDOWN:
 	case WM_LBUTTONDBLCLK: // Double clicking generates this sequence: WM_LBUTTONDOWN -> WM_LBUTTONUP -> WM_LBUTTONDBLCLK -> WM_LBUTTONUP, so handle it like a normal down
