@@ -8,6 +8,7 @@
 #include <mutex>
 #include <memory>
 #include <string>
+#include "input_ime.hpp"
 
 namespace reshade
 {
@@ -69,6 +70,11 @@ namespace reshade
 		unsigned int mouse_position_x() const { return _mouse_position[0]; }
 		unsigned int mouse_position_y() const { return _mouse_position[1]; }
 		void max_mouse_position(unsigned int position[2]) const;
+
+		auto &ime_state() { return _ime_state; }
+		const auto &ime_state() const { return _ime_state; }
+
+		window_handle get_window_handle() const { return _window; }
 
 		/// <summary>
 		/// Gets the character input as captured by 'WM_CHAR' for the current frame.
@@ -138,5 +144,6 @@ namespace reshade
 		unsigned int _last_mouse_position[2] = {};
 		uint64_t _frame_count = 0; // Keep track of frame count to identify windows with a lot of rendering
 		std::wstring _text_input;
+		input_ime _ime_state;
 	};
 }

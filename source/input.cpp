@@ -150,7 +150,7 @@ bool reshade::input::handle_window_message(const void *message_data)
 #endif
 
 	// Ignore messages that are not related to mouse or keyboard input
-	if (details.message != WM_INPUT && !is_mouse_message && !is_keyboard_message)
+	if (details.message != WM_INPUT && !is_mouse_message && !is_keyboard_message && (!is_ime_message))
 		return false;
 
 	// Guard access to windows list against race conditions
@@ -209,6 +209,22 @@ bool reshade::input::handle_window_message(const void *message_data)
 
 	input->_mouse_position[0] = details.pt.x;
 	input->_mouse_position[1] = details.pt.y;
+
+	if (is_ime_message)
+	{
+		if (!input->_ime_state.is_enabled())
+			return false;
+
+		if (details.message != WM_INPUTLANGCHANGE)
+		{
+			input->_ime_state.handle_ime_message(static_cast<HWND>(input->_window), details.message, details.wParam, details.lParam);
+		}
+		else
+		{
+			input->_ime_state.clear();
+		}
+		return true;
+	}
 
 	switch (details.message)
 	{

@@ -60,7 +60,7 @@
     <TargetName>ReShade32</TargetName>
   </PropertyGroup>
   <PropertyGroup Label="Configuration" Condition="'$(Platform)'=='x64'">
-    <TargetName>ReShade64</TargetName>
+    <TargetName>dxgi</TargetName>
   </PropertyGroup>
   <PropertyGroup Label="Configuration" Condition="'$(Configuration)'=='Debug'">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
@@ -534,6 +534,7 @@
       <ForcedIncludeFiles>reshade.hpp;%(ForcedIncludeFiles)</ForcedIncludeFiles>
       <PreprocessorDefinitions>BUILTIN_ADDON;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
+    <ClCompile Include="source\input_ime.cpp" />
     <ClCompile Include="source\addon.cpp" />
     <ClCompile Include="source\addon_manager.cpp" />
     <ClCompile Include="source\d2d1\d2d1.cpp" />

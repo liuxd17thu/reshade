@@ -987,6 +987,7 @@ void reshade::runtime::draw_gui()
 			if (_input->is_key_pressed(_frametime_key_data, _force_shortcut_modifiers))
 				_show_frametime = _show_frametime ? 0 : 1;
 		}
+		_input->ime_state().set_enabled(_ime_mode == 1);
 	}
 
 	if (_input_gamepad != nullptr)
@@ -1700,6 +1701,16 @@ void reshade::runtime::draw_gui()
 	// Disable keyboard shortcuts while typing into input boxes
 	_ignore_shortcuts |= ImGui::IsAnyItemActive();
 
+	if (_ime_mode == 1 && _input != nullptr)
+	{
+		std::wstring ime_committed = _input->ime_state().committed_text(true);
+		if (!ime_committed.empty() && _input->ime_state().stage == input_ime::ime_stage::result_avail)
+		{
+			for (const wchar_t wc : ime_committed)
+				imgui_io.AddInputCharacterUTF16(wc);
+			_input->ime_state().stage = input_ime::ime_stage::idle;
+		}
+	}
 	if (_ime_mode == 1 && _input != nullptr && imgui_io.WantTextInput)
 	{
 		if (true) // Temporary front-end
@@ -1717,6 +1728,9 @@ void reshade::runtime::draw_gui()
 				ImVec2(_font_size * 40.0f, 14 * _font_size)
 			);
 
+			auto &ime = _input->ime_state();
+			// ime.poll_candidate(_input->get_window_handle());
+
 			if (ImGui::Begin("##IMECandidateWindow", nullptr,
 				ImGuiWindowFlags_NoTitleBar |
 				ImGuiWindowFlags_AlwaysAutoResize |
@@ -1725,32 +1739,35 @@ void reshade::runtime::draw_gui()
 				ImGuiWindowFlags_NoFocusOnAppearing |
 				ImGuiWindowFlags_NoNav))
 			{
-				// Draw composition string
-				//if (!ime.composition().empty())
-				//{
-				//	const std::string comp_utf8 = to_utf8(ime.composition());
-				//	ImGui::TextUnformatted(comp_utf8.c_str());
-				//}
-				ImGui::TextUnformatted("test'dummy'for'ime'composing");
+				//Draw composition string
+				if (ime.stage == input_ime::ime_stage::composing)
+				{
+					std::string mbs {};
+					std::wstring wbuf = ime.composition_text();
+					utf8::unchecked::utf16to8(wbuf.begin(), wbuf.end(), std::back_inserter(mbs));
+					ImGui::TextUnformatted(mbs.c_str());
+				}
+				//ImGui::TextUnformatted("test'dummy'for'ime'composing");
 
 				// Draw candidate list
-				if (true)
+				if (ime.has_candidates())
 				{
-					if (true)
-						ImGui::Separator();
+					ImGui::Separator();
 
-					const int page_size = 5;
-					const int selection = 3;
-					const int start = 0;
+					const int page_size = ime.candidate_page_size() > 0 ? ime.candidate_page_size() : 10;
+					const int selection = ime.candidate_selection();
+					const int start = ime.candidate_page_start();
 
-					std::string dummy_cand[5] = {"一", "二", "三", "四", "五"};
-
-					for (int i = 0; i < 5; ++i)
+					// std::string dummy_cand[5] = {"一", "二", "三", "四", "五"};
+					for (int i = 0; i < page_size && (start + i) < static_cast<int>(ime.candidate_count()); ++i)
 					{
 						const int index = start + i;
 						const bool is_selected = (index == selection);
+						std::string cand;
+						const auto &wcand = ime.candidate(index);
+						utf8::unchecked::utf16to8(wcand.begin(), wcand.end(), std::back_inserter(cand));
 						char buf[128] = "";
-						ImFormatString(buf, 128, "%2d| %s", i+1, dummy_cand[i].c_str());
+						ImFormatString(buf, 128, "%2d| %s", i+1, cand.c_str());
 
 						ImGui::Selectable(buf, is_selected);
 					}
@@ -2660,7 +2677,11 @@ void reshade::runtime::draw_gui_settings()
 			modified |= ImGui::Combo(_("Input processing"), reinterpret_cast<int *>(&_input_processing_mode), input_processing_mode_items.c_str());
 
 			const char ime_mode_items[] = "Native\0Custom\0";
-			modified |= ImGui::Combo("IME Mode [Experimental]", reinterpret_cast<int *>(&_ime_mode), ime_mode_items);
+			if (ImGui::Combo("IME Mode [Experimental]", reinterpret_cast<int *>(&_ime_mode), ime_mode_items))
+			{
+				_input->ime_state().set_enabled(_ime_mode == 1);
+				modified = true;
+			}
 			ImGui::SetItemTooltip(
 				"[Experimental]\n"
 				"Native:     Vanilla ReShade\n"
