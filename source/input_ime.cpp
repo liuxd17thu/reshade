@@ -21,14 +21,28 @@ namespace reshade
 		_candidate_selection = 0;
 		_candidate_page_start = 0;
 		_candidate_page_end = 0;
-		_composing = false;
+		set_stage(ime_stage::idle);
 	}
 
-	void input_ime::poll(void *hwnd)
+	input_ime::ime_stage input_ime::set_stage(const ime_stage next)
 	{
-		const auto prev_stage = stage;
-		std::string mbs;
+		const auto prev = _stage;
+		_stage = next;
+#if RESHADE_VERBOSE_LOG
+		if(prev != next)
+			reshade::log::message(reshade::log::level::debug, "%s -> %s", input_ime::to_string(prev).c_str(), input_ime::to_string(next).c_str());
+#endif
+		return prev;
+	}
 
+	input_ime::ime_stage input_ime::stage() const
+	{
+		return _stage;
+	}
+
+	void input_ime::poll_compose(void *hwnd)
+	{
+		std::string mbs;
 		if (hwnd == nullptr)
 		{
 			clear();
@@ -36,47 +50,20 @@ namespace reshade
 		}
 		const HWND hw = static_cast<HWND>(hwnd);
 		const HIMC himc = ImmGetContext(hw);
-
 		if (himc == nullptr)
 		{
 			clear();
 			return;
 		}
-		const DWORD comp_size = ImmGetCompositionStringW(himc, GCS_COMPSTR, nullptr, 0);
-		const auto result_size = ImmGetCompositionStringW(himc, GCS_RESULTSTR, nullptr, 0);
-		if (comp_size == 0) // PATH1: Get result
-		{
-			if (stage == ime_stage::composing || stage == ime_stage::composition_ended)
-			{
-				stage = ime_stage::composition_ended;
-				
-				if (result_size > 0)
-				{
-					_committed_text.resize(result_size / sizeof(wchar_t));
-					ImmGetCompositionStringW(himc, GCS_RESULTSTR, &_committed_text[0], result_size);
-#if RESHADE_VERBOSE_LOG
-					mbs.clear();
-					utf8::unchecked::utf16to8(_committed_text.begin(), _committed_text.end(), std::back_inserter(mbs));
-					log::message(log::level::debug, "IME POLL/RES: %s", mbs.c_str());
-#endif
-					stage = ime_stage::result_avail;
-				}
-				_composing = false;
-				_result_polled = false;
-				_candidates.clear();
-				_composition_text.clear();
-				_candidate_selection = 0;
-				_candidate_page_start = 0;
-				_candidate_page_size = 0;
-			}
-		}
-		else // PATH2: Get composition & candidates
+		if (stage() == ime_stage::result_avail)
+			return;
+
+		const auto comp_size = ImmGetCompositionStringW(himc, GCS_COMPSTR, nullptr, 0);
+		if(comp_size > 0) // PATH2: Get composition & candidates
 		{
 			std::wstring old_compose = std::move(_composition_text);
-			stage = ime_stage::composing;
+			set_stage(ime_stage::composing);
 			// composition
-			_composing = true;
-			_result_polled = false;
 			_composition_text.resize(comp_size / sizeof(wchar_t));
 			ImmGetCompositionStringW(himc, GCS_COMPSTR, &_composition_text[0], comp_size);
 #if RESHADE_VERBOSE_LOG
@@ -85,25 +72,23 @@ namespace reshade
 			log::message(log::level::debug, "IME POLL/COMP: %s", mbs.c_str());
 #endif
 			if (old_compose != _composition_text)
-				stage = ime_stage::composing_update;
+				set_stage(ime_stage::composing_update);
 		}
-
+		else
+		{
+			if (stage() != ime_stage::idle)
+				set_stage(ime_stage::composition_ended);
+		}
 		ImmReleaseContext(hw, himc);
-#if RESHADE_VERBOSE_LOG
-		if (prev_stage != stage)
-			log::message(log::level::debug, "%s -> %s", input_ime::to_string(prev_stage).c_str(), input_ime::to_string(stage).c_str());
-#endif
-		if(stage == ime_stage::composing_update)
+
+		if(stage() == ime_stage::composing_update)
 			poll_candidate(hwnd);
 		return;
 	}
 
-	void input_ime::poll_candidate(void *hwnd)
+	void input_ime::poll_result(void *hwnd)
 	{
-		const auto prev_stage = stage;
-		if (stage != ime_stage::composing_update && stage != ime_stage::composing)
-			return;
-
+		std::string mbs {};
 		if (hwnd == nullptr)
 		{
 			clear();
@@ -111,7 +96,50 @@ namespace reshade
 		}
 		const HWND hw = static_cast<HWND>(hwnd);
 		const HIMC himc = ImmGetContext(hw);
+		if (himc == nullptr)
+		{
+			clear();
+			return;
+		}
 
+		const auto result_size = ImmGetCompositionStringW(himc, GCS_RESULTSTR, nullptr, 0);
+		if (stage() == ime_stage::composition_ended) // PATH1: Get result
+		{
+			if (result_size > 0)
+			{
+				_committed_text.clear();
+				_committed_text.resize(result_size / sizeof(wchar_t));
+				ImmGetCompositionStringW(himc, GCS_RESULTSTR, &_committed_text[0], result_size);
+#if RESHADE_VERBOSE_LOG
+				mbs.clear();
+				utf8::unchecked::utf16to8(_committed_text.begin(), _committed_text.end(), std::back_inserter(mbs));
+				log::message(log::level::debug, "IME POLL/RES: %s", mbs.c_str());
+#endif
+				if (ImmGetCompositionStringW(himc, GCS_COMPSTR, nullptr, 0) == 0)
+					set_stage(ime_stage::result_avail);
+				else
+					set_stage(ime_stage::composing);
+			}
+			_candidates.clear();
+			_composition_text.clear();
+			_candidate_selection = 0;
+			_candidate_page_start = 0;
+			_candidate_page_size = 0;
+		}
+		return;
+	}
+
+	void input_ime::poll_candidate(void *hwnd)
+	{
+		if (stage() != ime_stage::composing_update && stage() != ime_stage::composing)
+			return;
+		if (hwnd == nullptr)
+		{
+			clear();
+			return;
+		}
+		const HWND hw = static_cast<HWND>(hwnd);
+		const HIMC himc = ImmGetContext(hw);
 		if (himc == nullptr)
 		{
 			clear();
@@ -145,42 +173,38 @@ namespace reshade
 				}
 				if (_candidate_page_size <= 0)
 					_candidate_page_size = std::min(static_cast<int>(count), 9);
-				stage = ime_stage::composing;
+				set_stage(ime_stage::composing);
 			}
 		}
 
 		ImmReleaseContext(hw, himc);
-#if RESHADE_VERBOSE_LOG
-		if (prev_stage != stage)
-			log::message(log::level::debug, "%s -> %s", input_ime::to_string(prev_stage).c_str(), input_ime::to_string(stage).c_str());
-#endif
 	}
 
 	void input_ime::handle_ime_message(void *hwnd, unsigned int msg, unsigned long long wParam, long long lParam)
 	{
+		bool need_poll = false;
 		switch (msg)
 		{
 		case WM_IME_STARTCOMPOSITION:
-			_composing = true;
-			_composition_ended = false;
 			break;
 		case WM_IME_COMPOSITION:
 			break;
 		case WM_IME_ENDCOMPOSITION:
-			_composition_ended = true;
 			break;
 		case WM_IME_NOTIFY:
 			if (wParam == 0x10)
-			{
-				_composition_ended = true;
-				poll(hwnd);
-			}
+				need_poll = true;
 			if (wParam == IMN_CHANGECANDIDATE || wParam == IMN_OPENCANDIDATE)
 				poll_candidate(hwnd);
+			if (stage() == ime_stage::composing)
+				set_stage(ime_stage::composition_ended);
 			break;
 		}
-		if (stage != ime_stage::result_avail)
-			poll(hwnd);
+		if (stage() != ime_stage::result_avail || need_poll)
+		{
+			poll_compose(hwnd);
+			poll_candidate(hwnd);
+		}
 		return;
 	}
 

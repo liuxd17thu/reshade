@@ -1701,14 +1701,19 @@ void reshade::runtime::draw_gui()
 	// Disable keyboard shortcuts while typing into input boxes
 	_ignore_shortcuts |= ImGui::IsAnyItemActive();
 
-	if (_ime_mode == 1 && _input != nullptr)
+	if (_ime_mode == 1)
 	{
-		std::wstring ime_committed = _input->ime_state().committed_text(true);
-		if (!ime_committed.empty() && _input->ime_state().stage == input_ime::ime_stage::result_avail)
+		_input->ime_state().poll_result(this->get_hwnd());
+
+		if (_input->ime_state().stage() == input_ime::ime_stage::result_avail)
 		{
-			for (const wchar_t wc : ime_committed)
-				imgui_io.AddInputCharacterUTF16(wc);
-			_input->ime_state().stage = input_ime::ime_stage::idle;
+			if (_input->ime_state().has_committed_text())
+			{
+				std::wstring ime_committed = _input->ime_state().committed_text(true);
+				for (const wchar_t wc : ime_committed)
+					imgui_io.AddInputCharacterUTF16(wc);
+				_input->ime_state().set_stage(input_ime::ime_stage::idle);
+			}
 		}
 	}
 	if (_ime_mode == 1 && _input != nullptr && imgui_io.WantTextInput)
@@ -1740,7 +1745,7 @@ void reshade::runtime::draw_gui()
 				ImGuiWindowFlags_NoNav))
 			{
 				//Draw composition string
-				if (ime.stage == input_ime::ime_stage::composing)
+				if (ime.stage() == input_ime::ime_stage::composing)
 				{
 					std::string mbs {};
 					std::wstring wbuf = ime.composition_text();

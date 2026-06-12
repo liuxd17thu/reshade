@@ -108,7 +108,7 @@ bool reshade::input::handle_window_message(const void *message_data)
 		is_ime_message = true;
 		break;
 	case WM_IME_SETCONTEXT:
-		reshade::log::message(reshade::log::level::debug, "WM_IME_STARTCOMPOSITION: [0x%x] [0x%x]", details.wParam, details.lParam);
+		reshade::log::message(reshade::log::level::debug, "WM_IME_SETCONTEXT: [0x%x] [0x%x]", details.wParam, details.lParam);
 		is_ime_message = true;
 		break;
 	case WM_IME_NOTIFY:

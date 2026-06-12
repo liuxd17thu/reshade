@@ -16,7 +16,6 @@ namespace reshade
 			composition_ended,
 			result_avail
 		};
-		ime_stage stage = ime_stage::idle;
 
 		static inline std::string to_string(const ime_stage &stage)
 		{
@@ -35,6 +34,9 @@ namespace reshade
 		~input_ime();
 
 		void clear();
+
+		ime_stage set_stage(const ime_stage next);
+		ime_stage stage() const;
 
 		bool has_committed_text() const { return !_committed_text.empty(); }
 
@@ -70,6 +72,10 @@ namespace reshade
 
 		void poll(void *hwnd);
 
+		void poll_compose(void *hwnd);
+
+		void poll_result(void *hwnd);
+
 		void poll_candidate(void *hwnd);
 
 		void set_enabled(bool enabled);
@@ -85,6 +91,8 @@ namespace reshade
 		int _candidate_page_size = 0;
 		int _candidate_page_start = 0;
 		int _candidate_page_end = 0;
+
+		ime_stage _stage = ime_stage::idle;
 
 		bool _composing = false;
 		bool _composition_ended = false;

@@ -456,7 +456,7 @@
     <ClCompile Include="source\dxgi\dxgi_adapter.cpp">
       <Filter>hooks\dxgi</Filter>
     </ClCompile>
-    <ClCompile Include="input_ime.cpp">
+    <ClCompile Include="source\input_ime.cpp">
       <Filter>core\runtime</Filter>
     </ClCompile>
   </ItemGroup>
@@ -782,7 +782,7 @@
     <ClInclude Include="res\fonts\aurora.h">
       <Filter>resources\fonts</Filter>
     </ClInclude>
-    <ClInclude Include="input_ime.hpp">
+    <ClInclude Include="source\input_ime.hpp">
       <Filter>core\runtime</Filter>
     </ClInclude>
   </ItemGroup>
