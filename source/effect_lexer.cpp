@@ -1159,7 +1159,7 @@ void reshadefx::lexer::parse_numeric_literal(token &tok) const
 	}
 
 	// Various suffixes force specific literal types
-	if (decimal_location < 0 && (*end == 'U' || *end == 'u')) // The 'u' suffix is only valid on integers and needs to be ignored otherwise
+	if ((*end == 'U' || *end == 'u') && tok.id == tokenid::int_literal) // The 'u' suffix is only valid on integers and needs to be ignored otherwise
 	{
 		end++; // Consume the suffix
 		tok.id = tokenid::uint_literal;
@@ -1174,7 +1174,7 @@ void reshadefx::lexer::parse_numeric_literal(token &tok) const
 	{
 		tok.literal_as_uint = 0;
 	}
-	else if (decimal_location < 0)
+	else if (tok.id == tokenid::int_literal || tok.id == tokenid::uint_literal)
 	{
 		// Limit the maximum value to what fits into our token structure
 		tok.literal_as_uint = static_cast<unsigned int>(mantissa & 0xFFFFFFFF);
