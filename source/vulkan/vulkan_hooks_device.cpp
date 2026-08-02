@@ -17,7 +17,7 @@
 #include <cstring> // std::strcmp, std::strncmp
 #include <algorithm> // std::find_if, std::min
 
-// Set during Vulkan device creation and presentation, to avoid hooking internal D3D devices created e.g. by NVIDIA Ansel, Optimus or layered DXGI swapchain
+// Set during Vulkan device creation and presentation, to avoid hooking internal D3D devices created e.g. by NVIDIA Ansel, Optimus or layered DXGI swap chain
 extern thread_local bool g_in_dxgi_runtime;
 
 extern lockfree_linear_map<void *, vulkan_instance, 16> g_vulkan_instances;
@@ -1260,13 +1260,15 @@ VkResult VKAPI_CALL vkCreateImage(VkDevice device, const VkImageCreateInfo *pCre
 		reshade::vulkan::convert_resource_desc(desc, create_info);
 		pCreateInfo = &create_info;
 
-		// Remove format list info if format was overriden
+		// Remove format list info if format was overridden
 		if (const auto existing_format_list_info = find_in_structure_chain<VkImageFormatListCreateInfo>(
 				create_info.pNext, VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO))
 		{
-			if (std::find(existing_format_list_info->pViewFormats, existing_format_list_info->pViewFormats + existing_format_list_info->viewFormatCount, create_info.format) == (existing_format_list_info->pViewFormats + existing_format_list_info->viewFormatCount))
-				// This is evil, because writing into application memory, but it is what it is
+			if (const VkFormat *const formats_begin = existing_format_list_info->pViewFormats, *const formats_end = existing_format_list_info->pViewFormats + existing_format_list_info->viewFormatCount;
+				std::find(formats_begin, formats_end, create_info.format) == formats_end)
+			{
 				const_cast<VkImageFormatListCreateInfo *>(existing_format_list_info)->viewFormatCount = 0;
+			}
 		}
 	}
 #endif
