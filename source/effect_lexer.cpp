@@ -5,6 +5,7 @@
 
 #include "effect_lexer.hpp"
 #include <cassert>
+#include <charconv> // std::from_chars
 #include <string_view>
 #include <unordered_map> // Used for static lookup tables
 
@@ -1180,6 +1181,7 @@ void reshadefx::lexer::parse_numeric_literal(token &tok) const
 	}
 	else
 	{
+#if 0
 		exponent += decimal_location - mantissa_size;
 
 		const bool exponent_negative = exponent < 0;
@@ -1209,6 +1211,9 @@ void reshadefx::lexer::parse_numeric_literal(token &tok) const
 				e *= *d;
 
 		tok.literal_as_float = exponent_negative ? mantissa / static_cast<float>(e) : mantissa * static_cast<float>(e);
+#else
+		std::from_chars(begin, end, tok.literal_as_float);
+#endif
 	}
 
 	tok.length = end - begin;
