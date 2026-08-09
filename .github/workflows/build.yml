@@ -2,7 +2,9 @@ name: Build AuroraShade
 on:
   push:
     tags:
-      - '*'
+      - 'Aurora*'
+    branches:
+      - aurora
   pull_request:
     branches:
       - aurora
@@ -23,7 +25,6 @@ jobs:
           submodules: recursive
           fetch-depth: 0
           persist-credentials: false
-          submodules: true
 
       - name: Set up Python
         uses: actions/setup-python@v6
