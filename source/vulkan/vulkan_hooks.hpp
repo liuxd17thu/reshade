@@ -21,13 +21,11 @@ inline T *find_layer_info(const void *structure_chain, VkStructureType type, VkL
 		next = reinterpret_cast<T *>(const_cast<void *>(next->pNext));
 	return next;
 }
-template <typename T>
-inline const T *find_in_structure_chain(const void *structure_chain, VkStructureType type)
+
+inline void append_to_structure_chain(void *structure_chain, void *new_structure)
 {
-	const T *next = reinterpret_cast<const T *>(structure_chain);
-	while (next != nullptr && next->sType != type)
-		next = reinterpret_cast<const T *>(next->pNext);
-	return next;
+	static_cast<VkBaseInStructure *>(new_structure)->pNext = static_cast<VkBaseInStructure *>(structure_chain)->pNext;
+	static_cast<VkBaseInStructure *>(structure_chain)->pNext = static_cast<const VkBaseInStructure *>(new_structure);
 }
 
 inline void *const dispatch_key_from_handle(const void *dispatch_handle)
@@ -85,9 +83,6 @@ void     VKAPI_CALL vkDestroyDevice(VkDevice device, const VkAllocationCallbacks
 #if VK_KHR_swapchain
 VkResult VKAPI_CALL vkCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkSwapchainKHR *pSwapchain);
 void     VKAPI_CALL vkDestroySwapchainKHR(VkDevice device, VkSwapchainKHR swapchain, const VkAllocationCallbacks *pAllocator);
-
-VkResult VKAPI_CALL vkAcquireNextImageKHR(VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout, VkSemaphore semaphore, VkFence fence, uint32_t *pImageIndex);
-VkResult VKAPI_CALL vkAcquireNextImage2KHR(VkDevice device, const VkAcquireNextImageInfoKHR *pAcquireInfo, uint32_t *pImageIndex);
 #endif
 
 VkResult VKAPI_CALL vkQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo *pSubmits, VkFence fence);

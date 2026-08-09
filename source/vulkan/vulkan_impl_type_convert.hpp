@@ -16,6 +16,15 @@ using VmaAllocation = void *;
 using VmaPool = void *;
 #endif
 
+template <typename T>
+inline const T *find_in_structure_chain(const void *structure_chain, VkStructureType type)
+{
+	const T *next = reinterpret_cast<const T *>(structure_chain);
+	while (next != nullptr && next->sType != type)
+		next = reinterpret_cast<const T *>(next->pNext);
+	return next;
+}
+
 namespace reshade::vulkan
 {
 	static_assert(sizeof(VkBuffer) == sizeof(api::resource));
@@ -119,8 +128,10 @@ namespace reshade::vulkan
 	{
 		using Handle = VkPipelineLayout;
 
-		std::vector<VkDescriptorSetLayout> set_layouts;
 		std::vector<VkSampler> embedded_samplers;
+		std::vector<VkDescriptorSetLayout> set_layouts;
+		std::vector<VkDescriptorSetLayout> owned_set_layouts;
+		bool owns_set_layouts;
 	};
 
 	template <>
@@ -130,7 +141,7 @@ namespace reshade::vulkan
 
 		uint32_t num_descriptors;
 		std::vector<api::descriptor_range> ranges;
-		std::vector<api::descriptor_range_with_static_samplers> ranges_with_static_samplers;
+		std::vector<api::descriptor_range_with_flags> ranges_with_flags;
 		std::vector<std::vector<api::sampler_desc>> static_samplers;
 		std::vector<uint32_t> binding_to_offset;
 		bool push_descriptors;
@@ -184,6 +195,12 @@ namespace reshade::vulkan
 		VkAccelerationStructureCreateInfoKHR create_info;
 	};
 #endif
+
+	template <typename T>
+	void hash_combine(size_t &seed, const T &v)
+	{
+		seed ^= std::hash<T>()(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+	}
 
 	auto convert_format(api::format format, VkComponentMapping *components = nullptr) -> VkFormat;
 	auto convert_format(VkFormat vk_format, const VkComponentMapping *components = nullptr) -> api::format;
@@ -282,11 +299,20 @@ namespace reshade::vulkan
 
 	auto convert_descriptor_type(api::descriptor_type value) -> VkDescriptorType;
 	auto convert_descriptor_type(VkDescriptorType value) -> api::descriptor_type;
+	auto convert_descriptor_range_flags(api::descriptor_range_flags value) -> VkDescriptorBindingFlags;
+	auto convert_descriptor_range_flags(VkDescriptorBindingFlags value) -> api::descriptor_range_flags;
 
+	auto convert_render_pass_flags(api::render_pass_flags value) -> VkRenderingFlags;
+	auto convert_render_pass_flags(VkRenderingFlags value) -> api::render_pass_flags;
 	auto convert_render_pass_load_op(api::render_pass_load_op value) -> VkAttachmentLoadOp;
 	auto convert_render_pass_load_op(VkAttachmentLoadOp value) -> api::render_pass_load_op;
 	auto convert_render_pass_store_op(api::render_pass_store_op value) -> VkAttachmentStoreOp;
 	auto convert_render_pass_store_op(VkAttachmentStoreOp value) -> api::render_pass_store_op;
+
+	void convert_render_pass_render_target_desc(const api::render_pass_render_target_desc &desc, VkRenderingAttachmentInfo &color_attachment_info);
+	api::render_pass_render_target_desc convert_render_pass_render_target_desc(const VkRenderingAttachmentInfo *color_attachment_info);
+	void convert_render_pass_depth_stencil_desc(const api::render_pass_depth_stencil_desc &desc, VkImageAspectFlags aspect_flags, VkRenderingAttachmentInfo &depth_attachment_info, VkRenderingAttachmentInfo &stencil_attachment_info);
+	api::render_pass_depth_stencil_desc convert_render_pass_depth_stencil_desc(const VkRenderingAttachmentInfo *depth_attachment_info, const VkRenderingAttachmentInfo *stencil_attachment_info);
 
 	auto convert_pipeline_flags(api::pipeline_flags value) -> VkPipelineCreateFlags;
 	auto convert_pipeline_flags(VkPipelineCreateFlags2 value) -> api::pipeline_flags;

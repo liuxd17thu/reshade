@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////////
-// Turkish (Turkiye) resources
+// Turkish (Türkiye) resources
 
 #if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_TRK)
 LANGUAGE 31, 1
@@ -190,6 +190,8 @@ BEGIN
 17289 "Genel önişlemci tanımlarını düzenle"
 2314 "Genel"
 38344 "Geçerli Ön Ayar"
+19882 "Ad"
+22129 "Değer"
 10646 "'%s' önişlemci tanımını gerçekten kaldırmak istiyor musunuz?"
 63179 "Uygula"
 // 23747
@@ -225,5 +227,5 @@ BEGIN
 
 END
 
-#endif    // Turkish (Turkiye) resources
+#endif    // Turkish (Türkiye) resources
 /////////////////////////////////////////////////////////////////////////////

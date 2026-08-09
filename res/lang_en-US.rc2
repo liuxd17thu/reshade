@@ -188,6 +188,8 @@ BEGIN
 17289 "Edit global preprocessor definitions"
 2314 "Global"
 38344 "Current Preset"
+19882 "Name"
+22129 "Value"
 10646 "Do you really want to remove the preprocessor definition '%s'?"
 63179 "Apply"
 23747 "Revert all to preset"

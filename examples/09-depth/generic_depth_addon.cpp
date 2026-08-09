@@ -644,9 +644,9 @@ static bool on_create_resource_view(device *device, resource resource, resource_
 	{
 		desc.type = texture_desc.texture.depth_or_layers > 1 ? resource_view_type::texture_2d_array : resource_view_type::texture_2d;
 		desc.texture.first_level = 0;
-		desc.texture.level_count = (usage_type == resource_usage::shader_resource) ? UINT32_MAX : 1;
+		desc.texture.levels = (usage_type == resource_usage::shader_resource) ? UINT32_MAX : 1;
 		desc.texture.first_layer = 0;
-		desc.texture.layer_count = (usage_type == resource_usage::shader_resource) ? UINT32_MAX : 1;
+		desc.texture.layers = (usage_type == resource_usage::shader_resource) ? UINT32_MAX : 1;
 	}
 
 	return true;
@@ -811,7 +811,7 @@ static bool on_clear_depth_stencil(command_list *cmd_list, resource_view dsv, co
 
 	return false;
 }
-static void on_begin_render_pass_with_depth_stencil(command_list *cmd_list, uint32_t, const render_pass_render_target_desc *, const render_pass_depth_stencil_desc *depth_stencil_desc)
+static bool on_begin_render_pass_with_depth_stencil(command_list *cmd_list, uint32_t, const render_pass_render_target_desc *, const render_pass_depth_stencil_desc *depth_stencil_desc, render_pass_flags)
 {
 	if (depth_stencil_desc != nullptr && depth_stencil_desc->depth_load_op == render_pass_load_op::clear)
 	{
@@ -825,6 +825,7 @@ static void on_begin_render_pass_with_depth_stencil(command_list *cmd_list, uint
 	// If render pass has depth store operation set to 'discard', any copy performed after the render pass will likely contain broken data, so can only hope that the depth buffer can be copied before that ...
 
 	on_bind_depth_stencil(cmd_list, 0, nullptr, depth_stencil_desc != nullptr ? depth_stencil_desc->view : resource_view {});
+	return false;
 }
 
 static void on_reset(command_list *cmd_list)
@@ -1369,7 +1370,7 @@ static void draw_settings_overlay(effect_runtime *runtime)
 					clear_stats.clear_op == clear_op::fullscreen_draw ? " Fullscreen draw call" : "");
 			}
 
-			if (sorted_item_list.size() == 1 && !is_d3d12_or_vulkan)
+			if (!is_d3d12_or_vulkan)
 			{
 				if (bool value = (depth_stencil_backup->force_clear_index == std::numeric_limits<uint32_t>::max());
 					ImGui::Checkbox(_("    Choose last clear operation with high number of draw calls"), &value))

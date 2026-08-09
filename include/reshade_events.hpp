@@ -208,6 +208,8 @@ namespace reshade
 		/// <item><description>ID3D10Device::CreateSamplerState</description></item>
 		/// <item><description>ID3D11Device::CreateSamplerState</description></item>
 		/// <item><description>ID3D12Device::CreateSampler</description></item>
+		/// <item><description>ID3D12Device11::CreateSampler2</description></item>
+		/// <item><description>ID3D12Device15::TryCreateSampler2</description></item>
 		/// <item><description>vkCreateSampler</description></item>
 		/// </list>
 		/// <para>Callback function signature: <c>void (api::device *device, const api::sampler_desc &amp;desc, api::sampler sampler)</c></para>
@@ -224,6 +226,8 @@ namespace reshade
 		/// <item><description>ID3D11Device::CreateSamplerState</description></item>
 		/// <item><description>ID3D12Device::CreateSampler</description></item>
 		/// <item><description>ID3D12Device::CreateRootSignature</description></item>
+		/// <item><description>ID3D12Device11::CreateSampler2</description></item>
+		/// <item><description>ID3D12Device15::TryCreateSampler2</description></item>
 		/// <item><description>vkCreateSampler</description></item>
 		/// </list>
 		/// <para>Callback function signature: <c>bool (api::device *device, api::sampler_desc &amp;desc)</c></para>
@@ -239,7 +243,6 @@ namespace reshade
 		/// <list type="bullet">
 		/// <item><description>ID3D10SamplerState::Release</description></item>
 		/// <item><description>ID3D11SamplerState::Release</description></item>
-		/// <item><description>glDeleteSamplers</description></item>
 		/// <item><description>vkDestroySampler</description></item>
 		/// </list>
 		/// <para>Callback function signature: <c>void (api::device *device, api::sampler sampler)</c></para>
@@ -278,6 +281,8 @@ namespace reshade
 		/// <item><description>ID3D12Device::CreateReservedResource</description></item>
 		/// <item><description>ID3D12Device4::CreateCommittedResource1</description></item>
 		/// <item><description>ID3D12Device4::CreateReservedResource1</description></item>
+		/// <item><description>ID3D12Device8::CreateCommittedResource2</description></item>
+		/// <item><description>ID3D12Device10::CreateReservedResource2</description></item>
 		/// <item><description>glBufferData</description></item>
 		/// <item><description>glBufferStorage</description></item>
 		/// <item><description>glNamedBufferData</description></item>
@@ -345,6 +350,8 @@ namespace reshade
 		/// <item><description>ID3D12Device::CreateReservedResource</description></item>
 		/// <item><description>ID3D12Device4::CreateCommittedResource1</description></item>
 		/// <item><description>ID3D12Device4::CreateReservedResource1</description></item>
+		/// <item><description>ID3D12Device8::CreateCommittedResource2</description></item>
+		/// <item><description>ID3D12Device10::CreateReservedResource2</description></item>
 		/// <item><description>glBufferData</description></item>
 		/// <item><description>glBufferStorage</description></item>
 		/// <item><description>glNamedBufferData</description></item>
@@ -396,6 +403,9 @@ namespace reshade
 		/// </list>
 		/// <para>Callback function signature: <c>void (api::device *device, api::resource resource)</c></para>
 		/// </summary>
+		/// <remarks>
+		/// This may be called from within other API calls, e.g. <see cref="device::update_texture_region"/>, so be careful with synchronization primitives in the callback.
+		/// </remarks>
 		destroy_resource,
 
 		/// <summary>
@@ -419,6 +429,10 @@ namespace reshade
 		/// <item><description>ID3D12Device::CreateUnorderedAccessView</description></item>
 		/// <item><description>ID3D12Device::CreateRenderTargetView</description></item>
 		/// <item><description>ID3D12Device::CreateDepthStencilView</description></item>
+		/// <item><description>ID3D12Device15::TryCreateShaderResourceView</description></item>
+		/// <item><description>ID3D12Device15::TryCreateUnorderedAccessView</description></item>
+		/// <item><description>ID3D12Device15::TryCreateRenderTargetView</description></item>
+		/// <item><description>ID3D12Device15::TryCreateDepthStencilView</description></item>
 		/// <item><description>glTexBuffer</description></item>
 		/// <item><description>glTextureBuffer</description></item>
 		/// <item><description>glTextureView</description></item>
@@ -451,6 +465,10 @@ namespace reshade
 		/// <item><description>ID3D12Device::CreateUnorderedAccessView</description></item>
 		/// <item><description>ID3D12Device::CreateRenderTargetView</description></item>
 		/// <item><description>ID3D12Device::CreateDepthStencilView</description></item>
+		/// <item><description>ID3D12Device15::TryCreateShaderResourceView</description></item>
+		/// <item><description>ID3D12Device15::TryCreateUnorderedAccessView</description></item>
+		/// <item><description>ID3D12Device15::TryCreateRenderTargetView</description></item>
+		/// <item><description>ID3D12Device15::TryCreateDepthStencilView</description></item>
 		/// <item><description>glTexBuffer</description></item>
 		/// <item><description>glTextureBuffer</description></item>
 		/// <item><description>glTextureView</description></item>
@@ -481,6 +499,7 @@ namespace reshade
 		/// </summary>
 		/// <remarks>
 		/// Is not called in D3D12 (since resource views are descriptor handles instead of objects there).
+		/// This may be called from within other API calls, e.g. <see cref="device::update_texture_region"/>, so be careful with synchronization primitives in the callback.
 		/// </remarks>
 		destroy_resource_view,
 
@@ -738,6 +757,7 @@ namespace reshade
 		/// </summary>
 		/// <remarks>
 		/// Is not called in D3D9.
+		/// This may be called from within other API calls, e.g. <see cref="device::destroy_pipeline"/>, so be careful with synchronization primitives in the callback.
 		/// </remarks>
 		destroy_pipeline,
 
@@ -812,6 +832,7 @@ namespace reshade
 		/// Called after successful query heap creation from:
 		/// <list type="bullet">
 		/// <item><description>ID3D12Device::CreateQueryHeap</description></item>
+		/// <item><description>ID3D12Device15::CreateQueryHeap1</description></item>
 		/// <item><description>vkCreateQueryPool</description></item>
 		/// </list>
 		/// <para>Callback function signature: <c>void (api::device *device, api::query_type type, uint32_t count, api::query_heap heap)</c></para>
@@ -822,6 +843,7 @@ namespace reshade
 		/// Called on query heap creation, before:
 		/// <list type="bullet">
 		/// <item><description>ID3D12Device::CreateQueryHeap</description></item>
+		/// <item><description>ID3D12Device15::CreateQueryHeap1</description></item>
 		/// <item><description>vkCreateQueryPool</description></item>
 		/// </list>
 		/// <para>Callback function signature: <c>bool (api::device *device, api::query_type type, uint32_t &amp;count)</c></para>
@@ -841,9 +863,10 @@ namespace reshade
 		/// <summary>
 		/// Called before:
 		/// <list type="bullet">
+		/// <item><description>ID3D12Device15::ResolveQueryData</description></item>
 		/// <item><description>vkGetQueryPoolResults</description></item>
 		/// </list>
-		/// <para>Callback function signature: <c>bool (api::device *device, api::query_heap heap, uint32_t first, uint32_t count, void *results, uint32_t stride)</c></para>
+		/// <para>Callback function signature: <c>bool (api::device *device, api::query_heap heap, api::query_type type, uint32_t first, uint32_t count, void *results, uint32_t stride)</c></para>
 		/// </summary>
 		get_query_heap_results,
 
@@ -869,9 +892,10 @@ namespace reshade
 		/// <item><description>vkCmdNextSubpass2</description></item>
 		/// <item><description>vkCmdBeginRendering</description></item>
 		/// </list>
-		/// <para>Callback function signature: <c>void (api::command_list *cmd_list, uint32_t count, const api::render_pass_render_target_desc *rts, const api::render_pass_depth_stencil_desc *ds)</c></para>
+		/// <para>Callback function signature: <c>bool (api::command_list *cmd_list, uint32_t count, const api::render_pass_render_target_desc *rts, const api::render_pass_depth_stencil_desc *ds, api::render_pass_flags flags)</c></para>
 		/// </summary>
 		/// <remarks>
+		/// To prevent this command from being executed, return <see langword="true"/>, otherwise return <see langword="false"/>.
 		/// The depth-stencil description argument is optional and may be <see langword="nullptr"/> (which indicates that no depth-stencil is used).
 		/// </remarks>
 		begin_render_pass,
@@ -886,8 +910,11 @@ namespace reshade
 		/// <item><description>vkCmdNextSubpass2</description></item>
 		/// <item><description>vkCmdEndRendering</description></item>
 		/// </list>
-		/// <para>Callback function signature: <c>void (api::command_list *cmd_list)</c></para>
+		/// <para>Callback function signature: <c>bool (api::command_list *cmd_list)</c></para>
 		/// </summary>
+		/// <remarks>
+		/// To prevent this command from being executed, return <see langword="true"/>, otherwise return <see langword="false"/>.
+		/// </remarks>
 		end_render_pass,
 
 		/// <summary>
@@ -1079,7 +1106,7 @@ namespace reshade
 		/// <item><description>ID3D12GraphicsCommandList::SetGraphicsRootDescriptorTable</description></item>
 		/// <item><description>vkCmdBindDescriptorSets</description></item>
 		/// </list>
-		/// <para>Callback function signature: <c>void (api::command_list *cmd_list, api::shader_stage stages, api::pipeline_layout layout, uint32_t first, uint32_t count, const api::descriptor_table *tables)</c></para>
+		/// <para>Callback function signature: <c>void (api::command_list *cmd_list, api::shader_stage stages, api::pipeline_layout layout, uint32_t first, uint32_t count, const api::descriptor_table *tables, uint32_t dynamic_offset_count, const uint32_t *dynamic_offsets)</c></para>
 		/// </summary>
 		bind_descriptor_tables,
 
@@ -1854,12 +1881,12 @@ namespace reshade
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::create_query_heap, bool, api::device *device, api::query_type type, uint32_t &count);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::destroy_query_heap, void, api::device *device, api::query_heap heap);
 
-	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::get_query_heap_results, bool, api::device *device, api::query_heap heap, uint32_t first, uint32_t count, void *results, uint32_t stride);
+	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::get_query_heap_results, bool, api::device *device, api::query_heap heap, api::query_type type, uint32_t first, uint32_t count, void *results, uint32_t stride);
 
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::barrier, void, api::command_list *cmd_list, uint32_t count, const api::resource *resources, const api::resource_usage *old_states, const api::resource_usage *new_states);
 
-	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::begin_render_pass, void, api::command_list *cmd_list, uint32_t count, const api::render_pass_render_target_desc *rts, const api::render_pass_depth_stencil_desc *ds);
-	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::end_render_pass, void, api::command_list *cmd_list);
+	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::begin_render_pass, bool, api::command_list *cmd_list, uint32_t count, const api::render_pass_render_target_desc *rts, const api::render_pass_depth_stencil_desc *ds, api::render_pass_flags flags);
+	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::end_render_pass, bool, api::command_list *cmd_list);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::bind_render_targets_and_depth_stencil, void, api::command_list *cmd_list, uint32_t count, const api::resource_view *rtvs, api::resource_view dsv);
 
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::bind_pipeline, void, api::command_list *cmd_list, api::pipeline_stage stages, api::pipeline pipeline);
@@ -1868,7 +1895,7 @@ namespace reshade
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::bind_scissor_rects, void, api::command_list *cmd_list, uint32_t first, uint32_t count, const api::rect *rects);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::push_constants, void, api::command_list *cmd_list, api::shader_stage stages, api::pipeline_layout layout, uint32_t layout_param, uint32_t first, uint32_t count, const void *values);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::push_descriptors, void, api::command_list *cmd_list, api::shader_stage stages, api::pipeline_layout layout, uint32_t layout_param, const api::descriptor_table_update &update);
-	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::bind_descriptor_tables, void, api::command_list *cmd_list, api::shader_stage stages, api::pipeline_layout layout, uint32_t first, uint32_t count, const api::descriptor_table *tables);
+	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::bind_descriptor_tables, void, api::command_list *cmd_list, api::shader_stage stages, api::pipeline_layout layout, uint32_t first, uint32_t count, const api::descriptor_table *tables, uint32_t dynamic_offset_count, const uint32_t *dynamic_offsets);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::bind_index_buffer, void, api::command_list *cmd_list, api::resource buffer, uint64_t offset, uint32_t index_size);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::bind_vertex_buffers, void, api::command_list *cmd_list, uint32_t first, uint32_t count, const api::resource *buffers, const uint64_t *offsets, const uint32_t *strides);
 	RESHADE_DEFINE_ADDON_EVENT_TRAITS(addon_event::bind_stream_output_buffers, void, api::command_list *cmd_list, uint32_t first, uint32_t count, const api::resource *buffers, const uint64_t *offsets, const uint64_t *max_sizes, const api::resource *counter_buffers, const uint64_t *counter_offsets);

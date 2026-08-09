@@ -726,6 +726,8 @@ auto reshade::opengl::convert_pixel_format(const PIXELFORMATDESCRIPTOR &pfd) -> 
 		return api::format::b5g6r5_unorm;
 	case 24:
 	case 32:
+		if (pfd.cRedBits == 10 && pfd.cGreenBits == 10 && pfd.cBlueBits == 10)
+			return api::format::r10g10b10a2_unorm;
 		if (pfd.cRedBits == 11 && pfd.cGreenBits == 11 && pfd.cBlueBits == 10)
 			return api::format::r11g11b10_float;
 		if (pfd.cAlphaBits != 0)
@@ -1714,7 +1716,6 @@ reshade::api::resource_desc reshade::opengl::convert_resource_desc(GLenum target
 	api::resource_desc desc = {};
 	desc.type = convert_resource_type(target);
 	desc.buffer.size = buffer_size;
-	desc.buffer.stride = 0;
 
 	switch (storage_flags & (GL_MAP_READ_BIT | GL_MAP_WRITE_BIT))
 	{

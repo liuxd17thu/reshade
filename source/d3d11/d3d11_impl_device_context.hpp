@@ -18,7 +18,7 @@ namespace reshade::d3d11
 
 		void barrier(uint32_t, const api::resource *, const api::resource_usage *, const api::resource_usage *) final { assert(false); }
 
-		void begin_render_pass(uint32_t, const api::render_pass_render_target_desc *, const api::render_pass_depth_stencil_desc *) final { assert(false); }
+		void begin_render_pass2(uint32_t, const api::render_pass_render_target_desc *, const api::render_pass_depth_stencil_desc *, api::render_pass_flags) final { assert(false); }
 		void end_render_pass() final { assert(false); }
 		void bind_render_targets_and_depth_stencil(uint32_t, const api::resource_view *, api::resource_view) final { assert(false); }
 
@@ -29,7 +29,7 @@ namespace reshade::d3d11
 
 		void push_constants(api::shader_stage, api::pipeline_layout, uint32_t, uint32_t, uint32_t, const void *) final { assert(false); }
 		void push_descriptors(api::shader_stage, api::pipeline_layout, uint32_t, const api::descriptor_table_update &) final { assert(false); }
-		void bind_descriptor_tables(api::shader_stage, api::pipeline_layout, uint32_t, uint32_t, const api::descriptor_table *) final { assert(false); }
+		void bind_descriptor_tables2(api::shader_stage, api::pipeline_layout, uint32_t, uint32_t, const api::descriptor_table *, uint32_t, const uint32_t *) final { assert(false); }
 
 		void bind_index_buffer(api::resource, uint64_t, uint32_t) final { assert(false); }
 		void bind_vertex_buffers(uint32_t, uint32_t, const api::resource *, const uint64_t *, const uint32_t *) final { assert(false); }
@@ -71,8 +71,8 @@ namespace reshade::d3d11
 		void end_debug_event() final { assert(false); }
 		void insert_debug_marker(const char *, const float[4]) final { assert(false); }
 
-	private:
-		device_impl *const _device_impl;
+	protected:
+		device_impl *const _device;
 	};
 
 	class device_context_impl : public api::api_object_impl<ID3D11DeviceContext *, api::command_queue, api::command_list>
@@ -95,7 +95,7 @@ namespace reshade::d3d11
 		void begin_uav_overlap();
 		void end_uav_overlap();
 
-		void begin_render_pass(uint32_t count, const api::render_pass_render_target_desc *rts, const api::render_pass_depth_stencil_desc *ds) final;
+		void begin_render_pass2(uint32_t count, const api::render_pass_render_target_desc *rts, const api::render_pass_depth_stencil_desc *ds, api::render_pass_flags flags) final;
 		void end_render_pass() final;
 		void bind_render_targets_and_depth_stencil(uint32_t count, const api::resource_view *rtvs, api::resource_view dsv) final;
 
@@ -111,7 +111,7 @@ namespace reshade::d3d11
 
 		void push_constants(api::shader_stage stages, api::pipeline_layout layout, uint32_t layout_param, uint32_t first, uint32_t count, const void *values) final;
 		void push_descriptors(api::shader_stage stages, api::pipeline_layout layout, uint32_t layout_param, const api::descriptor_table_update &update) final;
-		void bind_descriptor_tables(api::shader_stage stages, api::pipeline_layout layout, uint32_t first, uint32_t count, const api::descriptor_table *tables) final;
+		void bind_descriptor_tables2(api::shader_stage stages, api::pipeline_layout layout, uint32_t first, uint32_t count, const api::descriptor_table *tables, uint32_t dynamic_offset_count, const uint32_t *dynamic_offsets) final;
 
 		void bind_index_buffer(api::resource buffer, uint64_t offset, uint32_t index_size) final;
 		void bind_vertex_buffers(uint32_t first, uint32_t count, const api::resource *buffers, const uint64_t *offsets, const uint32_t *strides) final;
@@ -158,8 +158,10 @@ namespace reshade::d3d11
 
 		uint64_t get_timestamp_frequency() const final;
 
+	protected:
+		device_impl *const _device;
+
 	private:
-		device_impl *const _device_impl;
 		com_ptr<ID3DUserDefinedAnnotation> _annotations;
 
 		com_ptr<ID3D11Buffer> _push_constants[D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT];

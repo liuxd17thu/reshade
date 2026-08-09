@@ -49,7 +49,7 @@ static void convert_cube_uv_to_vec(D3DCUBEMAP_FACES face, float u, float v, floa
 	}
 }
 
-void reshade::d3d9::device_impl::begin_render_pass(uint32_t count, const api::render_pass_render_target_desc *rts, const api::render_pass_depth_stencil_desc *ds)
+void reshade::d3d9::device_impl::begin_render_pass2(uint32_t count, const api::render_pass_render_target_desc *rts, const api::render_pass_depth_stencil_desc *ds, api::render_pass_flags)
 {
 	DWORD clear_flags = 0;
 
@@ -228,15 +228,15 @@ void reshade::d3d9::device_impl::bind_viewports(uint32_t first, uint32_t count, 
 
 	assert(count == 1 && viewports != nullptr);
 
-	D3DVIEWPORT9 d3d_viewport;
-	d3d_viewport.X = static_cast<DWORD>(viewports->x);
-	d3d_viewport.Y = static_cast<DWORD>(viewports->y);
-	d3d_viewport.Width = static_cast<DWORD>(viewports->width);
-	d3d_viewport.Height = static_cast<DWORD>(viewports->height);
-	d3d_viewport.MinZ = viewports->min_depth;
-	d3d_viewport.MaxZ = viewports->max_depth;
+	D3DVIEWPORT9 internal_viewport;
+	internal_viewport.X = static_cast<DWORD>(viewports->x);
+	internal_viewport.Y = static_cast<DWORD>(viewports->y);
+	internal_viewport.Width = static_cast<DWORD>(viewports->width);
+	internal_viewport.Height = static_cast<DWORD>(viewports->height);
+	internal_viewport.MinZ = viewports->min_depth;
+	internal_viewport.MaxZ = viewports->max_depth;
 
-	_orig->SetViewport(&d3d_viewport);
+	_orig->SetViewport(&internal_viewport);
 }
 void reshade::d3d9::device_impl::bind_scissor_rects(uint32_t first, uint32_t count, const api::rect *rects)
 {
@@ -378,7 +378,7 @@ void reshade::d3d9::device_impl::push_descriptors(api::shader_stage stages, api:
 		}
 	}
 }
-void reshade::d3d9::device_impl::bind_descriptor_tables(api::shader_stage stages, api::pipeline_layout layout, uint32_t first, uint32_t count, const api::descriptor_table *tables)
+void reshade::d3d9::device_impl::bind_descriptor_tables2(api::shader_stage stages, api::pipeline_layout layout, uint32_t first, uint32_t count, const api::descriptor_table *tables, uint32_t, const uint32_t *)
 {
 	for (uint32_t i = 0; i < count; ++i)
 	{
@@ -683,18 +683,18 @@ void reshade::d3d9::device_impl::copy_texture_region(api::resource src, uint32_t
 		{
 			convert_subresource_box_to_rect(dst_box, dst_rect);
 
-			D3DVIEWPORT9 viewport;
-			viewport.X = dst_rect.left;
-			viewport.Y = dst_rect.top;
-			viewport.Width = dst_rect.right - dst_rect.left;
-			viewport.Height = dst_rect.bottom - dst_rect.top;
-			viewport.MinZ = 0.0f;
-			viewport.MaxZ = 1.0f;
+			D3DVIEWPORT9 internal_viewport;
+			internal_viewport.X = dst_rect.left;
+			internal_viewport.Y = dst_rect.top;
+			internal_viewport.Width = dst_rect.right - dst_rect.left;
+			internal_viewport.Height = dst_rect.bottom - dst_rect.top;
+			internal_viewport.MinZ = 0.0f;
+			internal_viewport.MaxZ = 1.0f;
 
-			_orig->SetViewport(&viewport);
+			_orig->SetViewport(&internal_viewport);
 
-			dst_desc.Width = viewport.Width;
-			dst_desc.Height = viewport.Height;
+			dst_desc.Width = internal_viewport.Width;
+			dst_desc.Height = internal_viewport.Height;
 		}
 
 		// Bake half-pixel offset into vertices

@@ -8,6 +8,7 @@
 #include <glad/wgl.h>
 #include "reshade_api_object_impl.hpp"
 #include <atomic>
+#include <vector>
 #include <unordered_map>
 
 namespace reshade::opengl
@@ -79,7 +80,7 @@ namespace reshade::opengl
 		bool create_query_heap(api::query_type type, uint32_t count, api::query_heap *out_heap) final;
 		void destroy_query_heap(api::query_heap heap) final;
 
-		bool get_query_heap_results(api::query_heap heap, uint32_t first, uint32_t count, void *results, uint32_t stride) final;
+		bool get_query_heap_results(api::query_heap heap, api::query_type type, uint32_t first, uint32_t count, void *results, uint32_t stride) final;
 
 		void set_resource_name(api::resource resource, const char *name) final;
 		void set_resource_view_name(api::resource_view view, const char *name) final;

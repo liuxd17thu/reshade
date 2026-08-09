@@ -32,7 +32,7 @@ namespace reshade::api
 		opengl = 0x10000,
 		/// <summary>Vulkan</summary>
 		/// <remarks>https://www.khronos.org/vulkan/</remarks>
-		vulkan = 0x20000
+		vulkan = 0x20000,
 	};
 
 	/// <summary>
@@ -557,12 +557,13 @@ namespace reshade::api
 		/// Gets the results of queries in a query heap.
 		/// </summary>
 		/// <param name="heap">Query heap that contains the queries.</param>
+		/// <param name="type">Type of the queries to copy.</param>
 		/// <param name="first">Index of the first query in the query heap to copy the results from.</param>
 		/// <param name="count">Number of query results to copy.</param>
 		/// <param name="results">Pointer to the first element of an array that is filled with the results. The necessary data type is documented at the <see cref="query_type"/> enumeration.</param>
 		/// <param name="stride">Size (in bytes) of each element in the <paramref name="results"/> array.</param>
 		/// <returns><see langword="true"/> if the query results were successfully downloaded from the GPU, <see langword="false"/> otherwise.</returns>
-		virtual bool get_query_heap_results(query_heap heap, uint32_t first, uint32_t count, void *results, uint32_t stride) = 0;
+		virtual bool get_query_heap_results(query_heap heap, query_type type, uint32_t first, uint32_t count, void *results, uint32_t stride) = 0;
 
 		/// <summary>
 		/// Associates a name with a resource, for easier debugging in external tools.
@@ -581,7 +582,7 @@ namespace reshade::api
 		/// Creates a new fence synchronization object.
 		/// </summary>
 		/// <param name="initial_value">The initial value for the fence.</param>
-		/// <param name="flags">Fence creation options.</param>
+		/// <param name="flags">Additional parameters of the fence.</param>
 		/// <param name="out_fence">Pointer to a variable that is set to the handle of the created fence.</param>
 		/// <param name="shared_handle">Optional pointer to a variable of type <c>HANDLE</c> used when <paramref name="flags"/> contains <see cref="fence_flags::shared"/>. When that variable is a <see langword="nullptr"/>, it is set to the exported shared handle of the created fence. When that variable is a valid handle, the fence is imported from that shared handle.</param>
 		/// <returns><see langword="true"/> if the fence was successfully created, <see langword="false"/> otherwise (in this case <paramref name="out_fence"/> is set to zero).</returns>
@@ -632,7 +633,7 @@ namespace reshade::api
 		/// </summary>
 		/// <seealso cref="device_caps::ray_tracing"/>
 		/// <param name="type">Type of the acceleration structure.</param>
-		/// <param name="flags">Acceleration structure build options.</param>
+		/// <param name="flags">Additional parameters to the acceleration structure build operation.</param>
 		/// <param name="input_count">Number of build inputs.</param>
 		/// <param name="inputs">Pointer to the first element of an array of build inputs describing the geometry of the acceleration structure.</param>
 		/// <param name="out_size">Pointer to a variable that is set to the required buffer size for the acceleration structure.</param>
@@ -674,7 +675,7 @@ namespace reshade::api
 		draw_indexed,
 		dispatch,
 		dispatch_mesh,
-		dispatch_rays
+		dispatch_rays,
 	};
 
 	/// <summary>
@@ -710,7 +711,7 @@ namespace reshade::api
 		/// <param name="count">Number of render target views to bind.</param>
 		/// <param name="rts">Pointer to the first element of an array of render target descriptions.</param>
 		/// <param name="ds">Optional pointer to a depth-stencil description, or <see langword="nullptr"/> to bind none.</param>
-		virtual void begin_render_pass(uint32_t count, const render_pass_render_target_desc *rts, const render_pass_depth_stencil_desc *ds = nullptr) = 0;
+		virtual void begin_render_pass(uint32_t count, const render_pass_render_target_desc *rts, const render_pass_depth_stencil_desc *ds = nullptr) { begin_render_pass2(count, rts, ds, render_pass_flags::none); }
 		/// <summary>
 		/// Ends a render pass.
 		/// This must be preceeded by a call to <see cref="begin_render_pass"/>.
@@ -802,7 +803,7 @@ namespace reshade::api
 		/// <param name="first">Index of the first pipeline <paramref name="layout"/> parameter that describes the first descriptor table to bind (root parameter index in D3D12, descriptor set index in Vulkan).</param>
 		/// <param name="count">Number of descriptor tables to bind.</param>
 		/// <param name="tables">Pointer to the first element of an array of descriptor tables to bind.</param>
-		virtual void bind_descriptor_tables(shader_stage stages, pipeline_layout layout, uint32_t first, uint32_t count, const descriptor_table *tables) = 0;
+		virtual void bind_descriptor_tables(shader_stage stages, pipeline_layout layout, uint32_t first, uint32_t count, const descriptor_table *tables) { bind_descriptor_tables2(stages, layout, first, count, tables, 0, nullptr); }
 
 		/// <summary>
 		/// Binds an index buffer to the input-assembler stage.
@@ -1122,7 +1123,7 @@ namespace reshade::api
 		/// </remarks>
 		/// <seealso cref="device_caps::ray_tracing"/>
 		/// <param name="type">Type of the acceleration structure to build.</param>
-		/// <param name="flags">Acceleration structure build options.</param>
+		/// <param name="flags">Additional parameters to the acceleration structure build operation.</param>
 		/// <param name="input_count">Number of build inputs.</param>
 		/// <param name="inputs">Pointer to the first element of an array of build inputs describing the geometry of the acceleration structure to build.</param>
 		/// <param name="scratch">Buffer resource to use as scratch space during building.</param>
@@ -1167,6 +1168,27 @@ namespace reshade::api
 		/// <param name="dest_subresource">Index of the subresource to upload to (<c>level + (layer * levels)</c>).</param>
 		/// <param name="dest_box">Optional 3D box (or <see langword="nullptr"/> to reference the entire subresource) that defines the region in the <paramref name="resource"/> to upload to.</param>
 		virtual void update_texture_region(const subresource_data &data, resource dest, uint32_t dest_subresource, const subresource_box *dest_box = nullptr) = 0;
+
+		/// <summary>
+		/// Begins a render pass and binds render target and depth-stencil resource views.
+		/// </summary>
+		/// <param name="count">Number of render target views to bind.</param>
+		/// <param name="rts">Pointer to the first element of an array of render target descriptions.</param>
+		/// <param name="ds">Optional pointer to a depth-stencil description, or <see langword="nullptr"/> to bind none.</param>
+		/// <param name="flags">Additional parameters of the render pass.</param>
+		virtual void begin_render_pass2(uint32_t count, const render_pass_render_target_desc *rts, const render_pass_depth_stencil_desc *ds, render_pass_flags flags) = 0;
+
+		/// <summary>
+		/// Binds an array of descriptor tables.
+		/// </summary>
+		/// <param name="stages">Shader stages that will use the descriptors.</param>
+		/// <param name="layout">Pipeline layout that describes the descriptors.</param>
+		/// <param name="first">Index of the first pipeline <paramref name="layout"/> parameter that describes the first descriptor table to bind (root parameter index in D3D12, descriptor set index in Vulkan).</param>
+		/// <param name="count">Number of descriptor tables to bind.</param>
+		/// <param name="tables">Pointer to the first element of an array of descriptor tables to bind.</param>
+		/// <param name="dynamic_offset_count">Number of dynamic offsets.</param>
+		/// <param name="dynamic_offsets">Pointer to the first element of an array of dynamic offsets for any descriptors of type <see cref="descriptor_type::constant_buffer_with_dynamic_offset"/> or <see cref="descriptor_type::shader_storage_buffer_with_dynamic_offset"/>.</param>
+		virtual void bind_descriptor_tables2(shader_stage stages, pipeline_layout layout, uint32_t first, uint32_t count, const descriptor_table *tables, uint32_t dynamic_offset_count, const uint32_t *dynamic_offsets) = 0;
 	};
 
 	/// <summary>
@@ -1177,7 +1199,7 @@ namespace reshade::api
 	{
 		graphics = 0x1,
 		compute = 0x2,
-		copy = 0x4
+		copy = 0x4,
 	};
 	RESHADE_DEFINE_ENUM_FLAG_OPERATORS(command_queue_type);
 
@@ -1299,6 +1321,11 @@ namespace reshade::api
 		/// </list>
 		/// </summary>
 		uint32_t sync_interval = UINT32_MAX;
+
+		/// <summary>
+		/// Color space used for presentation.
+		/// </summary>
+		color_space color_space = color_space::unknown;
 	};
 
 	/// <summary>

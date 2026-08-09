@@ -436,28 +436,30 @@ static void on_barrier(command_list *, uint32_t num_resources, const resource *r
 	}
 }
 
-static void on_begin_render_pass(command_list *, uint32_t count, const render_pass_render_target_desc *rts, const render_pass_depth_stencil_desc *ds)
+static bool on_begin_render_pass(command_list *, uint32_t count, const render_pass_render_target_desc *rts, const render_pass_depth_stencil_desc *ds, render_pass_flags flags)
 {
 	if (!s_do_capture)
-		return;
+		return false;
 
 	std::stringstream s;
 	s << "begin_render_pass(" << count << ", { ";
 	for (uint32_t i = 0; i < count; ++i)
 		s << (void *)rts[i].view.handle << ", ";
-	s << " }, " << (ds != nullptr ? (void *)ds->view.handle : 0) << ")";
+	s << " }, " << (ds != nullptr ? (void *)ds->view.handle : 0) << ", " << std::hex << static_cast<uint32_t>(flags) << std::dec << ")";
 
 	reshade::log::message(reshade::log::level::info, s.str().c_str());
+	return false;
 }
-static void on_end_render_pass(command_list *)
+static bool on_end_render_pass(command_list *)
 {
 	if (!s_do_capture)
-		return;
+		return false;
 
 	std::stringstream s;
 	s << "end_render_pass()";
 
 	reshade::log::message(reshade::log::level::info, s.str().c_str());
+	return false;
 }
 static void on_bind_render_targets_and_depth_stencil(command_list *, uint32_t count, const resource_view *rtvs, resource_view dsv)
 {
@@ -583,7 +585,7 @@ static void on_push_descriptors(command_list *, shader_stage stages, pipeline_la
 
 	reshade::log::message(reshade::log::level::info, s.str().c_str());
 }
-static void on_bind_descriptor_tables(command_list *, shader_stage stages, pipeline_layout layout, uint32_t first, uint32_t count, const descriptor_table *tables)
+static void on_bind_descriptor_tables(command_list *, shader_stage stages, pipeline_layout layout, uint32_t first, uint32_t count, const descriptor_table *tables, uint32_t dynamic_offset_count, const uint32_t *dynamic_offsets)
 {
 	if (!s_do_capture)
 		return;

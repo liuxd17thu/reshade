@@ -69,9 +69,6 @@ set(RESHADE_SOURCE
   source/ini_file.hpp
   source/input.cpp
   source/input.hpp
-  source/input_gamepad.cpp
-  source/input_gamepad.hpp
-  source/platform_utils.cpp
   source/platform_utils.hpp
   source/runtime.cpp
   source/runtime.hpp
@@ -271,8 +268,17 @@ target_sources(
     ${RESHADE_SOURCE_VR}
     ${RESHADE_SOURCE_WINDOWS}
 )
+if(WIN32)
+  target_sources(
+    ReShade
+    PRIVATE
+      source/input_windows.cpp
+      source/input_windows_xinput.cpp
+      source/platform_utils_windows.cpp
+  )
+endif()
 
-set_source_files_properties(source/input_gamepad.cpp PROPERTIES COMPILE_DEFINITIONS _WIN32_WINNT=_WIN32_WINNT_WIN7)
+set_source_files_properties(source/input_windows_xinput.cpp PROPERTIES COMPILE_DEFINITIONS "$<IF:$<EQUAL:${CMAKE_SIZEOF_VOID_P},8>,_AMD64_,_X86_>;_WIN32_WINNT=_WIN32_WINNT_WIN7")
 set_source_files_properties(source/vulkan/vulkan_impl_device.cpp PROPERTIES COMPILE_DEFINITIONS VMA_IMPLEMENTATION)
 
 set_source_files_properties(examples/09-depth/generic_depth_addon.cpp PROPERTIES COMPILE_DEFINITIONS BUILTIN_ADDON)
@@ -298,7 +304,7 @@ target_compile_definitions(
     RESHADE_GUI
     RESHADE_API_LIBRARY_EXPORT
     RESHADE_ADDON=2
-    RESHADE_LOCALIZATION
+    $<$<CXX_COMPILER_ID:MSVC>:RESHADE_LOCALIZATION>
     $<$<CONFIG:Debug>:RESHADE_VERBOSE_LOG>
     _GDI32_
     WINSOCK_API_LINKAGE=

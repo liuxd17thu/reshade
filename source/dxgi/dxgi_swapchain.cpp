@@ -83,7 +83,7 @@ DXGISwapChain::DXGISwapChain(IDXGIFactory *factory, D3D11Device *device, IDXGISw
 DXGISwapChain::DXGISwapChain(IDXGIFactory *factory, D3D12CommandQueue *command_queue, IDXGISwapChain3 *original) :
 	_orig(original),
 	_interface_version(3),
-	_direct3d_device(static_cast<ID3D12Device *>(command_queue->_device)), // Get the device instead of the command queue, so that 'IDXGISwapChain::GetDevice' works
+	_direct3d_device(static_cast<ID3D12Device *>(static_cast<D3D12Device *>(command_queue->_device))), // Get the device instead of the command queue, so that 'IDXGISwapChain::GetDevice' works
 	_direct3d_command_queue(command_queue),
 	_direct3d_version(reshade::api::device_api::d3d12),
 	_parent_factory(factory),
@@ -279,7 +279,7 @@ HRESULT STDMETHODCALLTYPE DXGISwapChain::Present(UINT SyncInterval, UINT Flags)
 
 		// If an add-on forces VSync or disabled tearing, ensure tearing is not requested
 		if (DXGI_SWAP_CHAIN_DESC desc;
-			SyncInterval > 0 || (SUCCEEDED(_orig->GetDesc(&desc)) && (desc.Flags & DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING) == 0))
+			SyncInterval > 0 || (_is_desc_modified && SUCCEEDED(_orig->GetDesc(&desc)) && (desc.Flags & DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING) == 0))
 			Flags &= ~DXGI_PRESENT_ALLOW_TEARING;
 	}
 #endif
@@ -404,7 +404,7 @@ HRESULT STDMETHODCALLTYPE DXGISwapChain::ResizeBuffers(UINT BufferCount, UINT Wi
 		_orig->GetDesc(&desc);
 		g_in_dxgi_runtime = was_in_dxgi_runtime;
 
-		// Restore default parameters to tho original values, rather than leaving them at the last values potentially overriden by an add-on
+		// Restore default parameters to tho original values, rather than leaving them at the last values potentially overridden by an add-on
 		if (0 == BufferCount)
 			BufferCount = _orig_desc.BufferCount;
 		if (DXGI_FORMAT_UNKNOWN == NewFormat)
@@ -572,7 +572,7 @@ HRESULT STDMETHODCALLTYPE DXGISwapChain::Present1(UINT SyncInterval, UINT Presen
 
 		// If an add-on forces VSync or disabled tearing, ensure tearing is not requested
 		if (DXGI_SWAP_CHAIN_DESC desc;
-			SyncInterval > 0 || (SUCCEEDED(_orig->GetDesc(&desc)) && (desc.Flags & DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING) == 0))
+			SyncInterval > 0 || (_is_desc_modified && SUCCEEDED(_orig->GetDesc(&desc)) && (desc.Flags & DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING) == 0))
 			PresentFlags &= ~DXGI_PRESENT_ALLOW_TEARING;
 	}
 #endif
@@ -775,7 +775,7 @@ HRESULT STDMETHODCALLTYPE DXGISwapChain::ResizeBuffers1(UINT BufferCount, UINT W
 		_orig->GetFullscreenState(&fullscreen, nullptr);
 		g_in_dxgi_runtime = was_in_dxgi_runtime;
 
-		// Restore default parameters to tho original values, rather than leaving them at the last values potentially overriden by an add-on
+		// Restore default parameters to tho original values, rather than leaving them at the last values potentially overridden by an add-on
 		if (0 == BufferCount)
 			BufferCount = _orig_desc.BufferCount;
 		if (DXGI_FORMAT_UNKNOWN == NewFormat)

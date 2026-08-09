@@ -7,7 +7,6 @@
 #include <utf8/unchecked.h>
 #include <Windows.h>
 #include <Shellapi.h>
-#include <dwmapi.h>
 #include <mmsystem.h>
 
 bool reshade::utils::open_explorer(const std::filesystem::path &path)
@@ -28,7 +27,7 @@ bool reshade::utils::execute_command(const std::string &command_line, const std:
 	utf8::unchecked::utf8to16(command_line.cbegin(), command_line.cend(), std::back_inserter(command_line_wide));
 
 	// Check if this is actually a website URL that should be opened in the default web browser via the shell
-	if (command_line.find("http") == 0 && command_line.find_first_of(" \t") == std::string::npos)
+	if (command_line.compare(0, 4, "http") == 0 && command_line.find_first_of(" \t") == std::string::npos)
 		return ShellExecuteW(nullptr, L"open", command_line_wide.c_str(), nullptr, nullptr, SW_SHOWDEFAULT) != nullptr;
 
 	DWORD state_buffer_size;
@@ -122,12 +121,4 @@ void reshade::utils::play_sound_async(const std::filesystem::path &audio_file)
 	if (normalized_audio_file_path.empty() || normalized_audio_file_path.native().length() >= 256)
 		return;
 	PlaySoundW(normalized_audio_file_path.c_str(), nullptr, SND_ASYNC | SND_NOSTOP | SND_FILENAME);
-}
-
-void reshade::utils::set_window_transparency(void *window, bool enabled)
-{
-	DWM_BLURBEHIND blur_behind = {};
-	blur_behind.dwFlags = DWM_BB_ENABLE;
-	blur_behind.fEnable = enabled;
-	DwmEnableBlurBehindWindow(GetAncestor(static_cast<HWND>(window), GA_ROOT), &blur_behind);
 }

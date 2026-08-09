@@ -14,8 +14,6 @@
 #include "ini_file.hpp"
 #include "addon_manager.hpp"
 #include "input.hpp"
-#include "input_gamepad.hpp"
-#include "com_ptr.hpp"
 #include "platform_utils.hpp"
 #include "reshade_api_object_impl.hpp"
 #include <set>
@@ -26,7 +24,6 @@
 #include <cstdio> // std::snprintf
 #include <cstdlib> // std::malloc, std::rand, std::strtod, std::strtol
 #include <cstring> // std::memcpy, std::memset, std::strlen
-#include <charconv> // std::to_chars
 #include <algorithm> // std::all_of, std::copy_n, std::equal, std::fill_n, std::find, std::find_if, std::for_each, std::max, std::min, std::replace, std::remove, std::remove_if, std::reverse, std::search, std::set_symmetric_difference, std::sort, std::stable_sort, std::swap, std::transform
 #include <emmintrin.h>
 #include <smmintrin.h>
@@ -39,7 +36,7 @@
 #include <stb_image_write_hdr_png.h>
 #include <stb_image_resize2.h>
 
-std::string expand_macro_string(const std::string &input, std::vector<std::pair<std::string, std::string>> macros = {})
+std::string expand_macro_string(const std::string &input, std::vector<std::pair<std::string_view, std::string>> macros = {})
 {
 	std::string result;
 
@@ -64,20 +61,15 @@ std::string expand_macro_string(const std::string &input, std::vector<std::pair<
 			}
 		}
 
-		std::string_view replacing(input);
-		replacing = replacing.substr(macro_beg + 1, macro_end - (macro_beg + 1));
-		size_t colon_pos = replacing.find(':');
+		const std::string_view input_macro(input.c_str() + macro_beg + 1, macro_end - (macro_beg + 1));
 
-		std::string name;
-		if (colon_pos == std::string_view::npos)
-			name = replacing;
-		else
-			name = replacing.substr(0, colon_pos);
+		size_t colon_pos = input_macro.find(':');
+		const std::string_view input_macro_name = (colon_pos == std::string_view::npos) ? input_macro : input_macro.substr(0, colon_pos);
 
 		std::string value;
-		for (const std::pair<std::string, std::string> &macro : macros)
+		for (const std::pair<std::string_view, std::string> &macro : macros)
 		{
-			if (_stricmp(name.c_str(), macro.first.c_str()) == 0)
+			if (macro.first == input_macro_name)
 			{
 				value = macro.second;
 				break;
@@ -87,9 +79,8 @@ std::string expand_macro_string(const std::string &input, std::vector<std::pair<
 		// Allow using environment variables alongside macros
 		if (value.empty())
 		{
-			char buf[512] = "";
-			size_t buf_len = 0;
-			if (getenv_s(&buf_len, buf, sizeof(buf) - 1, name.c_str()) == 0)
+			char buf[512] = ""; size_t buf_len = 0;
+			if (getenv_s(&buf_len, buf, sizeof(buf) - 1, std::string(input_macro_name).c_str()) == 0)
 				value = buf;
 		}
 
@@ -99,25 +90,25 @@ std::string expand_macro_string(const std::string &input, std::vector<std::pair<
 		}
 		else
 		{
-			std::string_view param = replacing.substr(colon_pos + 1);
+			const std::string_view input_macro_param = input_macro.substr(colon_pos + 1);
 
-			if (const size_t insert_pos = param.find('$');
+			if (const size_t insert_pos = input_macro_param.find('$');
 				insert_pos != std::string_view::npos)
 			{
-				result += param.substr(0, insert_pos);
+				result += input_macro_param.substr(0, insert_pos);
 				result += value;
-				result += param.substr(insert_pos + 1);
+				result += input_macro_param.substr(insert_pos + 1);
 			}
 			else
 			{
-				result += param;
+				result += input_macro_param;
 			}
 		}
 	}
 
 	return result;
 }
-std::string expand_macro_string(const std::string &input, std::vector<std::pair<std::string, std::string>> macros, std::chrono::system_clock::time_point now)
+static std::string expand_macro_string(const std::string &input, std::vector<std::pair<std::string_view, std::string>> macros, std::chrono::system_clock::time_point now)
 {
 	const auto now_seconds = std::chrono::time_point_cast<std::chrono::seconds>(now);
 
@@ -385,7 +376,7 @@ bool reshade::runtime::on_init()
 	const api::resource_desc back_buffer_desc = _device->get_resource_desc(_swapchain->get_back_buffer(0));
 
 	// Avoid initializing on very small swap chains (e.g. implicit swap chain in The Sims 4, which is not used to present in windowed mode)
-	if (back_buffer_desc.texture.width <= 16 && back_buffer_desc.texture.height <= 16)
+	if (back_buffer_desc.texture.width < 160 && back_buffer_desc.texture.height < 120)
 		return false;
 
 	_width = back_buffer_desc.texture.width;
@@ -566,19 +557,11 @@ bool reshade::runtime::on_init()
 	{
 		const input::window_handle window = get_hwnd();
 		if (window != nullptr && !_is_vr)
-		{
 			_input = input::register_window(window);
-			_primary_input_handler = _input.use_count() == 1;
-		}
 		else
-		{
 			_input.reset();
-			_primary_input_handler = _input_gamepad != nullptr;
-		}
 
-		// GTK 3 enables transparency for windows, which messes with effects that do not return an alpha value, so disable that again
-		if (window != nullptr)
-			utils::set_window_transparency(window, false);
+		_primary_input_handler = _input.use_count() == 1 || (_input == nullptr && _input_gamepad != nullptr);
 	}
 
 	// Reset frame count to zero so effects are loaded in 'update_effects'
@@ -3336,8 +3319,7 @@ bool reshade::runtime::create_effect(size_t effect_index, size_t permutation_ind
 	return true;
 
 exit_failure:
-	_device->free_descriptor_tables(static_cast<uint32_t>(shader_resource_view_tables.size()), shader_resource_view_tables.data());
-	_device->free_descriptor_tables(static_cast<uint32_t>(unordered_access_view_tables.size()), unordered_access_view_tables.data());
+	destroy_effect(effect_index, false);
 
 	return false;
 }
@@ -4610,7 +4592,7 @@ void reshade::runtime::render_technique(technique &tech, api::command_list *cmd_
 
 		// Evaluate queries from oldest frame in queue
 		if (temp_mem<uint64_t> timestamps(query_count);
-			_device->get_query_heap_results(effect.query_heap, query_base_index, query_count, timestamps.p, sizeof(uint64_t)))
+			_device->get_query_heap_results(effect.query_heap, api::query_type::timestamp, query_base_index, query_count, timestamps.p, sizeof(uint64_t)))
 		{
 			const uint64_t tech_duration = timestamps[1] - timestamps[0];
 			tech.average_gpu_duration.append(tech_duration * 1'000'000'000ull / _timestamp_frequency);

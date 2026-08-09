@@ -9,18 +9,18 @@
 
 reshade::d3d9::swapchain_impl::swapchain_impl(device_impl *device, IDirect3DSwapChain9 *swapchain) :
 	api_object_impl(swapchain),
-	_device_impl(device)
+	_device(device)
 {
 }
 
 reshade::api::device *reshade::d3d9::swapchain_impl::get_device()
 {
-	return _device_impl;
+	return _device;
 }
 
 void *reshade::d3d9::swapchain_impl::get_hwnd() const
 {
-	// Destination window may be temporarily overriden by 'hDestWindowOverride' parameter during present call
+	// Destination window may be temporarily overridden by 'hDestWindowOverride' parameter during present call
 	if (_hwnd != nullptr)
 		return _hwnd;
 
