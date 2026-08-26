@@ -2414,10 +2414,14 @@ void reshade::runtime::draw_gui_home()
 						modified = true;
 					}
 				}
-				if (_auto_save_preset)
+				if (modified)
+				{
+					// AuroraShade "saves" current preset everytime,
+					// but only flush to disk when auto save is enabled or save button is clicked.
 					save_current_preset();
-				else
-					_preset_is_modified |= modified;
+					if (!_auto_save_preset)
+						_preset_is_modified = true;
+				}
 			}
 			ImGui::PopStyleColor(3);
 			if (i != 7)
