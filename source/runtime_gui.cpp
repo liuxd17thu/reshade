@@ -5425,7 +5425,7 @@ void reshade::runtime::draw_technique_editor()
 						auto select_flair_pos = ImGui::GetCursorScreenPos();
 						bool flair_selected = false;
 
-						const std::string import_str = std::string(ICON_FK_DOWNLOAD" ") + _("Import");
+						const std::string import_str = ICON_FK_DOWNLOAD" " + _("Import");
 						if (ImGui::Button(import_str.c_str(), ImVec2(4.5f * ImGui::GetFontSize(), ImGui::GetFrameHeight())))
 							ImGui::OpenPopup("##SelectFrom");
 						ImGui::SetNextWindowSize(ImVec2(9.0f * ImGui::GetFontSize() + _imgui_context->Style.ItemInnerSpacing.x + 2.0f, 0));
@@ -5444,7 +5444,7 @@ void reshade::runtime::draw_technique_editor()
 						ImGui::SameLine(0, 2.0f);
 						select_flair_pos = ImGui::GetCursorScreenPos();
 
-						const std::string export_str = std::string(ICON_FK_UPLOAD" ") + _("Export");
+						const std::string export_str = ICON_FK_UPLOAD" " + _("Export");
 						if (ImGui::Button(export_str.c_str(), ImVec2(4.5f * ImGui::GetFontSize(), ImGui::GetFrameHeight())))
 							ImGui::OpenPopup("##SelectTo");
 						ImGui::SetNextWindowSize(ImVec2(9.0f * ImGui::GetFontSize() + _imgui_context->Style.ItemInnerSpacing.x + 2.0f, 0));
