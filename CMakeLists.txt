@@ -12,12 +12,21 @@ add_subdirectory(deps)
 add_library(ReShade SHARED)
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-  set(RESHADE_SUFFIX 64)
+  set(RESHADE_NAME ReShade64)
+  set(RESHADE_PLATFORM_DEFINE _WIN64)
+  set_target_properties(ReShade PROPERTIES OUTPUT_NAME ${RESHADE_NAME})
 else()
-  set(RESHADE_SUFFIX 32)
+  set(RESHADE_NAME ReShade32)
+  set(RESHADE_PLATFORM_DEFINE _WIN32)
+  set_target_properties(ReShade PROPERTIES OUTPUT_NAME ${RESHADE_NAME})
 endif()
-set_target_properties(ReShade PROPERTIES PREFIX "")
-set_target_properties(ReShade PROPERTIES SUFFIX ${RESHADE_SUFFIX}${CMAKE_SHARED_LIBRARY_SUFFIX})
+#set_target_properties(ReShade PROPERTIES PREFIX "")
+#set_target_properties(ReShade PROPERTIES SUFFIX ${CMAKE_SHARED_LIBRARY_SUFFIX})
+
+# res/version.rc2 picks "AuroraShade64.dll" / "for 64-bit" via _WIN64, but rc.exe only
+# predefines _WIN32 and never _WIN64. Without this the version resource of a 64-bit build
+# would claim to be the 32-bit one. ReShade.vcxproj passes these to ResourceCompile too.
+set_source_files_properties(res/resource.rc PROPERTIES COMPILE_DEFINITIONS "${RESHADE_PLATFORM_DEFINE}")
 
 set(RESHADE_SOURCE
   examples/09-depth/generic_depth_addon.cpp
@@ -309,6 +318,7 @@ target_compile_definitions(
     _GDI32_
     WINSOCK_API_LINKAGE=
     _UNICODE
+    UNICODE
     _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS
     $<$<CONFIG:Debug>:_DEBUG>
     $<$<CONFIG:Release>:NDEBUG>
@@ -387,6 +397,7 @@ target_compile_definitions(
   ReShadeFX
   PRIVATE
     _UNICODE
+    UNICODE
 )
 
 if(MSVC)
