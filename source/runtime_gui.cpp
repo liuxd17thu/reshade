@@ -24,6 +24,7 @@
 #include <cstdlib> // std::strtol
 #include <cstring> // std::memcmp, std::memcpy
 #include <algorithm> // std::any_of, std::count_if, std::find, std::find_if, std::max, std::min, std::replace, std::rotate, std::search, std::swap, std::transform
+#include <set>
 #include <stb_image.h>
 
 extern bool resolve_path(std::filesystem::path &path, std::error_code &ec, const std::filesystem::path &base = g_reshade_base_path);
@@ -2419,6 +2420,10 @@ void reshade::runtime::draw_gui_home()
 				{
 					// AuroraShade "saves" current preset everytime,
 					// but only flush to disk when auto save is enabled or save button is clicked.
+					// This has to happen even when auto save is disabled, since 'load_current_preset' re-derives
+					// the technique states from the preset after every effect/permutation load round, which would
+					// otherwise silently revert this toggle (e.g. when an add-on renders effects on further
+					// render targets and therefore requires additional effect permutations to be compiled).
 					save_current_preset();
 					if (!_auto_save_preset)
 						_preset_is_modified = true;
@@ -5213,7 +5218,16 @@ void reshade::runtime::draw_technique_editor()
 
 	size_t remove_effect_dup = std::numeric_limits<size_t>::max();
 	size_t make_effect_dup = std::numeric_limits<size_t>::max();
+	size_t remove_preset_section = std::numeric_limits<size_t>::max();
 	std::string make_dup_name = "";
+
+	// Collect effects which 'save_current_preset' writes values for (same conditions as there), only the others can have their sections removed
+	std::set<size_t> saved_effect_indices;
+	for (const technique &saved_tech : _techniques)
+		if (!saved_tech.annotation_as_uint("nosave") &&
+			(saved_tech.enabled || saved_tech.toggle_key_data[0] != 0 || (saved_tech.group_id > 0 && saved_tech.group_id <= 8)))
+			saved_effect_indices.insert(saved_tech.effect_index);
+
 	for (size_t index = 0; index < _technique_sorting.size(); ++index)
 	{
 		const size_t technique_index = _technique_sorting[index];
@@ -5268,10 +5282,18 @@ void reshade::runtime::draw_technique_editor()
 				if (tech.group_id > 0 && tech.group_id < 9)
 					side_bar_color = group_button_color[tech.group_id - 1].Value;
 
-				ImGui::PushStyleColor(ImGuiCol_Button, side_bar_color);
-				ImGui::PushStyleColor(ImGuiCol_ButtonActive, side_bar_color * ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
-				ImGui::PushStyleColor(ImGuiCol_ButtonHovered, side_bar_color);
-
+				if (effect.created)
+				{
+					ImGui::PushStyleColor(ImGuiCol_Button, side_bar_color);
+					ImGui::PushStyleColor(ImGuiCol_ButtonActive, side_bar_color * ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
+					ImGui::PushStyleColor(ImGuiCol_ButtonHovered, side_bar_color);
+				}
+				else
+				{
+					ImGui::PushStyleColor(ImGuiCol_Button, side_bar_color * ImVec4(1.0f, 1.0f, 1.0f, 0.0f));
+					ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, _font_size / 13.0f);
+					ImGui::PushStyleColor(ImGuiCol_Border, side_bar_color);
+				}
 				ImGui::BeginDisabled(!effect.rendering || (effect.uniforms.empty() && effect.definitions.empty()));
 				if (ImGui::ButtonEx(("##" + label).c_str(), ImVec2(ImGui::GetFrameHeight() * 0.35f, 0.0f), ImGuiButtonFlags_NoHoveredOnFocus))
 				{
@@ -5279,7 +5301,8 @@ void reshade::runtime::draw_technique_editor()
 						_focused_effect = tech.effect_index;
 				}
 				ImGui::EndDisabled();
-				ImGui::PopStyleColor(3);
+				ImGui::PopStyleColor(effect.created ? 3 : 2);
+				ImGui::PopStyleVar(effect.created ? 0 : 1);
 				ImGui::SameLine(0.0f, _imgui_context->Style.ItemInnerSpacing.x);
 
 				if (bool status = tech.enabled;
@@ -5342,17 +5365,42 @@ void reshade::runtime::draw_technique_editor()
 					}
 					if (make_effect_dup != std::numeric_limits<size_t>::max())
 						ImGui::CloseCurrentPopup();
-					ImGui::SameLine(ImGui::GetContentRegionAvail().x - button_size + _imgui_context->Style.ItemSpacing.x);
-					if (effect.dup_id.empty())
-						ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
-					if (ImGui::Button(ICON_FK_MINUS ICON_FK_COPY, ImVec2(button_size, 0)))
+					if (!effect.dup_id.empty())
 					{
-						remove_effect_dup = tech.effect_index;
+						ImGui::SameLine(ImGui::GetContentRegionAvail().x - button_size + _imgui_context->Style.ItemSpacing.x);
+						if (ImGui::Button(ICON_FK_MINUS ICON_FK_COPY, ImVec2(button_size, 0)))
+						{
+							remove_effect_dup = tech.effect_index;
+							ImGui::CloseCurrentPopup();
+						}
+					}
+				}
+
+				// Check if maybe removable: no technique of the same effect is enabled, has a group or a shortcut key
+				if (_aurora_feature != 3 || effect.dup_id.empty())
+				{
+					bool force_removable = ini_file::load_cache(_current_preset_path).has(effect.source_file.filename().u8string());
+					bool removable = force_removable;
+					for (const auto &t : _techniques)
+					{
+						if (!removable)
+							break;
+						if (t.effect_index != tech.effect_index)
+							continue;
+						if (t.enabled || t.toggle_key_data[0] != 0 || (t.group_id > 0 && t.group_id < 9))
+							removable = false;
+					}
+					ImGui::SameLine(ImGui::GetContentRegionAvail().x - button_size + _imgui_context->Style.ItemSpacing.x);
+					// Offer to drop the preset values of this effect when nothing keeps them alive anyway (duplicates in GShade 3 mode are removed with the button above instead)
+					ImGui::BeginDisabled(!(removable || force_removable && _imgui_context->IO.KeyShift));
+					if (ImGui::Button(ICON_FK_TRASH, ImVec2(button_size, 0)))
+					{
+						remove_preset_section = tech.effect_index;
 						ImGui::CloseCurrentPopup();
 					}
-					if (effect.dup_id.empty())
-						ImGui::PopItemFlag();
+					ImGui::EndDisabled();
 				}
+
 				for (int i = 0; i < 8; ++i)
 				{
 					if (i != 0)
@@ -5614,6 +5662,49 @@ void reshade::runtime::draw_technique_editor()
 			}
 		}
 	}
+
+	// Remove all preset sections belonging to an effect which no longer has any saved technique
+	if (remove_preset_section < _effects.size())
+	{
+		const effect &effect = _effects[remove_preset_section];
+		const std::string raw_effect_name = effect.source_file.filename().u8string();
+
+		ini_file &preset = ini_file::load_cache(_current_preset_path);
+
+		// Remove the section of the effect itself and all of its variation sections (in GShade 4 mode there is one per preset variation, including stale ones)
+		// Note that sections of duplicates in GShade 3 mode ('<name>.fx+<id>') are not touched, they are removed with the duplicate button instead
+		std::vector<std::string> section_names;
+		preset.get_section_names(section_names);
+		for (const std::string &section_name : section_names)
+			if (section_name == raw_effect_name ||
+				(section_name.size() > raw_effect_name.size() && section_name.compare(0, raw_effect_name.size(), raw_effect_name) == 0 && section_name[raw_effect_name.size()] == '|'))
+				preset.remove_section(section_name);
+
+		// Remove any leftover shortcut keys of the techniques in the effect (uniform keys live inside the removed sections)
+		for (const technique &tech : _techniques)
+			if (tech.effect_index == remove_preset_section)
+				preset.remove_key({}, "Key" + tech.name + '@' + raw_effect_name + build_postfix(effect, _aurora_feature == 3 ? 3 : 0));
+
+		// Reset the effect to the defaults from the effect file
+		_preset_preprocessor_definitions[raw_effect_name].clear();
+		_effects[remove_preset_section].definition_bindings.clear();
+		load_current_preset();
+
+		// Recompile so the effect uses the default preprocessor definitions again
+		if (!is_loading())
+			reload_effect(remove_preset_section);
+
+		if (_auto_save_preset)
+		{
+			save_current_preset();
+			ini_file::flush_cache(_current_preset_path);
+		}
+		else
+		{
+			_preset_is_modified = true;
+		}
+	}
+
 	if (_aurora_feature == 3) {
 		// Build effect duplication
 		auto size = _effects.size();
