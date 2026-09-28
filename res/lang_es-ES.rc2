@@ -12,6 +12,11 @@ LANGUAGE 10, 3
 STRINGTABLE
 BEGIN
 
+47131 "Conservar alfa"
+53692 "Alfa = 1"
+9132 "RGB = 1 (alfa en escala de grises)"
+59722 "Vista previa: conservar alfa, ignorar alfa o mostrar alfa en escala de grises."
+
 6954 "Compilando (%zu efectos restantes) ... Puede que esto tarde un rato. La aplicación puede no responder por un tiempo."
 60691 "No está disponible la entrada del teclado o mouse."
 36869 "Usá un Joystick y apretá 'L1 + R1 + START' para abrir el menú de configuración."

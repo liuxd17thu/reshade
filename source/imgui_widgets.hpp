@@ -18,6 +18,10 @@ namespace reshade
 
 namespace reshade::imgui
 {
+	// Internal draw command marker, handled by runtime::render_imgui_draw_data.
+	void set_texture_preview_mode(const ImDrawList *draw_list, const ImDrawCmd *cmd);
+	void add_image(ImDrawList *draw_list, ImTextureID texture, const ImVec2 &min, const ImVec2 &max, ImU32 tint_col, uint8_t mode);
+
 	/// <summary>
 	/// Adds a widget to manage a list of directory paths.
 	/// </summary>
@@ -137,7 +141,7 @@ namespace reshade::imgui
 	/// <param name="user_texture_id">Texture handle to be rendered as the image.</param>
 	/// <param name="size">Size of the widget.</param>
 	/// <param name="tint_col">Optional tint color mulitplied with each pixel of the image during rendering.</param>
-	void image_with_checkerboard_background(ImTextureID user_texture_id, const ImVec2 &size, ImU32 tint_col = 0xFFFFFFFF);
+	void image_with_checkerboard_background(ImTextureID user_texture_id, const ImVec2 &size, ImU32 tint_col = 0xFFFFFFFF, uint8_t mode = 0);
 
 	/// <summary>
 	/// Adds a spinner in style of the ReShade logo, to indicate loading progress.

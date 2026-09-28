@@ -12,6 +12,11 @@ LANGUAGE 31, 1
 STRINGTABLE
 BEGIN
 
+47131 "Alfayı koru"
+53692 "Alfa = 1"
+9132 "RGB = 1 (alfa gri tonlamalı)"
+59722 "Doku önizlemesi: alfayı koru, yok say veya gri tonlamalı göster."
+
 // 55975 "Yeni bir güncelleme mevcut! Lütfen %s adresine giderek yeni sürümü (v%u.%u.%u) yükleyin."
 // 37123 "Haberler, güncellemeler, efektler ve tartışmalar için %s adresini ziyaret edin."
 6954 "Derleniyor (%zu efekt kaldı)... Bu biraz sürebilir. Uygulama bir süre yanıt vermeyebilir."

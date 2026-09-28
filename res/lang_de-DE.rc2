@@ -12,6 +12,11 @@ LANGUAGE 7, 1
 STRINGTABLE
 BEGIN
 
+47131 "Alpha beibehalten"
+53692 "Alpha = 1"
+9132 "RGB = 1 (Alpha in Graustufen)"
+59722 "Texturvorschau: Alpha beibehalten, ignorieren oder als Graustufen anzeigen."
+
 6954 "Kompiliere (%zu Effekte verbleibend) ... Das kann ein bisschen dauern. Die Applikation könnte kurzzeitig nicht reagieren."
 60691 "Keine Tastatur- oder Mauseingabe verfügbar."
 36869 "Benutze stattdessen ein Gamepad: 'Linke + Rechte Schultertasten + Start-Taste' drücken, um das Konfigurationsmenü zu öffnen."

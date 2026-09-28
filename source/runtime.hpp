@@ -8,6 +8,7 @@
 #include "reshade_api.hpp"
 #include "state_block.hpp"
 #include "imgui_code_editor.hpp"
+#include "imgui_widgets.hpp"
 #include <atomic>
 #include <thread>
 #include <chrono>
@@ -521,7 +522,7 @@ namespace reshade
 		#pragma region Overlay Statistics
 		bool _gather_gpu_statistics = false;
 		size_t _preview_texture = std::numeric_limits<size_t>::max();
-		unsigned int _preview_size[3] = { 0, 0, 0xFFFFFFFF };
+		unsigned int _preview_size[2] = { 0, 0 };
 		uint64_t _timestamp_frequency = 0;
 		#pragma endregion
 

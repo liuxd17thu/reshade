@@ -12,6 +12,11 @@ LANGUAGE 21, 1
 STRINGTABLE
 BEGIN
 
+47131 "Zachowaj alfę"
+53692 "Alfa = 1"
+9132 "RGB = 1 (alfa w skali szarości)"
+59722 "Podgląd tekstury: zachowaj alfę, ignoruj ją lub pokaż w skali szarości."
+
 6954 "Kompiluję (%zu efekty w toku) ... Może to chwilę potrwać. Aplikacja może przez jakiś czas nie reagować."
 60691 "Brak dostępu do klawiatury lub myszy."
 36869 "Zamiast tego użyj kontrolera: wciśnij 'LB, RB i Start', aby otworzyć okno ustawień."

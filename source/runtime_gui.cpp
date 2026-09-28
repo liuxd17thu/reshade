@@ -1696,10 +1696,11 @@ void reshade::runtime::draw_gui()
 			preview_max.y = (preview_max.y * 0.5f) + (_preview_size[1] * 0.5f);
 		}
 
-		const api::resource_view srv = _textures[_preview_texture].srv[0];
+		const texture &tex = _textures[_preview_texture];
+		const api::resource_view srv = tex.srv[0];
 		assert(srv != 0);
 
-		ImGui::FindWindowByName("Viewport")->DrawList->AddImage(srv.handle, preview_min, preview_max, ImVec2(0, 0), ImVec2(1, 1), _preview_size[2]);
+		imgui::add_image(ImGui::FindWindowByName("Viewport")->DrawList, srv.handle, preview_min, preview_max, tex.preview_color, tex.preview_mode);
 	}
 
 #if RESHADE_LOCALIZATION
@@ -3387,6 +3388,7 @@ void reshade::runtime::draw_gui_statistics()
 		};
 
 		const float total_width = ImGui::GetContentRegionAvail().x;
+
 		int texture_count = 0;
 		const unsigned int num_columns = std::max(1u, static_cast<unsigned int>(std::ceil(total_width / (55.0f * ImGui::GetFontSize()))));
 		const float single_image_width = (total_width / num_columns) - 5.0f;
@@ -3397,7 +3399,7 @@ void reshade::runtime::draw_gui_statistics()
 
 		for (size_t texture_index = 0; texture_index < _textures.size(); ++texture_index)
 		{
-			const texture &tex = _textures[texture_index];
+			texture &tex = _textures[texture_index];
 
 			if (tex.resource == 0 || !tex.semantic.empty() ||
 				!std::any_of(tex.shared.cbegin(), tex.shared.cend(),
@@ -3547,6 +3549,12 @@ void reshade::runtime::draw_gui_statistics()
 
 			if (tex.type == reshadefx::texture_type::texture_2d)
 			{
+				// int preview_mode = tex.preview_mode;
+				// ImGui::SetNextItemWidth(std::min(single_image_width, 24.0f * ImGui::GetFontSize()));
+				// if (ImGui::SliderInt("##texture_preview_mode", &preview_mode, 0, 2, preview_modes[preview_mode], ImGuiSliderFlags_NoInput))
+				// 	tex.preview_mode = static_cast<texture_preview_mode>(preview_mode);
+				// ImGui::SetItemTooltip(_("Texture preview: keep alpha, ignore alpha, or display alpha as grayscale."));
+
 				if (bool check = _preview_texture == texture_index && _preview_size[0] == 0; ImGui::RadioButton(_("Preview scaled"), check))
 				{
 					_preview_size[0] = 0;
@@ -3561,33 +3569,44 @@ void reshade::runtime::draw_gui_statistics()
 					_preview_texture = !check ? texture_index : std::numeric_limits<size_t>::max();
 				}
 
-				bool r = (_preview_size[2] & 0x000000FF) != 0;
-				bool g = (_preview_size[2] & 0x0000FF00) != 0;
-				bool b = (_preview_size[2] & 0x00FF0000) != 0;
+				bool r = (tex.preview_color & 0x000000FF) != 0;
+				bool g = (tex.preview_color & 0x0000FF00) != 0;
+				bool b = (tex.preview_color & 0x00FF0000) != 0;
 				ImGui::SameLine();
 				ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(_imgui_context->Style.FramePadding.x, 0));
+				if (format_info.components == 4)
+				{
+					if (ImGui::ButtonEx(tex.preview_mode == 1 ? "1##A" : "A", ImVec2(0, 0), ImGuiButtonFlags_AlignTextBaseLine))
+					{
+						tex.preview_mode = (tex.preview_mode + 1) % 3;
+					}
+					ImGui::SameLine(0, 1);
+				}
+				ImGui::BeginDisabled(tex.preview_mode == 2);
 				ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1, 0, 0, 1));
-				imgui::toggle_button("R", r, 0.0f, ImGuiButtonFlags_AlignTextBaseLine);
+				imgui::toggle_button(tex.preview_mode == 2 ? "1##R" : "R", r, 0.0f, ImGuiButtonFlags_AlignTextBaseLine);
 				ImGui::PopStyleColor();
 				if (format_info.components >= 2)
 				{
 					ImGui::SameLine(0, 1);
 					ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0, 1, 0, 1));
-					imgui::toggle_button("G", g, 0.0f, ImGuiButtonFlags_AlignTextBaseLine);
+					imgui::toggle_button(tex.preview_mode == 2 ? "1##G" : "G", g, 0.0f, ImGuiButtonFlags_AlignTextBaseLine);
 					ImGui::PopStyleColor();
 					if (format_info.components >= 3)
 					{
 						ImGui::SameLine(0, 1);
 						ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0, 0, 1, 1));
-						imgui::toggle_button("B", b, 0.0f, ImGuiButtonFlags_AlignTextBaseLine);
+						imgui::toggle_button(tex.preview_mode == 2 ? "1##B" : "B", b, 0.0f, ImGuiButtonFlags_AlignTextBaseLine);
 						ImGui::PopStyleColor();
 					}
 				}
 				ImGui::PopStyleVar();
-				_preview_size[2] = (r ? 0x000000FF : 0) | (g ? 0x0000FF00 : 0) | (b ? 0x00FF0000 : 0) | 0xFF000000;
+				ImGui::EndDisabled();
+
+				tex.preview_color = (r ? 0x000000FF : 0) | (g ? 0x0000FF00 : 0) | (b ? 0x00FF0000 : 0) | 0xFF000000;
 
 				const float aspect_ratio = static_cast<float>(tex.width) / static_cast<float>(tex.height);
-				imgui::image_with_checkerboard_background(tex.srv[0].handle, ImVec2(single_image_width, single_image_width / aspect_ratio), _preview_size[2]);
+				imgui::image_with_checkerboard_background(tex.srv[0].handle, ImVec2(single_image_width, single_image_width / aspect_ratio), tex.preview_color, tex.preview_mode);
 			}
 
 			ImGui::EndGroup();
@@ -5879,7 +5898,7 @@ bool reshade::runtime::init_imgui_resources()
 			layout_params[num_layout_params++] = api::descriptor_range { 0, 0, 0, 1, api::shader_stage::pixel, 1, api::descriptor_type::shader_resource_view }; // t0
 		}
 
-		layout_params[num_layout_params++] = api::constant_range { 0, 0, 0, 18, api::shader_stage::vertex | api::shader_stage::pixel }; // b0
+		layout_params[num_layout_params++] = api::constant_range { 0, 0, 0, 20, api::shader_stage::vertex | api::shader_stage::pixel }; // b0
 
 		if (!_device->create_pipeline_layout(num_layout_params, layout_params, &_imgui_pipeline_layout))
 		{
@@ -6142,10 +6161,12 @@ void reshade::runtime::render_imgui_draw_data(api::command_list *cmd_list, ImDra
 	const bool adjust_half_pixel = _renderer_id < 0xa000; // Bake half-pixel offset into matrix in D3D9
 	const bool depth_clip_zero_to_one = (_renderer_id & 0x10000) == 0;
 
-	const struct {
+	struct {
 		float ortho_projection[16];
 		api::color_space color_space;
 		float hdr_overlay_brightness;
+		float texture_preview_mode;
+		float padding; // Keep D3D9 float registers and OpenGL std140 aligned to 16 bytes.
 	} push_constants = {
 		{
 			2.0f / draw_data->DisplaySize.x, 0.0f, 0.0f, 0.0f,
@@ -6155,12 +6176,19 @@ void reshade::runtime::render_imgui_draw_data(api::command_list *cmd_list, ImDra
 			(flip_y ? -1 : 1) * (2 * draw_data->DisplayPos.y + draw_data->DisplaySize.y + (adjust_half_pixel ? 1.0f : 0.0f)) / draw_data->DisplaySize.y, depth_clip_zero_to_one ? 0.5f : 0.0f, 1.0f,
 		},
 		_hdr_overlay_overwrite_color_space != api::color_space::unknown ? _hdr_overlay_overwrite_color_space : _back_buffer_color_space,
-		_hdr_overlay_brightness
+		_hdr_overlay_brightness,
+		0.0f, 0.0f
 	};
+	static_assert(sizeof(push_constants) == 80);
+	static_assert(offsetof(decltype(push_constants), texture_preview_mode) == 72);
 
 	const bool has_combined_sampler_and_view = _device->check_capability(api::device_caps::sampler_with_resource_view);
 
-	cmd_list->push_constants(api::shader_stage::vertex | api::shader_stage::pixel, _imgui_pipeline_layout, has_combined_sampler_and_view ? 1 : 2, 0, (_renderer_id != 0x9000 ? sizeof(push_constants) : sizeof(push_constants.ortho_projection)) / 4, &push_constants);
+	// Upload the whole block on mode changes too: OpenGL requires first == 0.
+	const auto upload_constants = [&]() {
+		cmd_list->push_constants(api::shader_stage::vertex | api::shader_stage::pixel, _imgui_pipeline_layout, has_combined_sampler_and_view ? 1 : 2, 0, sizeof(push_constants) / 4, &push_constants);
+	};
+	upload_constants();
 	if (!has_combined_sampler_and_view)
 		cmd_list->push_descriptors(api::shader_stage::pixel, _imgui_pipeline_layout, 0, api::descriptor_table_update { {}, 0, 0, 1, api::descriptor_type::sampler, &_imgui_sampler_state });
 
@@ -6173,7 +6201,13 @@ void reshade::runtime::render_imgui_draw_data(api::command_list *cmd_list, ImDra
 		{
 			if (cmd.UserCallback != nullptr)
 			{
-				cmd.UserCallback(draw_list, &cmd);
+				if (cmd.UserCallback == imgui::set_texture_preview_mode)
+				{
+					push_constants.texture_preview_mode = *static_cast<const float *>(cmd.UserCallbackData);
+					upload_constants();
+				}
+				else
+					cmd.UserCallback(draw_list, &cmd);
 				continue;
 			}
 

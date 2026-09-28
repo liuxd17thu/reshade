@@ -12,6 +12,11 @@ LANGUAGE 36, 1
 STRINGTABLE
 BEGIN
 
+47131 "Ohrani alfo"
+53692 "Alfa = 1"
+9132 "RGB = 1 (alfa v sivinah)"
+59722 "Predogled teksture: ohrani alfo, prezri alfo ali jo prikaži v sivinah."
+
 // 55975 "Posodobitev je na voljo! Obiščite %s in namestite novo različico (v%u.%u.%u)."
 // 37123 "Obiščite %s za novice, posodobitve, učinke in razprave."
 6954 "Prevajanje (%zu učinkov ostaja) ... To lahko traja nekaj časa. Aplikacija lahko za nekaj časa ne bo odzivna."

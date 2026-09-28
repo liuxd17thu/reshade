@@ -71,6 +71,8 @@ namespace reshade
 
 		std::vector<size_t> shared;
 		bool loaded = false;
+		uint8_t preview_mode = 0;
+		uint32_t preview_color = 0xFFFFFFFF; // RGB channel selection for this texture in the statistics overlay.
 
 		api::resource resource = {};
 		api::resource_view srv[2] = {};

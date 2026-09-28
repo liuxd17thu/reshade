@@ -12,6 +12,11 @@ LANGUAGE 9, 1
 STRINGTABLE
 BEGIN
 
+47131 "Keep alpha"
+53692 "Alpha = 1"
+9132 "RGB = 1 (alpha grayscale)"
+59722 "Texture preview: keep alpha, ignore alpha, or display alpha as grayscale."
+
 6954 "Compiling (%zu effects remaining) ... This might take a while. The application could become unresponsive for some time."
 60691 "No keyboard or mouse input available."
 36869 "Use gamepad instead: Press 'left + right shoulder + start button' to open the configuration overlay."

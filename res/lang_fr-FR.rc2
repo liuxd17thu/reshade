@@ -12,6 +12,11 @@ LANGUAGE 12, 1
 STRINGTABLE
 BEGIN
 
+47131 "Conserver alpha"
+53692 "Alpha = 1"
+9132 "RGB = 1 (alpha en niveaux de gris)"
+59722 "Aperçu de texture : conserver alpha, ignorer alpha ou afficher alpha en niveaux de gris."
+
 6954 "Compilation en cours (%zu effets restants) ... Cela peut prendre un moment. L'application pourrait ne pas répondre pendant une certaine durée."
 60691 "Aucun clavier ou souris disponible."
 36869 "Utilisez une manette à la place : Appuyez sur 'Gachette Gauche + Gachette Droite + Bouton Start' pour ouvrir l'interface en surimpression."

@@ -12,6 +12,7 @@ layout(push_constant) uniform PushConstants
 	// Offset from the orthographic projection matrix used in the vertex shader
 	layout(offset = 64) uint color_space;
 	layout(offset = 68) float hdr_overlay_brightness;
+	layout(offset = 72) float texture_preview_mode;
 };
 
 #include "imgui_hdr.hlsl"
@@ -32,5 +33,9 @@ void main()
 	}
 
 	col = texture(s0, i.tex);
+	if (texture_preview_mode == 1.0)
+		col.a = 1.0;
+	else if (texture_preview_mode == 2.0)
+		col = vec4(clamp(col.aaa, 0.0, 1.0), 1.0);
 	col *= vcol; // Blend vertex color and texture
 }

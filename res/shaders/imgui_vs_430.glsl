@@ -7,9 +7,13 @@ layout(location = 2) in vec4 col;
 out vec4 frag_col;
 out vec2 frag_tex;
 
-layout(binding = 0) uniform PushConstants
+layout(std140, binding = 0) uniform PushConstants
 {
 	mat4 ortho_projection;
+	uint color_space;
+	float hdr_overlay_brightness;
+	float texture_preview_mode;
+	float padding;
 };
 
 void main()

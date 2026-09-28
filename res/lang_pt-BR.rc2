@@ -12,6 +12,11 @@ LANGUAGE 22, 1
 STRINGTABLE
 BEGIN
 
+47131 "Manter alfa"
+53692 "Alfa = 1"
+9132 "RGB = 1 (alfa em tons de cinza)"
+59722 "Prévia da textura: manter alfa, ignorar alfa ou exibir alfa em tons de cinza."
+
 55975 "Uma atualização está disponível! Por favor, visite %s e instale a nova versão (v%u.%u.%u)."
 37123 "Visite %s para notícias, atualizações, efeitos e discussões."
 6954 "Compilando (%zu efeitos restantes) ... Isso pode levar um tempo. O aplicativo pode ficar sem resposta por algum tempo."

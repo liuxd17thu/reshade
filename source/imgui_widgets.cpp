@@ -1052,12 +1052,47 @@ bool reshade::imgui::slider_for_alpha_value(const char *label, float *v)
 	return res;
 }
 
-void reshade::imgui::image_with_checkerboard_background(ImTextureID user_texture_id, const ImVec2 &size, ImU32 tint_col)
+void reshade::imgui::set_texture_preview_mode(const ImDrawList *, const ImDrawCmd *)
 {
-	ImDrawList *const draw_list = ImGui::GetWindowDrawList();
+	// The runtime handles this marker without invoking it.
+}
+
+void reshade::imgui::add_image(ImDrawList *draw_list, ImTextureID texture, const ImVec2 &min, const ImVec2 &max, ImU32 tint_col, uint8_t mode)
+{
+	// Copy the value into the draw list so later UI changes cannot affect queued images.
+	float shader_mode = static_cast<float>(mode);
+	if (mode != 0) // texture_preview_mode::rgba
+		draw_list->AddCallback(set_texture_preview_mode, &shader_mode, sizeof(shader_mode));
+
+	if (mode == 2) // texture_preview_mode::alpha
+		tint_col = (tint_col & IM_COL32_A_MASK) | IM_COL32(255, 255, 255, 0);
+	draw_list->AddImage(texture, min, max, ImVec2(0, 0), ImVec2(1, 1), tint_col);
+
+	if (mode != 0) // texture_preview_mode::rgba
+	{
+		shader_mode = 0.0f;
+		draw_list->AddCallback(set_texture_preview_mode, &shader_mode, sizeof(shader_mode));
+	}
+}
+
+void reshade::imgui::image_with_checkerboard_background(ImTextureID user_texture_id, const ImVec2 &size, ImU32 tint_col, uint8_t mode)
+{
+	ImGuiWindow *const window = ImGui::GetCurrentWindow();
+	if (window->SkipItems)
+		return;
+
+	const ImVec2 padding(ImGui::GetStyle().ImageBorderSize, ImGui::GetStyle().ImageBorderSize);
+	const ImRect bb(window->DC.CursorPos, window->DC.CursorPos + size + padding * 2.0f);
+	ImGui::ItemSize(bb);
+	if (!ImGui::ItemAdd(bb, 0))
+		return;
+
+	ImDrawList *const draw_list = window->DrawList;
+	if (padding.x > 0.0f)
+		draw_list->AddRect(bb.Min, bb.Max, ImGui::GetColorU32(ImGuiCol_Border), 0.0f, ImDrawFlags_None, padding.x);
 
 	// Render background checkerboard pattern
-	ImVec2 pos_min = ImGui::GetCursorScreenPos();
+	ImVec2 pos_min = bb.Min + padding;
 	ImVec2 pos_max = pos_min + size; int yi = 0;
 	pos_min = ImMax(pos_min, draw_list->GetClipRectMin());
 	pos_max = ImMin(pos_max, draw_list->GetClipRectMax());
@@ -1073,7 +1108,7 @@ void reshade::imgui::image_with_checkerboard_background(ImTextureID user_texture
 	}
 
 	// Add image on top
-	ImGui::ImageWithBg(user_texture_id, size, ImVec2(0, 0), ImVec2(1, 1), ImColor(), ImColor(tint_col));
+	add_image(draw_list, user_texture_id, bb.Min + padding, bb.Max - padding, ImGui::GetColorU32(tint_col), mode);
 }
 
 void reshade::imgui::spinner(float value, float radius, float thickness)
