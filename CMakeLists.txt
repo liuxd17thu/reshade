@@ -28,6 +28,55 @@ endif()
 # would claim to be the 32-bit one. ReShade.vcxproj passes these to ResourceCompile too.
 set_source_files_properties(res/resource.rc PROPERTIES COMPILE_DEFINITIONS "${RESHADE_PLATFORM_DEFINE}")
 
+# Built-in shaders are embedded by res/resource.rc.
+set(RESHADE_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/res/shaders")
+set(RESHADE_HLSL_SHADERS
+  copy_ps fullscreen_vs
+  imgui_ps_3_0 imgui_ps_4_0
+  imgui_vs_3_0 imgui_vs_4_0
+  mipmap_cs_5_0
+)
+if(CMAKE_GENERATOR MATCHES "^Visual Studio")
+  set_source_files_properties(res/shaders/copy_ps.hlsl res/shaders/imgui_ps_4_0.hlsl PROPERTIES VS_SHADER_TYPE Pixel VS_SHADER_MODEL 4.0)
+  set_source_files_properties(res/shaders/fullscreen_vs.hlsl res/shaders/imgui_vs_4_0.hlsl PROPERTIES VS_SHADER_TYPE Vertex VS_SHADER_MODEL 4.0)
+  set_source_files_properties(res/shaders/imgui_ps_3_0.hlsl PROPERTIES VS_SHADER_TYPE Pixel VS_SHADER_MODEL 3.0)
+  set_source_files_properties(res/shaders/imgui_vs_3_0.hlsl PROPERTIES VS_SHADER_TYPE Vertex VS_SHADER_MODEL 3.0)
+  set_source_files_properties(res/shaders/mipmap_cs_5_0.hlsl PROPERTIES VS_SHADER_TYPE Compute VS_SHADER_MODEL 5.0)
+  foreach(shader IN LISTS RESHADE_HLSL_SHADERS)
+    set(source "${RESHADE_SHADER_DIR}/${shader}.hlsl")
+    set(output "${RESHADE_SHADER_DIR}/${shader}.cso")
+    set_source_files_properties("${source}" PROPERTIES VS_SHADER_ENTRYPOINT main VS_SHADER_OBJECT_FILE_NAME "${output}")
+    target_sources(ReShade PRIVATE "${source}")
+  endforeach()
+endif()
+
+find_program(GLSLANG_VALIDATOR NAMES glslangValidator HINTS "$ENV{VK_SDK_PATH}/Bin" "$ENV{VULKAN_SDK}/Bin")
+if(GLSLANG_VALIDATOR)
+  foreach(shader IN ITEMS ps vs)
+    if(shader STREQUAL "ps")
+      set(stage frag)
+      set(shader_dependencies "${RESHADE_SHADER_DIR}/imgui_hdr.hlsl")
+    else()
+      set(stage vert)
+      set(shader_dependencies)
+    endif()
+    set(source "${RESHADE_SHADER_DIR}/imgui_${shader}_450.glsl")
+    set(output "${RESHADE_SHADER_DIR}/imgui_${shader}_450.spv")
+    add_custom_command(
+      OUTPUT "${output}"
+      COMMAND "${GLSLANG_VALIDATOR}" -V -S "${stage}" -g0 "${source}" -o "${output}"
+              -Dfloat3=vec3 -Dfloat4=vec4 -Dfloat3x3=mat3 -Dfloat4x4=mat4
+      DEPENDS "${source}" ${shader_dependencies}
+      VERBATIM
+    )
+    list(APPEND RESHADE_SPIRV_OUTPUTS "${output}")
+  endforeach()
+  add_custom_target(ReShadeSPIRV DEPENDS ${RESHADE_SPIRV_OUTPUTS})
+  add_dependencies(ReShade ReShadeSPIRV)
+else()
+  message(STATUS "glslangValidator not found; using checked-in SPIR-V shaders")
+endif()
+
 set(RESHADE_SOURCE
   examples/09-depth/generic_depth_addon.cpp
   examples/15-effect_runtime_sync/runtime_sync_addon.cpp
