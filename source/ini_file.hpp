@@ -78,7 +78,7 @@ namespace reshade
 			if (it1 == _sections.end())
 				return false;
 			data.clear();
-			data.resize(it1->second.size());
+			data.reserve(it1->second.size());
 			for (auto &kv : it1->second)
 				data.push_back(kv.first);
 			return true;
