@@ -5687,8 +5687,14 @@ void reshade::runtime::draw_technique_editor()
 				{
 					disable_technique(tech);
 					tech.enabled = false;
+					std::memset(tech.toggle_key_data, 0, sizeof(tech.toggle_key_data));
+					tech.group_id = 0;
 				}
 			}
+
+		// Save the cleared state before loading the preset re-enables techniques with an "enabled" annotation.
+		// This also removes disabled techniques and cleared groups from the preset before they can be restored.
+		save_current_preset();
 
 		// Reset the effect to the defaults from the effect file
 		_preset_preprocessor_definitions[raw_effect_name].clear();
@@ -5699,7 +5705,6 @@ void reshade::runtime::draw_technique_editor()
 		if (!is_loading())
 			reload_effect(remove_preset_section);
 
-		save_current_preset();
 		if (!_auto_save_preset)
 			_preset_is_modified = true;
 	}
