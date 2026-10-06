@@ -23,6 +23,23 @@ endif()
 #set_target_properties(ReShade PROPERTIES PREFIX "")
 #set_target_properties(ReShade PROPERTIES SUFFIX ${CMAKE_SHARED_LIBRARY_SUFFIX})
 
+# Match the MSBuild pre-build event, including the script's Debug handling.
+# Run on every build so a new Git commit is reflected in the version header,
+# and use a dependency target to update it before compilation on all generators.
+if(WIN32)
+  find_program(RESHADE_POWERSHELL NAMES powershell REQUIRED)
+  add_custom_target(ReShadeVersion
+    COMMAND "${RESHADE_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass
+            -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/update_version.ps1"
+            "${CMAKE_CURRENT_SOURCE_DIR}/res/version.h"
+            -config "$<CONFIG>"
+            -platform "$<IF:$<EQUAL:${CMAKE_SIZEOF_VOID_P},8>,x64,Win32>"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    VERBATIM
+  )
+  add_dependencies(ReShade ReShadeVersion)
+endif()
+
 # res/version.rc2 picks "AuroraShade64.dll" / "for 64-bit" via _WIN64, but rc.exe only
 # predefines _WIN32 and never _WIN64. Without this the version resource of a 64-bit build
 # would claim to be the 32-bit one. ReShade.vcxproj passes these to ResourceCompile too.
