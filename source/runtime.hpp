@@ -298,6 +298,7 @@ namespace reshade
 		bool _ui_bind_support = true;
 		int _aurora_feature = 1;
 		bool _aurora_auto_feature = false;
+		bool _simplified_sorting = true;
 
 		std::vector<std::pair<std::string, std::string>> _global_preprocessor_definitions;
 		std::unordered_map<std::string, std::vector<std::pair<std::string, std::string>>> _preset_preprocessor_definitions;

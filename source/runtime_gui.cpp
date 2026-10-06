@@ -1967,8 +1967,10 @@ void reshade::runtime::draw_gui_home()
 				if (ImGui::RadioButton(feature_string[i].c_str(), &_aurora_feature, feature_id[i]))
 					modified = true;
 			}
-			ImGui::Separator();
 			ImGui::Checkbox(_("Auto detect"), &_aurora_auto_feature);
+			ImGui::Separator();
+			ImGui::Checkbox(_("Simplified sorting"), &_simplified_sorting);
+
 			if (modified) {
 				save_config();
 				ImGui::CloseCurrentPopup();
