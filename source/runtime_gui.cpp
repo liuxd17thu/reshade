@@ -5651,7 +5651,7 @@ void reshade::runtime::draw_technique_editor()
 			std::vector<std::string> keys;
 			preset.get_section_keynames("", keys);
 			for (auto & iter : keys)
-				if (iter.substr(0, 3) == "Key" && iter.find(name))
+				if (iter.substr(0, 3) == "Key" && iter.find(name) != std::string::npos)
 					preset.remove_key("", iter);
 
 			destroy_effect(remove_effect_dup);
