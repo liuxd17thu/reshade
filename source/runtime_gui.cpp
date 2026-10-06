@@ -5219,14 +5219,8 @@ void reshade::runtime::draw_technique_editor()
 	size_t remove_effect_dup = std::numeric_limits<size_t>::max();
 	size_t make_effect_dup = std::numeric_limits<size_t>::max();
 	size_t remove_preset_section = std::numeric_limits<size_t>::max();
+	bool force_remove_section = false;
 	std::string make_dup_name = "";
-
-	// Collect effects which 'save_current_preset' writes values for (same conditions as there), only the others can have their sections removed
-	std::set<size_t> saved_effect_indices;
-	for (const technique &saved_tech : _techniques)
-		if (!saved_tech.annotation_as_uint("nosave") &&
-			(saved_tech.enabled || saved_tech.toggle_key_data[0] != 0 || (saved_tech.group_id > 0 && saved_tech.group_id <= 8)))
-			saved_effect_indices.insert(saved_tech.effect_index);
 
 	for (size_t index = 0; index < _technique_sorting.size(); ++index)
 	{
@@ -5395,6 +5389,8 @@ void reshade::runtime::draw_technique_editor()
 					ImGui::BeginDisabled(!(removable || force_removable && _imgui_context->IO.KeyShift));
 					if (ImGui::Button(ICON_FK_TRASH, ImVec2(button_size, 0)))
 					{
+						if (force_removable && _imgui_context->IO.KeyShift)
+							force_remove_section = true;
 						remove_preset_section = tech.effect_index;
 						ImGui::CloseCurrentPopup();
 					}
@@ -5681,9 +5677,16 @@ void reshade::runtime::draw_technique_editor()
 				preset.remove_section(section_name);
 
 		// Remove any leftover shortcut keys of the techniques in the effect (uniform keys live inside the removed sections)
-		for (const technique &tech : _techniques)
+		for (technique &tech : _techniques)
 			if (tech.effect_index == remove_preset_section)
+			{
 				preset.remove_key({}, "Key" + tech.name + '@' + raw_effect_name + build_postfix(effect, _aurora_feature == 3 ? 3 : 0));
+				if (force_remove_section)
+				{
+					disable_technique(tech);
+					tech.enabled = false;
+				}
+			}
 
 		// Reset the effect to the defaults from the effect file
 		_preset_preprocessor_definitions[raw_effect_name].clear();
@@ -5694,15 +5697,9 @@ void reshade::runtime::draw_technique_editor()
 		if (!is_loading())
 			reload_effect(remove_preset_section);
 
-		if (_auto_save_preset)
-		{
-			save_current_preset();
-			ini_file::flush_cache(_current_preset_path);
-		}
-		else
-		{
+		save_current_preset();
+		if (!_auto_save_preset)
 			_preset_is_modified = true;
-		}
 	}
 
 	if (_aurora_feature == 3) {
