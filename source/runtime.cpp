@@ -2192,20 +2192,6 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 				}
 			}
 
-			if (_ui_bind_support)
-			{
-				for (const auto &bind_pair : effect.definition_bindings) {
-					//if (bind_pair.second.second == "")
-					//	continue;
-					if (auto it = std::find_if(effect.definitions.begin(), effect.definitions.end(),
-						[bind_pair](const std::pair<std::string, std::string> def) -> bool { return bind_pair.second.first == def.first; }); it != effect.definitions.end())
-						effect.definitions.erase(it);
-
-					effect.definitions.emplace_back(bind_pair.second.first, trim(bind_pair.second.second));
-					source = "// " + bind_pair.second.first + '=' + bind_pair.second.second + '\n' + source;
-				}
-			}
-
 			source_cached = save_effect_cache(source_file.stem().u8string() + '-' + std::to_string(_renderer_id) + '-' + std::to_string(source_hash), "i", source);
 		}
 
