@@ -1359,7 +1359,7 @@ void reshade::runtime::load_current_preset()
 				}
 			}
 
-			if (!data_str.empty() && !(effect.definition_bindings.count(variable.name) && !effect.definition_bindings[variable.name].second.empty()))
+			if (!data_str.empty() && !(effect.definition_bindings.contains(variable.name) && !effect.definition_bindings[variable.name].second.empty()))
 				effect.definition_bindings[variable.name] = std::pair(ui_bind_definition, data_str);
 		}
 	}
@@ -1562,7 +1562,7 @@ void reshade::runtime::load_current_preset()
 		if (!preset.get({}, "Key" + unique_name, tech.toggle_key_data) &&
 			!preset.get({}, "Key" + tech.name + build_postfix(_effects[tech.effect_index], _aurora_feature), tech.toggle_key_data))
 			std::memset(tech.toggle_key_data, 0, sizeof(tech.toggle_key_data));
-		if (technique_group_reverse.count(unique_name))
+		if (technique_group_reverse.contains(unique_name))
 			tech.group_id = technique_group_reverse.at(unique_name);
 		else
 			tech.group_id = 0;
@@ -1790,9 +1790,9 @@ void reshade::runtime::aurora4_clean_preset(ini_file &preset)
 			record.erase(pos);
 		}
 
-		if (effect_name_list.count(record) == 0)
+		if (!effect_name_list.contains(record))
 			preset.remove_section(record_flair);
-		if (flair != "" && std::find_if(_flairs.begin(), _flairs.end(), [&flair](std::string &f) {return f == flair; }) == _flairs.end())
+		if (!flair.empty() && std::find_if(_flairs.begin(), _flairs.end(), [&flair](std::string &f) {return f == flair; }) == _flairs.end())
 			preset.remove_section(record_flair);
 	}
 

@@ -1278,7 +1278,7 @@ void reshade::runtime::draw_gui()
 			auto cursorY = ImGui::GetCursorPosY();
 			ImGui::SetCursorPosY(cursorY + ImGui::GetTextLineHeight());
 			ImGui::PushStyleColor(ImGuiCol_Text, reinterpret_cast<ImVec4 &>(_fps_col));
-			ImGui::Text("%d / %d", _effects.size() - remaining_effects, _effects.size());
+			ImGui::Text("%zu / %zu", _effects.size() - remaining_effects, _effects.size());
 			ImGui::PopStyleColor();
 		}
 		else
@@ -4259,7 +4259,7 @@ void reshade::runtime::draw_variable_editor()
 
 				preset.import_section(lines, section);
 
-				if (section.count("PreprocessorDefinitions"))
+				if (section.contains("PreprocessorDefinitions"))
 				{
 					auto &new_pp = section["PreprocessorDefinitions"];
 					std::vector<std::string> raw_effect_pp;
@@ -4274,7 +4274,7 @@ void reshade::runtime::draw_variable_editor()
 
 				for (auto &bind : effect.definition_bindings)
 				{
-					if (section.count(bind.first)) // base flair <- Section Text
+					if (section.contains(bind.first)) // base flair <- Section Text
 					{
 						if (raw_effect_name != effect_name) // flair?
 						{
@@ -4425,7 +4425,7 @@ void reshade::runtime::draw_variable_editor()
 				continue;
 			std::unordered_map<std::string, std::pair<std::string, std::string>> tmp_binds;
 			for (auto &variable : effect.uniforms) {
-				if (!variable.annotation_as_string("ui_bind").empty() && effect.definition_bindings.count(variable.name))
+				if (!variable.annotation_as_string("ui_bind").empty() && effect.definition_bindings.contains(variable.name))
 				{
 					tmp_binds[variable.name] = effect.definition_bindings[variable.name];
 					effect.definition_bindings.erase(variable.name);
@@ -4504,7 +4504,7 @@ void reshade::runtime::draw_variable_editor()
 									if (variable_it.special == special_uniform::none && !variable_it.annotation_as_uint("noreset") &&
 										variable_it.annotation_as_string("ui_category") == category)
 									{
-										if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+										if (_ui_bind_support && effect.definition_bindings.contains(variable.name))
 										{
 											reset_uniform_value(variable, effect.definition_bindings[variable.name].second);
 											_uniform_binding_updated = effect_index;
@@ -4549,7 +4549,7 @@ void reshade::runtime::draw_variable_editor()
 			{
 			case reshadefx::type::t_bool:
 				get_uniform_value(variable, value.as_uint, variable.type.components());
-				if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+				if (_ui_bind_support && effect.definition_bindings.contains(variable.name))
 				{
 					value.as_uint[0] = effect.definition_bindings[variable.name].second == "0" ? 0 : 1;
 					set_uniform_value(variable, reinterpret_cast<bool *>(value.as_uint));
@@ -4560,7 +4560,7 @@ void reshade::runtime::draw_variable_editor()
 			case reshadefx::type::t_int:
 			case reshadefx::type::t_uint:
 				get_uniform_value(variable, value.as_int, variable.type.components());
-				if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+				if (_ui_bind_support && effect.definition_bindings.contains(variable.name))
 				{
 					value.as_int[0] = std::stoi(effect.definition_bindings[variable.name].second);
 					set_uniform_value(variable, value.as_int, variable.type.components());
@@ -4570,7 +4570,7 @@ void reshade::runtime::draw_variable_editor()
 			case reshadefx::type::t_float:
 				const float threshold = variable.annotation_as_float("ui_step", 0, 0.001f) * 0.75f + FLT_EPSILON;
 				get_uniform_value(variable, value.as_float, variable.type.components());
-				if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+				if (_ui_bind_support && effect.definition_bindings.contains(variable.name))
 				{
 					value.as_float[0] = std::stof(effect.definition_bindings[variable.name].second);
 					set_uniform_value(variable, value.as_float, variable.type.components());
@@ -4588,7 +4588,7 @@ void reshade::runtime::draw_variable_editor()
 				{
 				case reshadefx::type::t_bool:
 					get_uniform_value(variable, new_value.as_uint, variable.type.components());
-					if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+					if (_ui_bind_support && effect.definition_bindings.contains(variable.name))
 					{
 						new_value.as_uint[0] = effect.definition_bindings[variable.name].second == "0" ? 0 : 1;
 						set_uniform_value(variable, reinterpret_cast<bool *>(new_value.as_uint));
@@ -4599,7 +4599,7 @@ void reshade::runtime::draw_variable_editor()
 				case reshadefx::type::t_int:
 				case reshadefx::type::t_uint:
 					get_uniform_value(variable, new_value.as_int, variable.type.components());
-					if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+					if (_ui_bind_support && effect.definition_bindings.contains(variable.name))
 					{
 						new_value.as_int[0] = std::stoi(effect.definition_bindings[variable.name].second);
 						set_uniform_value(variable, new_value.as_int, variable.type.components());
@@ -4608,7 +4608,7 @@ void reshade::runtime::draw_variable_editor()
 					break;
 				case reshadefx::type::t_float:
 					get_uniform_value(variable, new_value.as_float, variable.type.components());
-					if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+					if (_ui_bind_support && effect.definition_bindings.contains(variable.name))
 					{
 						new_value.as_float[0] = std::stof(effect.definition_bindings[variable.name].second);
 						set_uniform_value(variable, new_value.as_float, variable.type.components());
@@ -4667,7 +4667,7 @@ void reshade::runtime::draw_variable_editor()
 						if (modified)
 						{
 							set_uniform_value(variable, value.as_uint, variable.type.components());
-							if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+							if (_ui_bind_support && effect.definition_bindings.contains(variable.name))
 							{
 								effect.definition_bindings[variable.name].second = value.as_uint[0] != 0 ? "1" : "0";
 								_uniform_binding_updated = effect_index;
@@ -4707,7 +4707,7 @@ void reshade::runtime::draw_variable_editor()
 						if (modified)
 						{
 							set_uniform_value(variable, value.as_int, variable.type.components());
-							if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+							if (_ui_bind_support && effect.definition_bindings.contains(variable.name))
 							{
 								effect.definition_bindings[variable.name].second = std::to_string(value.as_int[0]);
 								_uniform_binding_updated = effect_index;
@@ -4750,7 +4750,7 @@ void reshade::runtime::draw_variable_editor()
 						if (modified)
 						{
 							set_uniform_value(variable, value.as_float, variable.type.components());
-							if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+							if (_ui_bind_support && effect.definition_bindings.contains(variable.name))
 							{
 								std::stringstream tmp;
 								tmp.precision(precision_format[2] - '0');
@@ -4764,7 +4764,7 @@ void reshade::runtime::draw_variable_editor()
 				}
 				std::vector<std::pair<std::string, std::string>> *pp_scope = nullptr;
 				std::vector<std::pair<std::string, std::string>>::iterator pp_it;
-				if (modified && _ui_bind_support && effect.definition_bindings.count(variable.name))
+				if (modified && _ui_bind_support && effect.definition_bindings.contains(variable.name))
 				{
 					if (get_preprocessor_definition(effect.source_file.filename().u8string(), effect.definition_bindings[variable.name].first, 0b001, pp_scope, pp_it))
 						pp_it->second = effect.definition_bindings[variable.name].second;
@@ -4776,11 +4776,11 @@ void reshade::runtime::draw_variable_editor()
 
 				// Display tooltip
 				if (const std::string_view tooltip = get_localized_annotation(variable, "ui_tooltip", _current_language);
-					(!tooltip.empty() || (_ui_bind_support && effect.definition_bindings.count(variable.name))) && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled))
+					(!tooltip.empty() || (_ui_bind_support && effect.definition_bindings.contains(variable.name))) && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled))
 				{
 					if (ImGui::BeginTooltip())
 					{
-						if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+						if (_ui_bind_support && effect.definition_bindings.contains(variable.name))
 						{
 							const std::string bind_info = "@[ " + effect.definition_bindings[variable.name].first + " ]";
 							ImGui::TextColored(COLOR_GREEN, bind_info.c_str());
@@ -4809,7 +4809,7 @@ void reshade::runtime::draw_variable_editor()
 				if (ImGui::Button(ICON_FK_UNDO " " + _("Reset to default"), ImVec2(18.0f * ImGui::GetFontSize(), 0)))
 				{
 					modified = true;
-					if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+					if (_ui_bind_support && effect.definition_bindings.contains(variable.name))
 					{
 						reset_uniform_value(variable, effect.definition_bindings[variable.name].second);
 						_uniform_binding_updated = effect_index;
@@ -4829,7 +4829,7 @@ void reshade::runtime::draw_variable_editor()
 				if (ImGui::SmallButton(ICON_FK_UNDO))
 				{
 					modified = true;
-					if (_ui_bind_support && effect.definition_bindings.count(variable.name))
+					if (_ui_bind_support && effect.definition_bindings.contains(variable.name))
 					{
 						reset_uniform_value(variable, effect.definition_bindings[variable.name].second);
 						_uniform_binding_updated = effect_index;
@@ -5493,7 +5493,7 @@ void reshade::runtime::draw_technique_editor()
 							preset.get(current_effect_name, src_section);
 							for (const auto &kv : src_section)
 							{
-								if (kv.first == "PreprocessorDefinitions" || effect.definition_bindings.count(kv.first))
+								if (kv.first == "PreprocessorDefinitions" || effect.definition_bindings.contains(kv.first))
 									continue;
 								preset.remove_key(target_effect_name, kv.first);
 								preset.set(target_effect_name, kv.first, kv.second);
