@@ -6,6 +6,8 @@
 #pragma once
 
 #include <Unknwn.h>
+#include <d3dcommon.h>
+#include "com_ptr.hpp"
 
 /// <summary>
 /// Gets a pointer from the private data of the specified <paramref name="object"/>.

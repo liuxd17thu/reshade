@@ -2174,7 +2174,7 @@ bool reshade::opengl::device_impl::create_pipeline(api::pipeline_layout, uint32_
 		}
 	}
 
-	pipeline_impl *const impl = new pipeline_impl();
+	pipeline_impl *impl; impl = new pipeline_impl(); // C++20 fix
 
 	if (!shaders.empty())
 	{

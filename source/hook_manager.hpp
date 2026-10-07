@@ -8,6 +8,7 @@
 #include "hook.hpp"
 #include <filesystem>
 #include <type_traits>
+#include "Windows.h"
 
 namespace reshade::hooks
 {
