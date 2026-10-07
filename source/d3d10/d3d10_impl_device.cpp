@@ -895,7 +895,7 @@ bool reshade::d3d10::device_impl::create_pipeline(api::pipeline_layout, uint32_t
 	if (!create_input_layout(input_layout_desc.count, static_cast<const api::input_element *>(input_layout_desc.data), vertex_shader_desc, &input_layout))
 		goto exit_failure;
 
-	pipeline_impl *const impl = new pipeline_impl();
+	pipeline_impl *impl; impl = new pipeline_impl(); // C++20 fix
 
 	impl->vs = std::move(vertex_shader);
 	impl->gs = std::move(geometry_shader);

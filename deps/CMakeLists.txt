@@ -1,3 +1,8 @@
+# Keep third-party dependencies on the same standard the Visual Studio solution uses,
+# so that raising CMAKE_CXX_STANDARD for ReShade does not silently upgrade them.
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
 if(MSVC)
   add_compile_options(
     /fp:fast
