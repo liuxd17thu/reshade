@@ -76,7 +76,7 @@ bool reshade::ini_file::load()
 			continue;
 		}
 
-		section_lines.push_back(std::string(line));
+		section_lines.emplace_back(line);
 	}
 	import_section(section_lines, section_data);
 	_sections.insert({ section, section_data });
@@ -165,11 +165,10 @@ bool reshade::ini_file::save()
 		section_names.push_back(section.first);
 
 	// Sort sections to generate consistent files
-	std::sort(section_names.begin(), section_names.end(),
-		[](std::string a, std::string b) {
-			std::transform(a.begin(), a.end(), a.begin(), [](std::string::value_type c) { return static_cast<std::string::value_type>(std::toupper(c)); });
-			std::transform(b.begin(), b.end(), b.begin(), [](std::string::value_type c) { return static_cast<std::string::value_type>(std::toupper(c)); });
-			return a < b;
+	std::ranges::sort(section_names,
+		[](const std::string& a, const std::string& b){
+			auto to_upper = [](const char& c){ return std::toupper(static_cast<unsigned char>(c)); };
+			return std::ranges::lexicographical_compare(a, b, std::ranges::less{}, to_upper, to_upper);
 		});
 
 	for (const std::string &section_name : section_names)
@@ -212,11 +211,10 @@ bool reshade::ini_file::export_section(const std::unordered_map<std::string, std
 	for (const std::pair<const std::string, value_type> &key : keys)
 		key_names.push_back(key.first);
 
-	std::sort(key_names.begin(), key_names.end(),
-		[](std::string a, std::string b) {
-			std::transform(a.begin(), a.end(), a.begin(), [](std::string::value_type c) { return static_cast<std::string::value_type>(std::toupper(c)); });
-			std::transform(b.begin(), b.end(), b.begin(), [](std::string::value_type c) { return static_cast<std::string::value_type>(std::toupper(c)); });
-			return a < b;
+	std::ranges::sort(key_names,
+		[](const std::string &a, const std::string &b){
+			auto to_upper = [](const char& c){ return std::toupper(static_cast<unsigned char>(c)); };
+			return std::ranges::lexicographical_compare(a, b, std::ranges::less{}, to_upper, to_upper);
 		});
 
 	for (const std::string &key_name : key_names)
@@ -252,7 +250,7 @@ bool reshade::ini_file::export_section(const std::unordered_map<std::string, std
 	}
 
 	data += '\n';
-	lines = data.data();
+	lines = data;
 
 	return true;
 }
