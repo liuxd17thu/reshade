@@ -2046,20 +2046,20 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 		}
 
 		// Source hash has changed, reset effect and load from scratch, rather than updating
-		// Backup and re-apply binds
+		// Preserve bindings and clone identity across the effect reset
 		auto binding_backup = std::move(effect.definition_bindings);
 		auto dup_backup = effect.dup_id;
 		effect = {};
-
-		if (_ui_bind_support)
-			effect.definition_bindings = std::move(binding_backup);
-		effect.dup_id = dup_backup;
 
 		effect = {
 			source_file,
 			source_hash,
 			source_file.extension() == L".addonfx"
 		};
+
+		if (_ui_bind_support)
+			effect.definition_bindings = std::move(binding_backup);
+		effect.dup_id = dup_backup;
 
 		// Allocate the default permutation
 		effect.permutations.resize(1);
@@ -2180,14 +2180,13 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 
 			if (_ui_bind_support)
 			{
+				// Add bound macros to the list assigned to the effect below
 				for (const auto &bind_pair : effect.definition_bindings) {
-					//if (bind_pair.second.second == "")
-					//	continue;
-					if (auto it = std::find_if(effect.definitions.begin(), effect.definitions.end(),
-						[bind_pair](const std::pair<std::string, std::string> def) -> bool { return bind_pair.second.first == def.first; }); it != effect.definitions.end())
-						effect.definitions.erase(it);
+					if (auto it = std::find_if(preprocessor_definitions.begin(), preprocessor_definitions.end(),
+						[&bind_pair](const auto &definition) { return bind_pair.second.first == definition.first; }); it != preprocessor_definitions.end())
+						preprocessor_definitions.erase(it);
 
-					effect.definitions.emplace_back(bind_pair.second.first, trim(bind_pair.second.second));
+					preprocessor_definitions.emplace_back(bind_pair.second.first, trim(bind_pair.second.second));
 					source = "// " + bind_pair.second.first + '=' + bind_pair.second.second + '\n' + source;
 				}
 			}
