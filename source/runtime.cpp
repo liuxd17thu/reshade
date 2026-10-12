@@ -894,18 +894,11 @@ void reshade::runtime::on_present()
 							flair_it = _flairs.begin();
 						return flair_it;
 					}();
-					auto next_flair = reversed ? *(flair_it == _flairs.begin() ? std::prev(_flairs.end()) : std::prev(flair_it))
-						: *(flair_it == _flairs.begin() ? std::prev(_flairs.end()) : std::prev(flair_it));
-					if (next_flair != _current_flair)
-					{
-						_last_preset_switching_time = _last_present_time;
-						_is_in_preset_transition = true;
 
-						save_current_preset();
-						auto &preset = ini_file::load_cache(_current_preset_path);
-						preset.set({}, "CurrentFlair", next_flair);
-						load_current_preset();
-					}
+					auto next_flair =
+						reversed ? *(flair_it == _flairs.begin() ? std::prev(_flairs.end()) : std::prev(flair_it))
+							: *(std::next(flair_it) == _flairs.end() ? _flairs.begin() : std::next(flair_it));
+					aurora4_switch_to_flair(next_flair);
 				}
 			}
 
@@ -1852,6 +1845,34 @@ void reshade::runtime::detach_current_flair() const
 
 		detach.save();
 	}
+}
+
+bool reshade::runtime::aurora4_switch_to_flair(const std::string& flair, bool remove_current_flair_sections)
+{
+	if (_aurora_feature != 4 || is_loading() || _is_in_preset_transition ||
+		flair == _current_flair || std::find(_flairs.begin(), _flairs.end(), flair) == _flairs.end())
+		return false;
+
+	auto &preset = ini_file::load_cache(_current_preset_path);
+	// Save the old flair before starting the transition, while its uniform values are stable.
+	save_current_preset(preset);
+
+	if (remove_current_flair_sections)
+	{
+		std::vector<std::string> sections;
+		preset.get_section_names(sections);
+		for (const auto &section : sections)
+		{
+			if (const auto pos = section.find('|'); pos != std::string::npos &&
+				section.substr(pos + 1) == _current_flair)
+				preset.remove_section(section);
+		}
+	}
+
+	preset.set({}, "CurrentFlair", flair == ":" ? u8"\u2014" : flair);
+	_last_preset_switching_time = _last_present_time;
+	_is_in_preset_transition = true;
+	return true;
 }
 
 bool reshade::runtime::switch_to_next_preset(std::filesystem::path filter_path, bool reversed)

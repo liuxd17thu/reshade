@@ -188,6 +188,7 @@ namespace reshade
 
 
 		bool switch_to_next_preset(std::filesystem::path filter_path, bool reversed = false);
+		bool aurora4_switch_to_flair(const std::string& flair, bool remove_current_flair_sections = false);
 
 		bool load_effect(const std::filesystem::path &source_file, const class ini_file &preset, size_t effect_index, size_t permutation_index, bool force_load = false, bool preprocess_required = false);
 		bool create_effect(size_t effect_index, size_t permutation_index);

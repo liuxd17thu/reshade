@@ -2093,7 +2093,7 @@ void reshade::runtime::draw_gui_home()
 		{
 			const auto cursor_pos = ImGui::GetCursorPos() - ImVec2(0, button_height2 - button_height);
 			ImGui::SetCursorPos(cursor_pos);
-			ImGui::BeginDisabled(_reload_remaining_effects != std::numeric_limits<size_t>::max());
+			ImGui::BeginDisabled(_reload_remaining_effects != std::numeric_limits<size_t>::max() || _is_in_preset_transition);
 			if (ImGui::ArrowButtonEx("<##prev_flair", ImGuiDir_Left, ImVec2(button_height, button_height), ImGuiButtonFlags_NoNavFocus)
 				&& _flairs.size() > 1)
 			{
@@ -2179,29 +2179,8 @@ void reshade::runtime::draw_gui_home()
 				ImGui::EndPopup();
 			}
 
-			if (_next_flair != _current_flair)
-			{
+			if (aurora4_switch_to_flair(_next_flair, force_remove))
 				_focused_effect = opened_effect_tab;
-				_last_preset_switching_time = _last_present_time;
-				_is_in_preset_transition = true;
-				auto &preset = ini_file::load_cache(_current_preset_path);
-				save_current_preset();
-				if (force_remove)
-				{
-					std::vector<std::string> sections;
-					preset.get_section_names(sections);
-					for (auto &section : sections)
-					{
-						auto pos = section.find('|');
-						if (pos == std::string::npos)
-							continue;
-						if (section.substr(pos + 1) == _current_flair)
-							preset.remove_section(section);
-					}
-				}
-				preset.set({}, "CurrentFlair", _next_flair == ":" ? u8"\u2014" : _next_flair);
-				load_current_preset();
-			}
 
 			ImGui::EndDisabled();
 		}
