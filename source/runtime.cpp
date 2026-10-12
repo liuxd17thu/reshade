@@ -29,6 +29,7 @@
 #include <smmintrin.h>
 #include <immintrin.h>
 #include <fpng.h>
+#include <ranges>
 #include <simple_lossless.h>
 #include <stb_image.h>
 #include <stb_image_dds.h>
@@ -255,10 +256,7 @@ static std::vector<std::filesystem::path> find_files(const std::vector<std::file
 
 		if (resolve_path(search_path, ec))
 		{
-			if (const auto it = std::find_if(resolved_search_paths.begin(), resolved_search_paths.end(),
-					[&search_path](const std::pair<std::filesystem::path, bool> &recursive_search_path) {
-						return recursive_search_path.first == search_path;
-					});
+			if (const auto it = std::ranges::find(resolved_search_paths, search_path, &std::pair<std::filesystem::path, bool>::first);
 				it != resolved_search_paths.end())
 				it->second |= recursive_search;
 			else
@@ -273,7 +271,7 @@ static std::vector<std::filesystem::path> find_files(const std::vector<std::file
 	// Then iterate through all files in those search paths and add those with a matching extension
 	const auto check_and_add_file = [&extensions, &ec, &files](const std::filesystem::directory_entry &entry) {
 		if (!entry.is_directory(ec) &&
-			std::find(extensions.begin(), extensions.end(), entry.path().extension()) != extensions.end())
+			std::ranges::find(extensions, entry.path().extension()) != extensions.end())
 			files.emplace_back(entry); // Construct path from directory entry in-place
 	};
 
@@ -1203,9 +1201,7 @@ bool reshade::runtime::check_preset_feature(int feature) const
 	switch (feature)
 	{
 	case 3: {
-		ret = std::find_if(_effects.begin(), _effects.end(),
-			[](const reshade::effect &ef) { return ef.dup_id != ""; }
-		) != _effects.end();
+		ret = std::ranges::find_if(_effects, [](const std::string &str){return !str.empty();}, &effect::dup_id) != _effects.end();
 		break;
 	}
 	case 4: {
@@ -1317,15 +1313,13 @@ void reshade::runtime::load_current_preset()
 			std::string ui_bind_definition { variable.annotation_as_string("ui_bind") };
 			if (ui_bind_definition.empty())
 				continue;
-			std::string data_str = "";
-			if (const auto &match = std::find_if(preset_preprocessor_definitions[""].cbegin(),
-				preset_preprocessor_definitions[""].cend(),
-				[ui_bind_definition](std::pair<std::string, std::string> it) { return it.first == ui_bind_definition; });
+			std::string data_str;
+
+			if (const auto &match = std::ranges::find(preset_preprocessor_definitions[""], ui_bind_definition, &std::pair<std::string, std::string>::first);
 				match != preset_preprocessor_definitions[""].end())
 				data_str = match->second;
-			if (const auto &match = std::find_if(preset_preprocessor_definitions[effect.source_file.filename().u8string()].cbegin(),
-					preset_preprocessor_definitions[effect.source_file.filename().u8string()].cend(),
-					[ui_bind_definition](std::pair<std::string, std::string> it) { return it.first == ui_bind_definition; });
+
+			if (const auto &match = std::ranges::find(preset_preprocessor_definitions[effect.source_file.filename().u8string()], ui_bind_definition, &std::pair<std::string, std::string>::first);
 				match != preset_preprocessor_definitions[effect.source_file.filename().u8string()].end())
 				data_str = match->second;
 
@@ -1368,12 +1362,12 @@ void reshade::runtime::load_current_preset()
 		}
 
 		auto aurora_feature = _aurora_feature;
-		if (std::find_if(technique_list.cbegin(), technique_list.cend(),
+		if (std::ranges::find_if(technique_list,
 				[aurora_feature, this](const std::string &technique_name) {
 					const size_t at_pos = technique_name.find('@');
 					if (at_pos == std::string::npos)
 						return true;
-					const auto it = std::find_if(_effects.cbegin(), _effects.cend(),
+					const auto it = std::ranges::find_if(_effects,
 						[aurora_feature, effect_name = std::filesystem::u8path(technique_name.substr(at_pos + 1))](const effect &effect) {
 							if (aurora_feature == 3)
 								return effect_name.u8string()
@@ -1396,10 +1390,7 @@ void reshade::runtime::load_current_preset()
 
 	for (const std::string_view technique_name : technique_list)
 	{
-		if (std::find_if(_techniques.begin(), _techniques.end(),
-				[name = technique_name.substr(0, technique_name.find('@'))](const technique &technique) {
-					return technique.name == name;
-				}) == _techniques.end())
+		if (std::ranges::find(_techniques, technique_name.substr(0, technique_name.find('@')), &technique::name) == _techniques.end())
 		{
 			if (_reload_remaining_effects == 0)
 				log::message(log::level::warning, "Preset '%s' uses unknown technique '%*s'.", _current_preset_path.u8string().c_str(), technique_name.size(), technique_name.data());
@@ -1415,13 +1406,13 @@ void reshade::runtime::load_current_preset()
 
 			const std::string lhs_unique = lhs.name + '@' + _effects[lhs.effect_index].source_file.filename().u8string()
 				+ (_aurora_feature == 3 ? build_postfix(_effects[lhs.effect_index], _aurora_feature) : "");
-			auto lhs_it = std::find(sorted_technique_list.cbegin(), sorted_technique_list.cend(), lhs_unique);
-			lhs_it = (lhs_it == sorted_technique_list.cend()) ? std::find(sorted_technique_list.cbegin(), sorted_technique_list.cend(), lhs.name) : lhs_it;
+			auto lhs_it = std::ranges::find(sorted_technique_list, lhs_unique);
+			lhs_it = (lhs_it == sorted_technique_list.end()) ? std::ranges::find(sorted_technique_list, lhs.name) : lhs_it;
 
 			const std::string rhs_unique = rhs.name + '@' + _effects[rhs.effect_index].source_file.filename().u8string()
 				+ (_aurora_feature == 3 ? build_postfix(_effects[rhs.effect_index], _aurora_feature) : "");
-			auto rhs_it = std::find(sorted_technique_list.cbegin(), sorted_technique_list.cend(), rhs_unique);
-			rhs_it = (rhs_it == sorted_technique_list.cend()) ? std::find(sorted_technique_list.cbegin(), sorted_technique_list.cend(), rhs.name) : rhs_it;
+			auto rhs_it = std::ranges::find(sorted_technique_list, rhs_unique);
+			rhs_it = (rhs_it == sorted_technique_list.end()) ? std::ranges::find(sorted_technique_list, rhs.name) : rhs_it;
 
 			if (lhs_it < rhs_it)
 				return true;
@@ -1436,7 +1427,7 @@ void reshade::runtime::load_current_preset()
 			std::string lhs_label(lhs.annotation_as_string("ui_label"));
 			if (lhs_label.empty())
 				lhs_label = lhs.name;
-			std::transform(lhs_label.begin(), lhs_label.end(), lhs_label.begin(),
+			std::ranges::transform(lhs_label, lhs_label.begin(),
 				[](std::string::value_type c) {
 					return static_cast<std::string::value_type>(std::toupper(c));
 				});
@@ -1444,7 +1435,7 @@ void reshade::runtime::load_current_preset()
 			std::string rhs_label(rhs.annotation_as_string("ui_label"));
 			if (rhs_label.empty())
 				rhs_label = rhs.name;
-			std::transform(rhs_label.begin(), rhs_label.end(), rhs_label.begin(),
+			std::ranges::transform(rhs_label, rhs_label.begin(),
 				[](std::string::value_type c) {
 					return static_cast<std::string::value_type>(std::toupper(c));
 				});
@@ -1546,8 +1537,8 @@ void reshade::runtime::load_current_preset()
 
 		// Ignore preset if "enabled" annotation is set
 		if (tech.annotation_as_int("enabled") ||
-			std::find(technique_list.cbegin(), technique_list.cend(), unique_name) != technique_list.cend() ||
-			std::find(technique_list.cbegin(), technique_list.cend(), tech.name) != technique_list.cend())
+			std::ranges::find(technique_list, unique_name) != technique_list.end() ||
+			std::ranges::find(technique_list, tech.name) != technique_list.end())
 			enable_technique(tech);
 		else
 			disable_technique(tech);
@@ -1562,7 +1553,7 @@ void reshade::runtime::load_current_preset()
 	}
 
 	// Reverse queue so that effects are enabled in the order they are defined in the preset (since the queue is worked from back to front)
-	std::reverse(_reload_create_queue.begin(), _reload_create_queue.end());
+	std::ranges::reverse(_reload_create_queue);
 }
 void reshade::runtime::save_current_preset(ini_file &preset) const
 {
@@ -1785,7 +1776,7 @@ void reshade::runtime::aurora4_clean_preset(ini_file &preset)
 
 		if (!effect_name_list.contains(record))
 			preset.remove_section(record_flair);
-		if (!flair.empty() && std::find_if(_flairs.begin(), _flairs.end(), [&flair](std::string &f) {return f == flair; }) == _flairs.end())
+		if (!flair.empty() && std::ranges::find(_flairs, flair) == _flairs.end())
 			preset.remove_section(record_flair);
 	}
 
@@ -1850,7 +1841,7 @@ void reshade::runtime::detach_current_flair() const
 bool reshade::runtime::aurora4_switch_to_flair(const std::string& flair, bool remove_current_flair_sections)
 {
 	if (_aurora_feature != 4 || is_loading() || _is_in_preset_transition ||
-		flair == _current_flair || std::find(_flairs.begin(), _flairs.end(), flair) == _flairs.end())
+		flair == _current_flair || std::ranges::find(_flairs, flair) == _flairs.end())
 		return false;
 
 	auto &preset = ini_file::load_cache(_current_preset_path);
@@ -1921,8 +1912,7 @@ bool reshade::runtime::switch_to_next_preset(std::filesystem::path filter_path, 
 		const std::wstring preset_name = preset_path.stem().wstring();
 		// Only add those files that are matching the filter text
 		if (filter_text.empty() ||
-			std::search(preset_name.cbegin(), preset_name.cend(), filter_text.begin(), filter_text.end(),
-				[](auto c1, auto c2) { return std::towlower(c1) == std::towlower(c2); }) != preset_name.cend())
+			!std::ranges::search(preset_name, filter_text, {}, std::towlower, std::towlower).empty())
 			preset_paths.push_back(std::move(preset_path));
 	}
 
@@ -1983,11 +1973,11 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 		preprocessor_definitions.insert(preprocessor_definitions.begin(), preset_it->second.cbegin(), preset_it->second.cend());
 	if (_ui_bind_support)
 	{
-		for (auto &definition_bind : effect.definition_bindings)
+		for (auto& definition : effect.definition_bindings | std::views::values)
 		{
-			if (definition_bind.second.second == "")
+			if (definition.second.empty())
 				continue;
-			preprocessor_definitions.insert(preprocessor_definitions.begin(), definition_bind.second);
+			preprocessor_definitions.insert(preprocessor_definitions.begin(), definition);
 		}
 	}
 
@@ -2002,7 +1992,7 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 		std::string addon_definition;
 		addon_definition.reserve(6 + info.name.size());
 		addon_definition = "ADDON_";
-		std::transform(info.name.begin(), info.name.end(), std::back_inserter(addon_definition),
+		std::ranges::transform(info.name, std::back_inserter(addon_definition),
 			[](const std::string::value_type c) {
 				return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ? c : (c >= 'a' && c <= 'z') ? static_cast<std::string::value_type>(c - 'a' + 'A') : '_';
 			});
@@ -2091,11 +2081,12 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 		if (std::vector<std::string> techniques;
 			preset.get({}, "Techniques", techniques) && !techniques.empty())
 		{
-			effect.skipped = std::find_if(techniques.cbegin(), techniques.cend(),
-				[&effect_name](const std::string &technique) {
-					const size_t at_pos = technique.find('@') + 1;
-					return at_pos == 0 || technique.find(effect_name, at_pos) == at_pos;
-				}) == techniques.cend();
+			effect.skipped = !std::ranges::any_of(techniques, [effect_name](const std::string &tech)
+			{
+				if (const size_t at_pos = tech.find('@'); at_pos != std::string::npos)
+					return tech.find(effect_name, at_pos + 1) == at_pos + 1;
+				return true;
+			});
 
 			if (effect.skipped)
 			{
@@ -2180,9 +2171,8 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 				// Also skip the preprocessors definitions which are bound to uniforms with "ui_bind"
 				if (_ui_bind_support)
 				{
-					auto it = std::find_if(effect.definition_bindings.begin(), effect.definition_bindings.end(),
-						[&definition](const auto &b) { return b.second.first == definition.first; });
-					if (it != effect.definition_bindings.end())
+					if (std::ranges::any_of(effect.definition_bindings | std::views::values | std::views::keys,
+						[&definition](const std::string &b){ return b == definition.first;}))
 						continue;
 				}
 
@@ -2203,8 +2193,8 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 			{
 				// Add bound macros to the list assigned to the effect below
 				for (const auto &bind_pair : effect.definition_bindings) {
-					if (auto it = std::find_if(preprocessor_definitions.begin(), preprocessor_definitions.end(),
-						[&bind_pair](const auto &definition) { return bind_pair.second.first == definition.first; }); it != preprocessor_definitions.end())
+					if (auto it = std::ranges::find(preprocessor_definitions, bind_pair.second.first, &std::pair<std::string, std::string>::first);
+						it != preprocessor_definitions.end())
 						preprocessor_definitions.erase(it);
 
 					preprocessor_definitions.emplace_back(bind_pair.second.first, trim(bind_pair.second.second));
@@ -2532,13 +2522,10 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 			}
 
 			// Try to share textures with the same name across effects
-			if (const auto existing_texture = std::find_if(_textures.begin(), _textures.end(),
-					[&new_texture](const texture &item) {
-						return item.unique_name == new_texture.unique_name;
-					});
+			if (const auto existing_texture = std::ranges::find(_textures, new_texture.unique_name, &reshade::texture::unique_name);
 				existing_texture != _textures.end())
 			{
-				const bool shared_permutation = std::find(existing_texture->shared.begin(), existing_texture->shared.end(), effect_index) != existing_texture->shared.end();
+				const bool shared_permutation = std::ranges::find(existing_texture->shared, effect_index) != existing_texture->shared.end();
 
 				// Cannot share texture if this is a normal one, but the existing one is a reference and vice versa
 				if (new_texture.semantic != existing_texture->semantic)
@@ -2588,7 +2575,7 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 				// Try to find another pooled texture to share with (and do not share within the same effect)
 				if (const auto existing_texture = std::find_if(_textures.begin(), _textures.end(),
 						[effect_index, &new_texture](const texture &item) {
-							return item.annotation_as_int("pooled") && std::find(item.shared.begin(), item.shared.end(), effect_index) == item.shared.end() && item.matches_description(new_texture);
+							return item.annotation_as_int("pooled") && std::ranges::find(item.shared, effect_index) == item.shared.end() && item.matches_description(new_texture);
 						});
 					existing_texture != _textures.end())
 				{
@@ -2611,11 +2598,11 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 					{
 						for (reshadefx::pass &pass : tech.passes)
 						{
-							std::replace(std::begin(pass.render_target_names), std::end(pass.render_target_names), new_texture.unique_name, existing_texture->unique_name);
+							std::ranges::replace(pass.render_target_names, new_texture.unique_name, existing_texture->unique_name);
 						}
 					}
 
-					if (std::find(existing_texture->shared.cbegin(), existing_texture->shared.cend(), effect_index) == existing_texture->shared.cend())
+					if (std::ranges::find(existing_texture->shared, effect_index) == existing_texture->shared.end())
 						existing_texture->shared.push_back(effect_index);
 
 					existing_texture->render_target = true;
@@ -2709,7 +2696,7 @@ bool reshade::runtime::create_effect(size_t effect_index, size_t permutation_ind
 	// Create textures now, since they are referenced when building samplers below
 	for (texture &tex : _textures)
 	{
-		if (std::find(tex.shared.cbegin(), tex.shared.cend(), effect_index) == tex.shared.cend())
+		if (std::ranges::find(tex.shared, effect_index) == tex.shared.cend())
 			continue;
 
 		if (tex.resource != 0)
@@ -2727,7 +2714,7 @@ bool reshade::runtime::create_effect(size_t effect_index, size_t permutation_ind
 				if (shared_effect_index == effect_index)
 					continue;
 
-				if (std::find(_reload_create_queue.cbegin(), _reload_create_queue.cend(), std::make_pair(shared_effect_index, permutation_index)) == _reload_create_queue.cend())
+				if (std::ranges::find(_reload_create_queue, std::make_pair(shared_effect_index, permutation_index)) == _reload_create_queue.end())
 				{
 					destroy_effect(shared_effect_index, false);
 					_reload_create_queue.emplace_back(shared_effect_index, permutation_index);
@@ -3024,7 +3011,7 @@ bool reshade::runtime::create_effect(size_t effect_index, size_t permutation_ind
 					int render_target_count = 0;
 					for (; render_target_count < 8 && !pass.render_target_names[render_target_count].empty(); ++render_target_count)
 					{
-						const auto render_target_texture = std::find_if(_textures.cbegin(), _textures.cend(),
+						const auto render_target_texture = std::ranges::find_if(_textures,
 							[&unique_name = pass.render_target_names[render_target_count]](const texture &item) {
 								return item.unique_name == unique_name && (item.resource != 0 || !item.semantic.empty());
 							});
@@ -3038,7 +3025,7 @@ bool reshade::runtime::create_effect(size_t effect_index, size_t permutation_ind
 						const api::resource_desc res_desc = _device->get_resource_desc(render_target_texture->resource);
 						render_target_formats[render_target_count] = api::format_to_default_typed(res_desc.texture.format, pass.srgb_write_enable);
 
-						if (std::find(pass.modified_resources.cbegin(), pass.modified_resources.cend(), render_target_texture->resource) == pass.modified_resources.cend())
+						if (std::ranges::find(pass.modified_resources, render_target_texture->resource) == pass.modified_resources.end())
 						{
 							pass.modified_resources.push_back(render_target_texture->resource);
 
