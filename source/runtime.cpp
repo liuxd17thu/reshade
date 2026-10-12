@@ -901,12 +901,12 @@ void reshade::runtime::on_present()
 					aurora4_switch_to_flair(next_flair);
 				}
 			}
-
-			// Continuously update preset values while a transition is in progress
-			if (_is_in_preset_transition)
-				load_current_preset();
 		}
 	}
+
+	// Continuously update preset values while a transition is in progress, even when shortcuts are ignored
+	if (!is_loading() && _is_in_preset_transition)
+		load_current_preset();
 
 	// Stretch main render target back into MSAA back buffer if MSAA is active or copy when format conversion is required
 	if (_back_buffer_resolved != 0)

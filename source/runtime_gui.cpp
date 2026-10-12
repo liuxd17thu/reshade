@@ -2144,7 +2144,7 @@ void reshade::runtime::draw_gui_home()
 
 			ImGui::BeginDisabled(_current_flair == ":");
 			bool force_remove = _input->is_key_down(0x10 /* VK_SHIFT */);
-			if (ImGui::ButtonEx((force_remove ? ICON_FK_CANCEL"###remove_flair" : ICON_FK_MINUS"###remove_flair"), ImVec2(button_height, button_height), ImGuiButtonFlags_NoNavFocus | ImGuiButtonFlags_PressedOnClick))
+			if (ImGui::ButtonEx((force_remove ? ICON_FK_CANCEL"###remove_flair" : ICON_FK_MINUS"###remove_flair"), ImVec2(button_height, button_height), ImGuiButtonFlags_NoNavFocus))
 			{
 				auto flair_it = std::find(_flairs.begin(), _flairs.end(), _current_flair);
 				if (flair_it != _flairs.begin() && flair_it != _flairs.end())
@@ -2163,7 +2163,7 @@ void reshade::runtime::draw_gui_home()
 
 			std::string detach_label = ICON_FK_UNLINK;
 			detach_label += _(" Detach").data;
-			if (ImGui::ButtonEx(detach_label.c_str(), ImVec2(12.5f * ImGui::GetFontSize() - 3 * (button_height + button_spacing), button_height), ImGuiButtonFlags_NoNavFocus | ImGuiButtonFlags_PressedOnClick))
+			if (ImGui::ButtonEx(detach_label.c_str(), ImVec2(12.5f * ImGui::GetFontSize() - 3 * (button_height + button_spacing), button_height), ImGuiButtonFlags_NoNavFocus))
 			{
 				detach_current_flair();
 			}
