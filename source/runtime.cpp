@@ -1055,6 +1055,7 @@ void reshade::runtime::load_config()
 	config_get("GENERAL", "UIBindSupport", _ui_bind_support);
 	config_get("GENERAL", "AuroraFeature", _aurora_feature);
 	config_get("GENERAL", "AuroraAutoFeature", _aurora_auto_feature);
+	config.get("GENERAL", "SimplifiedSorting", _simplified_sorting);
 
 	// Fall back to temp directory if cache path does not exist
 	std::error_code ec;
@@ -1140,6 +1141,7 @@ void reshade::runtime::save_config() const
 	config.set("GENERAL", "UIBindSupport", _ui_bind_support);
 	config.set("GENERAL", "AuroraFeature", _aurora_feature);
 	config.set("GENERAL", "AuroraAutoFeature", _aurora_auto_feature);
+	config.set("GENERAL", "SimplifiedSorting", _simplified_sorting);
 
 	std::vector<unsigned int> preset_key_data;
 	std::vector<std::filesystem::path> preset_shortcut_paths;
@@ -1592,16 +1594,18 @@ void reshade::runtime::save_current_preset(ini_file &preset) const
 		if (tech.annotation_as_uint("nosave"))
 			continue;
 
-		std::string unique_name = tech.name + '@' + _effects[tech.effect_index].source_file.filename().u8string()
+		const std::string effect_name = _effects[tech.effect_index].source_file.filename().u8string()
 			+ build_postfix(_effects[tech.effect_index], _aurora_feature == 3 ? 3 : 0);
+		const std::string unique_name = tech.name + '@' + effect_name;
 
 		if (tech.enabled)
 			technique_list.push_back(unique_name);
 		if (tech.enabled || tech.toggle_key_data[0] != 0 || (tech.group_id > 0 && tech.group_id <= 8))
 			effect_list.insert(tech.effect_index);
 
-		// Keep track of the order of all techniques and not just the enabled ones
-		sorted_technique_list.push_back(unique_name);
+		// Keep track of only concerned
+		if (!_simplified_sorting || tech.enabled || tech.toggle_key_data[0] != 0 || (tech.group_id > 0 && tech.group_id <= 8) || preset.has(effect_name))
+			sorted_technique_list.push_back(unique_name);
 
 		if (tech.toggle_key_data[0] != 0)
 			preset.set({}, "Key" + unique_name, tech.toggle_key_data);
@@ -2095,7 +2099,8 @@ bool reshade::runtime::load_effect(const std::filesystem::path &source_file, con
 				[&effect_name](const std::string &technique) {
 					const size_t at_pos = technique.find('@') + 1;
 					return at_pos == 0 || technique.find(effect_name, at_pos) == at_pos;
-				}) == techniques.cend();
+				}) == techniques.cend()
+				&& !( _simplified_sorting && preset.has(effect_name + build_postfix(effect, _aurora_feature == 3 ? 3 : 0)));
 
 			if (effect.skipped)
 			{
