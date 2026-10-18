@@ -376,6 +376,7 @@ target_include_directories(
 target_compile_definitions(
   ReShade
   PRIVATE
+    AURORA_PRO
     RESHADE_GUI
     RESHADE_API_LIBRARY_EXPORT
     RESHADE_ADDON=2
@@ -397,6 +398,7 @@ if(MSVC)
       /Zc:threadSafeInit-
       /utf-8
       /Zc:char8_t-
+      "$<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:/Zi>"
       $<$<CONFIG:Release>:/Oi /GL /GF /GS- /Gy>
       /fp:fast
       $<$<CONFIG:Release>:/GR->
@@ -404,6 +406,7 @@ if(MSVC)
   target_link_options(
     ReShade
     PRIVATE
+      $<$<CONFIG:Release>:/DEBUG:FULL>
       $<$<CONFIG:Release>:/OPT:REF /OPT:NOICF /LTCG>
   )
 else()
@@ -472,6 +475,7 @@ if(MSVC)
     PRIVATE
       /utf-8
       /Zc:char8_t-
+      $<$<CONFIG:Release>:/Zi>
       $<$<CONFIG:Release>:/Oi /GL /GF /GS- /Gy>
       $<$<CONFIG:Release>:/GR->
   )

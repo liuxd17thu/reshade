@@ -19,8 +19,8 @@ $version = 6,8,0,0
 # }
 
 $build = $(git rev-parse --short HEAD)
-$cn2 = "Release 13.5"
-$cn2_pro = "Pro 13.5"
+$cn2 = "Alpha 14.1"
+$cn2_pro = "Delta 14.1"
 
 $global:ReShadeVersion = $version
 

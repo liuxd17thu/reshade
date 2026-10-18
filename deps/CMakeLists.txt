@@ -1,6 +1,7 @@
 if(MSVC)
   add_compile_options(
     /fp:fast
+    "$<$<AND:$<CONFIG:Release>,$<COMPILE_LANGUAGE:C,CXX>>:/Zi>"
   )
 else()
   add_compile_options(
