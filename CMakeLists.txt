@@ -373,11 +373,13 @@ target_include_directories(
     source
 )
 
+option(RESHADE_GUI "Build the in-game overlay" ON)
+
 target_compile_definitions(
   ReShade
   PRIVATE
     AURORA_PRO
-    RESHADE_GUI
+    RESHADE_GUI=$<BOOL:${RESHADE_GUI}>
     RESHADE_API_LIBRARY_EXPORT
     RESHADE_ADDON=2
     $<$<CXX_COMPILER_ID:MSVC>:RESHADE_LOCALIZATION>

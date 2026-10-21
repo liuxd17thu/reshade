@@ -1420,7 +1420,9 @@ static void draw_settings_overlay(effect_runtime *runtime)
 
 void register_addon_depth()
 {
+#if !defined(BUILTIN_ADDON) || RESHADE_GUI
 	reshade::register_overlay(nullptr, draw_settings_overlay);
+#endif
 
 	reshade::register_event<reshade::addon_event::init_device>(on_init_device);
 	reshade::register_event<reshade::addon_event::init_command_list>(on_init_command_list);

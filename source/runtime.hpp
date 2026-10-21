@@ -220,6 +220,7 @@ namespace reshade
 		void save_texture(const texture &texture);
 		void update_texture(texture &texture, uint32_t width, uint32_t height, uint32_t depth, const void *pixels);
 
+		void prune_uniform_bindings(effect &effect);
 		void reset_uniform_value(uniform &variable);
 		void reset_uniform_value(uniform &variable, std::string &ui_bind);
 
@@ -269,6 +270,8 @@ namespace reshade
 		bool _is_initialized = false;
 		bool _preset_is_incomplete = false;
 		bool _preset_save_successful = true;
+		bool _auto_save_preset = true;
+		bool _preset_is_modified = false;
 		std::filesystem::path _config_path;
 
 		bool _ignore_shortcuts = false;
@@ -286,6 +289,7 @@ namespace reshade
 		std::chrono::high_resolution_clock::duration _last_frame_duration;
 		std::chrono::high_resolution_clock::time_point _start_time, _last_present_time;
 		bool _has_reloaded_after_init = false;
+		unsigned int _reload_count = 0;
 		#pragma endregion
 
 		#pragma region Effect Loading
@@ -376,7 +380,7 @@ namespace reshade
 		std::filesystem::path _screenshot_sound_path;
 		std::filesystem::path _screenshot_path;
 		std::string _screenshot_name;
-		bool _screenshot_post_save_command_enable;
+		bool _screenshot_post_save_command_enable = true;
 		std::filesystem::path _screenshot_post_save_command;
 		std::string _screenshot_post_save_command_arguments;
 		std::filesystem::path _screenshot_post_save_command_working_directory;
@@ -453,7 +457,6 @@ namespace reshade
 		bool _show_screenshot_message = true;
 		bool _show_preset_transition_message = true;
 		bool _show_preset_description = true;
-		unsigned int _reload_count = 0;
 
 		bool _is_font_scaling = false;
 		bool _no_font_scaling = false;
@@ -482,12 +485,10 @@ namespace reshade
 		#pragma region Overlay Home
 		char _effect_filter[32] = {};
 		bool _variable_editor_tabs = true;
-		bool _auto_save_preset = true;
 #ifdef AURORA_PRO
 		size_t _preset_section_editing = std::numeric_limits<size_t>::max();
 #endif
 		size_t _uniform_binding_updated = std::numeric_limits<size_t>::max();
-		bool _preset_is_modified = false;
 		bool _inherit_current_preset = false;
 		std::filesystem::path _template_preset_path;
 		bool _was_preprocessor_popup_edited = false;

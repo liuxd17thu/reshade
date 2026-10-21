@@ -360,11 +360,11 @@ reshade::runtime::~runtime()
 	assert(_worker_threads.empty());
 	assert(!_is_initialized && _techniques.empty() && _technique_sorting.empty());
 
-#if RESHADE_GUI
-	// Save configuration before shutting down to ensure the current window state is written to disk
+	// Persist configuration in both GUI and headless runtimes.
 	save_config();
 	ini_file::flush_cache(_config_path);
 
+#if RESHADE_GUI
 	deinit_gui();
 #endif
 }
@@ -831,12 +831,10 @@ void reshade::runtime::on_present()
 								break;
 							}
 
-#if RESHADE_GUI
 							if (_auto_save_preset)
 								save_current_preset();
 							else
 								_preset_is_modified = true;
-#endif
 						}
 					}
 				}
@@ -850,12 +848,10 @@ void reshade::runtime::on_present()
 						else
 							disable_technique(tech);
 
-#if RESHADE_GUI
 						if (_auto_save_preset)
 							save_current_preset();
 						else
 							_preset_is_modified = true;
-#endif
 					}
 				}
 			}
@@ -967,9 +963,7 @@ void reshade::runtime::on_present()
 		_input_gamepad->next_frame();
 
 	// Save modified INI files
-#if RESHADE_GUI
 	if (_auto_save_preset)
-#endif
 		if (!ini_file::flush_cache())
 			_preset_save_successful = false;
 		else
@@ -1056,6 +1050,8 @@ void reshade::runtime::load_config()
 	config_get("GENERAL", "AuroraFeature", _aurora_feature);
 	config_get("GENERAL", "AuroraAutoFeature", _aurora_auto_feature);
 	config.get("GENERAL", "SimplifiedSorting", _simplified_sorting);
+	// Keep the existing key for compatibility, even without an overlay.
+	config.get("OVERLAY", "AutoSavePreset", _auto_save_preset);
 
 	// Fall back to temp directory if cache path does not exist
 	std::error_code ec;
@@ -1100,6 +1096,7 @@ void reshade::runtime::load_config()
 	config_get("SCREENSHOT", "SaveOverlayShot", _screenshot_save_gui);
 #endif
 	config_get("SCREENSHOT", "PostSaveCommand", _screenshot_post_save_command);
+	config_get("SCREENSHOT", "PostSaveCommandEnabled", _screenshot_post_save_command_enable);
 	config_get("SCREENSHOT", "PostSaveCommandArguments", _screenshot_post_save_command_arguments);
 	config_get("SCREENSHOT", "PostSaveCommandWorkingDirectory", _screenshot_post_save_command_working_directory);
 	config_get("SCREENSHOT", "PostSaveCommandHideWindow", _screenshot_post_save_command_hide_window);
@@ -1142,6 +1139,7 @@ void reshade::runtime::save_config() const
 	config.set("GENERAL", "AuroraFeature", _aurora_feature);
 	config.set("GENERAL", "AuroraAutoFeature", _aurora_auto_feature);
 	config.set("GENERAL", "SimplifiedSorting", _simplified_sorting);
+	config.set("OVERLAY", "AutoSavePreset", _auto_save_preset);
 
 	std::vector<unsigned int> preset_key_data;
 	std::vector<std::filesystem::path> preset_shortcut_paths;
@@ -1171,6 +1169,7 @@ void reshade::runtime::save_config() const
 	config.set("SCREENSHOT", "SaveOverlayShot", _screenshot_save_gui);
 #endif
 	config.set("SCREENSHOT", "PostSaveCommand", _screenshot_post_save_command);
+	config.set("SCREENSHOT", "PostSaveCommandEnabled", _screenshot_post_save_command_enable);
 	config.set("SCREENSHOT", "PostSaveCommandArguments", _screenshot_post_save_command_arguments);
 	config.set("SCREENSHOT", "PostSaveCommandWorkingDirectory", _screenshot_post_save_command_working_directory);
 	config.set("SCREENSHOT", "PostSaveCommandHideWindow", _screenshot_post_save_command_hide_window);
@@ -3956,6 +3955,7 @@ bool reshade::runtime::reload_effect(size_t effect_index)
 
 #if RESHADE_GUI
 	_show_splash = false; // Hide splash bar when reloading a single effect file
+	_uniform_binding_updated = std::numeric_limits<size_t>::max();
 #endif
 
 	// Make sure no effect resources are currently in use
@@ -3985,10 +3985,10 @@ void reshade::runtime::reload_effects(bool force_load_all)
 #endif
 
 #if RESHADE_GUI
-	_preset_is_modified = false;
 	_show_splash = true; // Always show splash bar when reloading everything
-	_reload_count++;
 #endif
+	_preset_is_modified = false;
+	_reload_count++;
 	_last_reload_successful = true;
 
 	load_effects(force_load_all);
@@ -4173,8 +4173,10 @@ void reshade::runtime::update_effects()
 			_init_time = std::chrono::high_resolution_clock::time_point::max();
 			reload_effects();
 		}
+#if RESHADE_GUI
 		else
 			_show_splash = true;
+#endif
 	}
 	else if (_frame_count == 0 && !_no_reload_on_init)
 	{
@@ -4238,6 +4240,9 @@ void reshade::runtime::update_effects()
 			if (thread.joinable())
 				thread.join(); // Threads have exited, but still need to join them prior to destruction
 		_worker_threads.clear();
+
+		for (effect &effect : _effects)
+			prune_uniform_bindings(effect);
 
 		// Finished loading effects, so apply preset to figure out which ones need compiling
 		load_current_preset();
@@ -5058,6 +5063,44 @@ void reshade::runtime::update_texture(texture &tex, uint32_t width, uint32_t hei
 
 	if (tex.levels > 1)
 		cmd_list->generate_mipmaps(tex.srv[0]);
+}
+
+void reshade::runtime::prune_uniform_bindings(effect &effect)
+{
+	// Run after loading, regardless of whether the variable editor is visible or compiled in.
+	// Failed, skipped and performance-mode effects do not have a complete uniform list.
+	if (!_ui_bind_support || !effect.compiled || effect.skipped || _performance_mode)
+		return;
+
+	const std::string effect_name = effect.source_file.filename().u8string();
+	bool modified = false;
+	for (auto it = effect.definition_bindings.begin(); it != effect.definition_bindings.end();)
+	{
+		if (std::any_of(effect.uniforms.begin(), effect.uniforms.end(),
+				[&](const uniform &variable) { return variable.name == it->first && variable.annotation_as_string("ui_bind") == it->second.first; }))
+		{
+			++it;
+			continue;
+		}
+
+		// Clones share preprocessor definitions under the original file name.
+		const bool still_bound = std::any_of(_effects.begin(), _effects.end(), [&](const auto &other) {
+			return other.source_file.filename() == effect.source_file.filename() &&
+				std::any_of(other.uniforms.begin(), other.uniforms.end(),
+					[&](const uniform &variable) { return variable.annotation_as_string("ui_bind") == it->second.first; });
+		});
+		if (!still_bound)
+		{
+			auto &definitions = _preset_preprocessor_definitions[effect_name];
+			definitions.erase(std::remove_if(definitions.begin(), definitions.end(),
+				[&](const auto &definition) { return definition.first == it->second.first; }), definitions.end());
+		}
+		it = effect.definition_bindings.erase(it);
+		modified = true;
+	}
+
+	if (modified)
+		ini_file::load_cache(_current_preset_path).set(effect_name, "PreprocessorDefinitions", _preset_preprocessor_definitions[effect_name]);
 }
 
 void reshade::runtime::reset_uniform_value(uniform &variable)

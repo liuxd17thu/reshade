@@ -338,7 +338,6 @@ void reshade::runtime::load_config_gui(const ini_file &config)
 		config.get("OVERLAY", "TutorialProgress", _tutorial_index);
 	config.get("OVERLAY", "VariableListHeight", _variable_editor_height);
 	config.get("OVERLAY", "VariableListUseTabs", _variable_editor_tabs);
-	config.get("OVERLAY", "AutoSavePreset", _auto_save_preset);
 	config.get("OVERLAY", "ShowPresetTransitionMessage", _show_preset_transition_message);
 	config.get("OVERLAY", "ShowPresetDescription", _show_preset_description);
 	config.get("OVERLAY", "ShowImGuiCursor", _show_imgui_cursor);
@@ -441,7 +440,6 @@ void reshade::runtime::save_config_gui(ini_file &config) const
 	config.set("OVERLAY", "TutorialProgress", _tutorial_index);
 	config.set("OVERLAY", "VariableListHeight", _variable_editor_height);
 	config.set("OVERLAY", "VariableListUseTabs", _variable_editor_tabs);
-	config.set("OVERLAY", "AutoSavePreset", _auto_save_preset);
 	config.set("OVERLAY", "ShowPresetTransitionMessage", _show_preset_transition_message);
 	config.set("OVERLAY", "ShowPresetDescription", _show_preset_description);
 	config.set("OVERLAY", "ShowImGuiCursor", _show_imgui_cursor);
@@ -4403,32 +4401,6 @@ void reshade::runtime::draw_variable_editor()
 		size_t active_variable_index = std::numeric_limits<size_t>::max();
 		size_t hovered_variable = 0;
 		size_t hovered_variable_index = std::numeric_limits<size_t>::max();
-
-		if (_ui_bind_support && _uniform_binding_updated == effect_index) {
-			//reload_effect(effect_index);
-			// Clear "orphan bindings" whose uniform is removed. (e.g. preprocessors in pass 2/3 of MultiLUT)
-			if (effect.rendering == 0)
-				continue;
-			std::unordered_map<std::string, std::pair<std::string, std::string>> tmp_binds;
-			for (auto &variable : effect.uniforms) {
-				if (!variable.annotation_as_string("ui_bind").empty() && effect.definition_bindings.count(variable.name))
-				{
-					tmp_binds[variable.name] = effect.definition_bindings[variable.name];
-					effect.definition_bindings.erase(variable.name);
-				}
-			}
-			// Now only "orphan bindings" stay in effect.definition_bindings. If these preprocessors exist in preset, remove them.
-			if (!effect.definition_bindings.empty())
-			{
-				auto &ppd = _preset_preprocessor_definitions[effect.source_file.filename().u8string()];
-				for (const auto &orphan : effect.definition_bindings)
-				{
-					ppd.erase(std::remove_if(ppd.begin(), ppd.end(), [&](const auto &pp) { return pp.first == orphan.second.first; }), ppd.end());
-				}
-			}
-			effect.definition_bindings = std::move(tmp_binds);
-			_uniform_binding_updated = std::numeric_limits<size_t>::max();
-		}
 
 		for (size_t variable_index = 0; variable_index < effect.uniforms.size(); ++variable_index)
 		{

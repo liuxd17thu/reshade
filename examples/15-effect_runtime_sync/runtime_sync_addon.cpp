@@ -231,7 +231,9 @@ static void draw_settings_overlay(effect_runtime *runtime)
 
 void register_addon_effect_runtime_sync()
 {
+#if !defined(BUILTIN_ADDON) || RESHADE_GUI
 	reshade::register_overlay(nullptr, draw_settings_overlay);
+#endif
 
 	reshade::register_event<reshade::addon_event::init_effect_runtime>(on_init);
 	reshade::register_event<reshade::addon_event::destroy_effect_runtime>(on_destroy);
