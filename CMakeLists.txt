@@ -5,21 +5,42 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CONFIGURATION_TYPES Debug;Release)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
+# Set one exception policy for the runtime and all C++ dependencies.
+if(MSVC)
+  # Remove CMake's default before selecting the flags per configuration.
+  string(REPLACE "/EHsc" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+  add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:$<IF:$<CONFIG:Release>,/EHs-c-,/EHsc>>")
+  add_compile_definitions("$<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CONFIG:Release>>:_HAS_EXCEPTIONS=0>")
+endif()
+
 add_subdirectory(deps)
 
 # ReShade
 
 add_library(ReShade SHARED)
+add_executable(ReShadeApp WIN32 EXCLUDE_FROM_ALL source/dll_main_test_app.cpp)
+
+# Share source lists and settings, while compiling each target with its own macros.
+add_library(ReShadeCommon INTERFACE)
+target_link_libraries(ReShade PRIVATE ReShadeCommon)
+target_link_libraries(ReShadeApp PRIVATE ReShadeCommon)
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
   set(RESHADE_NAME ReShade64)
   set(RESHADE_PLATFORM_DEFINE _WIN64)
-  set_target_properties(ReShade PROPERTIES OUTPUT_NAME ${RESHADE_NAME})
 else()
   set(RESHADE_NAME ReShade32)
   set(RESHADE_PLATFORM_DEFINE _WIN32)
-  set_target_properties(ReShade PROPERTIES OUTPUT_NAME ${RESHADE_NAME})
 endif()
+set_target_properties(ReShade ReShadeApp PROPERTIES OUTPUT_NAME ${RESHADE_NAME})
+# The EXE also produces an import library and PDB; keep them separate from the DLL.
+set_target_properties(ReShadeApp PROPERTIES
+  # Hook registration looks up the API entry points exported via res/exports.def.
+  ENABLE_EXPORTS ON
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/App/$<CONFIG>"
+  ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/App/$<CONFIG>"
+  PDB_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/App/$<CONFIG>"
+)
 #set_target_properties(ReShade PROPERTIES PREFIX "")
 #set_target_properties(ReShade PROPERTIES SUFFIX ${CMAKE_SHARED_LIBRARY_SUFFIX})
 
@@ -37,7 +58,7 @@ if(WIN32)
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     VERBATIM
   )
-  add_dependencies(ReShade ReShadeVersion)
+  add_dependencies(ReShadeCommon ReShadeVersion)
 endif()
 
 # res/version.rc2 picks "AuroraShade64.dll" / "for 64-bit" via _WIN64, but rc.exe only
@@ -54,6 +75,9 @@ set(RESHADE_HLSL_SHADERS
   mipmap_cs_5_0
 )
 if(CMAKE_GENERATOR MATCHES "^Visual Studio")
+  add_library(ReShadeShaders OBJECT)
+  set_target_properties(ReShadeShaders PROPERTIES LINKER_LANGUAGE CXX)
+  add_dependencies(ReShadeCommon ReShadeShaders)
   set_source_files_properties(res/shaders/copy_ps.hlsl res/shaders/imgui_ps_4_0.hlsl PROPERTIES VS_SHADER_TYPE Pixel VS_SHADER_MODEL 4.0)
   set_source_files_properties(res/shaders/fullscreen_vs.hlsl res/shaders/imgui_vs_4_0.hlsl PROPERTIES VS_SHADER_TYPE Vertex VS_SHADER_MODEL 4.0)
   set_source_files_properties(res/shaders/imgui_ps_3_0.hlsl PROPERTIES VS_SHADER_TYPE Pixel VS_SHADER_MODEL 3.0)
@@ -63,7 +87,7 @@ if(CMAKE_GENERATOR MATCHES "^Visual Studio")
     set(source "${RESHADE_SHADER_DIR}/${shader}.hlsl")
     set(output "${RESHADE_SHADER_DIR}/${shader}.cso")
     set_source_files_properties("${source}" PROPERTIES VS_SHADER_ENTRYPOINT main VS_SHADER_OBJECT_FILE_NAME "${output}")
-    target_sources(ReShade PRIVATE "${source}")
+    target_sources(ReShadeShaders PRIVATE "${source}")
   endforeach()
 endif()
 
@@ -89,7 +113,7 @@ if(GLSLANG_VALIDATOR)
     list(APPEND RESHADE_SPIRV_OUTPUTS "${output}")
   endforeach()
   add_custom_target(ReShadeSPIRV DEPENDS ${RESHADE_SPIRV_OUTPUTS})
-  add_dependencies(ReShade ReShadeSPIRV)
+  add_dependencies(ReShadeCommon ReShadeSPIRV)
 else()
   message(STATUS "glslangValidator not found; using checked-in SPIR-V shaders")
 endif()
@@ -321,8 +345,8 @@ set(RESHADE_SOURCE_WINDOWS
 )
 
 target_sources(
-  ReShade
-  PUBLIC
+  ReShadeCommon
+  INTERFACE
     FILE_SET HEADERS
     BASE_DIRS
       include
@@ -335,7 +359,7 @@ target_sources(
       include/reshade_api_resource.hpp
       include/reshade_events.hpp
       include/reshade_overlay.hpp
-  PRIVATE
+  INTERFACE
     ${RESHADE_SOURCE}
     ${RESHADE_SOURCE_OPENGL}
     ${RESHADE_SOURCE_VULKAN}
@@ -345,8 +369,8 @@ target_sources(
 )
 if(WIN32)
   target_sources(
-    ReShade
-    PRIVATE
+    ReShadeCommon
+    INTERFACE
       source/input_windows.cpp
       source/input_windows_xinput.cpp
       source/platform_utils_windows.cpp
@@ -367,23 +391,31 @@ else()
 endif()
 
 target_include_directories(
-  ReShade
-  PRIVATE
+  ReShadeCommon
+  INTERFACE
     res
     source
 )
 
-option(RESHADE_GUI "Build the in-game overlay" ON)
+# Match the Debug App / Release App feature sets in ReShade.vcxproj.
+set(RESHADE_APP "$<STREQUAL:$<TARGET_PROPERTY:TYPE>,EXECUTABLE>")
+set(RESHADE_RELEASE_APP "$<AND:${RESHADE_APP},$<CONFIG:Release>>")
+set(RESHADE_GUI AUTO CACHE STRING "Build the in-game overlay (AUTO, ON or OFF)")
+set_property(CACHE RESHADE_GUI PROPERTY STRINGS AUTO ON OFF)
+if(RESHADE_GUI STREQUAL "AUTO")
+  set(RESHADE_GUI "$<NOT:${RESHADE_RELEASE_APP}>")
+endif()
 
 target_compile_definitions(
-  ReShade
-  PRIVATE
+  ReShadeCommon
+  INTERFACE
     AURORA_PRO
     RESHADE_GUI=$<BOOL:${RESHADE_GUI}>
-    RESHADE_API_LIBRARY_EXPORT
-    RESHADE_ADDON=2
-    $<$<CXX_COMPILER_ID:MSVC>:RESHADE_LOCALIZATION>
-    $<$<CONFIG:Debug>:RESHADE_VERBOSE_LOG>
+    "$<$<NOT:${RESHADE_RELEASE_APP}>:RESHADE_API_LIBRARY_EXPORT;RESHADE_ADDON=2>"
+    "$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<NOT:${RESHADE_RELEASE_APP}>>:RESHADE_LOCALIZATION>"
+    "$<$<OR:$<CONFIG:Debug>,${RESHADE_APP}>:RESHADE_VERBOSE_LOG>"
+    "$<${RESHADE_APP}:RESHADE_TEST_APPLICATION>"
+    "$<$<AND:${RESHADE_APP},$<CONFIG:Debug>>:D3D_DEBUG_INFO>"
     _GDI32_
     WINSOCK_API_LINKAGE=
     _UNICODE
@@ -395,8 +427,8 @@ target_compile_definitions(
 
 if(MSVC)
   target_compile_options(
-    ReShade
-    PRIVATE
+    ReShadeCommon
+    INTERFACE
       /Zc:threadSafeInit-
       /utf-8
       /Zc:char8_t-
@@ -406,15 +438,16 @@ if(MSVC)
       $<$<CONFIG:Release>:/GR->
   )
   target_link_options(
-    ReShade
-    PRIVATE
+    ReShadeCommon
+    INTERFACE
       $<$<CONFIG:Release>:/DEBUG:FULL>
       $<$<CONFIG:Release>:/OPT:REF /OPT:NOICF /LTCG>
+      "$<${RESHADE_RELEASE_APP}:/PROFILE>"
   )
 else()
   target_compile_options(
-    ReShade
-    PRIVATE
+    ReShadeCommon
+    INTERFACE
       -DSTDMETHODCALLTYPE=
       -Wno-changes-meaning
       -fPIC
@@ -422,7 +455,7 @@ else()
   )
 endif()
 
-target_link_libraries(ReShade PRIVATE ReShadeFX D3D12On7 fpng glad ImGui jxl MinHook OpenVR OpenXR stb utfcpp VMA Windows)
+target_link_libraries(ReShadeCommon INTERFACE ReShadeFX D3D12On7 fpng glad ImGui jxl MinHook OpenVR OpenXR stb utfcpp VMA Windows)
 
 # ReShade FX
 
